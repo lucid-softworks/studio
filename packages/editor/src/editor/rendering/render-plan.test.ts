@@ -3,6 +3,7 @@ import { defaultLayerEffects, normalizeLayerEffects } from '../effects'
 import { defaultLayerFilters } from '../filters'
 import { createAdjustmentLayer, createLayerGroup, createRasterLayer, createShapeLayer, initialDocument } from '../presets'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan } from './render-plan'
+import { typeGpuBlendModeCodes } from './typegpu-blend-modes'
 
 describe('composition render plan', () => {
   it('captures masks, clipping, blend modes, filters, and effects deterministically', () => {
@@ -135,12 +136,25 @@ describe('composition render plan', () => {
   })
 
   it('keeps unsupported composition features on the compatibility renderer', () => {
-    const adjusted = { ...createShapeLayer('rectangle', 0), id: 'adjusted', blendMode: 'multiply' as const }
+    const adjusted = { ...createShapeLayer('rectangle', 0), id: 'adjusted', blendMode: 'hue' as const }
     const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 2 }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjusted] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
+  })
+
+  it('keeps separable blend modes in the native composition plan', () => {
+    const blendModes = Object.keys(typeGpuBlendModeCodes) as Array<keyof typeof typeGpuBlendModeCodes>
+    const layers = blendModes.map((blendMode, index) => ({
+      ...createShapeLayer('rectangle', index),
+      id: blendMode,
+      blendMode,
+      stackOrder: index,
+    }))
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers })?.layers.map((layer) => layer.blendMode))
+      .toEqual(blendModes)
   })
 })

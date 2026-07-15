@@ -45,7 +45,7 @@ export function createTypeGpuCompositionRenderer(root: TgpuRoot): CompositionRen
         compositor = createTypeGpuLayerCompositor(root, passes.width, passes.height)
         compositorSize = { width: passes.width, height: passes.height }
       }
-      compositor.compose(passes.sources)
+      compositor.compose(passes.layers)
       if (canvas.width !== passes.width) canvas.width = passes.width
       if (canvas.height !== passes.height) canvas.height = passes.height
       const context = canvas.getContext('2d')

@@ -2,6 +2,7 @@ import { hasEnabledLayerEffects, normalizeLayerEffects } from '../effects'
 import { normalizeLayerFilters } from '../filters'
 import { getStackChildren, type StackItem } from '../stack'
 import type { BlendMode, EditorDocument, LayerEffects, LayerFilters } from '../types'
+import { isTypeGpuBlendMode } from './typegpu-blend-modes'
 
 export type LayerRenderNode = {
   kind: 'layer'
@@ -127,7 +128,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: LayerRenderNode[])
       continue
     }
     if (
-      node.blendMode !== 'normal'
+      !isTypeGpuBlendMode(node.blendMode)
       || node.maskAssetId
       || node.clipBaseLayerId
       || node.filters

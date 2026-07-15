@@ -3,13 +3,15 @@ import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
+import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RenderCompositionOptions = { showSelection?: boolean }
-export type NativeLayerPasses = { width: number; height: number; sources: HTMLCanvasElement[] }
+export type NativeLayerPass = { source: HTMLCanvasElement; blendMode: TypeGpuBlendMode }
+export type NativeLayerPasses = { width: number; height: number; layers: NativeLayerPass[] }
 
 export function calculateImageRect(
   canvasWidth: number,
@@ -661,5 +663,12 @@ export function renderNativeLayerPasses(
     if (selection.context && selected?.visible) drawSelection(selection.context, selection.canvas, selected, assets)
   }
 
-  return { width: size.width, height: size.height, sources: passCanvases.slice(0, passCount) }
+  const compositionLayers: NativeLayerPass[] = [{ source: passCanvases[0], blendMode: 'normal' }]
+  plan.layers.forEach((node, index) => {
+    compositionLayers.push({ source: passCanvases[index + 1], blendMode: node.blendMode as TypeGpuBlendMode })
+  })
+  if (passCount > plan.layers.length + 1) {
+    compositionLayers.push({ source: passCanvases[passCount - 1], blendMode: 'normal' })
+  }
+  return { width: size.width, height: size.height, layers: compositionLayers }
 }
