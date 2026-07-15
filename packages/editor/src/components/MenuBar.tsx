@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { WorkspacePreset } from '../editor/panel-layout'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view'
@@ -29,6 +30,13 @@ type MenuBarProps = {
   onContractSelection: () => void
   onFilter: (preset: 'blur' | 'sharpen' | 'grayscale' | 'sepia' | 'invert' | 'reset') => void
   onZoom: (command: 'in' | 'out' | 'actual') => void
+  onTogglePanel: (panel: 'properties' | 'layers') => void
+  onApplyWorkspace: (workspace: WorkspacePreset) => void
+  onSaveWorkspace: () => void
+  onDeleteWorkspace: (name: string) => void
+  workspacePresets: readonly WorkspacePreset[]
+  propertiesPanelVisible: boolean
+  layersPanelVisible: boolean
   canUndo: boolean
   canRedo: boolean
   hasLayerSelection: boolean
@@ -40,11 +48,20 @@ type MenuBarProps = {
   exporting: boolean
 }
 
-function MenuItem({ children, shortcut, disabled, onSelect }: { children: ReactNode; shortcut?: string; disabled?: boolean; onSelect: () => void }) {
+function MenuItem({ children, shortcut, disabled, checked, onSelect }: { children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
   return (
-    <button type="button" role="menuitem" disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
-      <span>{children}</span>{shortcut && <span className="font-mono text-[9px] text-zinc-600">{shortcut}</span>}
+    <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked={checked} disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
+      <span className="flex items-center gap-2"><span aria-hidden="true" className="w-2 text-[9px] text-violet-300">{checked ? '✓' : ''}</span>{children}</span>{shortcut && <span className="font-mono text-[9px] text-zinc-600">{shortcut}</span>}
     </button>
+  )
+}
+
+function SavedWorkspaceItem({ name, onSelect, onDelete }: { name: string; onSelect: () => void; onDelete: () => void }) {
+  return (
+    <div role="none" className="group flex items-center rounded-md hover:bg-violet-400/15">
+      <button type="button" role="menuitem" onClick={onSelect} className="min-w-0 flex-1 truncate px-2.5 py-1.5 text-left text-[11px] text-zinc-300 outline-none focus-visible:text-white">{name}</button>
+      <button type="button" aria-label={`Delete workspace ${name}`} title="Delete saved workspace" onClick={onDelete} className="mr-1 flex size-5 items-center justify-center rounded text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>
+    </div>
   )
 }
 
@@ -168,7 +185,18 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem shortcut="⌘+" onSelect={() => select(() => props.onZoom('in'))}>Zoom in</MenuItem>
         <MenuItem shortcut="⌘−" onSelect={() => select(() => props.onZoom('out'))}>Zoom out</MenuItem>
         <MenuItem shortcut="⌘0" onSelect={() => select(() => props.onZoom('actual'))}>100%</MenuItem>
-      </>, 'w-48')}
+        <Separator />
+        <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Panels</p>
+        <MenuItem checked={props.propertiesPanelVisible} onSelect={() => select(() => props.onTogglePanel('properties'))}>Properties</MenuItem>
+        <MenuItem checked={props.layersPanelVisible} onSelect={() => select(() => props.onTogglePanel('layers'))}>Layers</MenuItem>
+        <Separator />
+        <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Workspace</p>
+        {props.workspacePresets.map((workspace) => workspace.builtIn
+          ? <MenuItem key={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))}>{workspace.name}</MenuItem>
+          : <SavedWorkspaceItem key={workspace.name} name={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))} onDelete={() => select(() => props.onDeleteWorkspace(workspace.name))} />)}
+        <Separator />
+        <MenuItem onSelect={() => select(props.onSaveWorkspace)}>Save current workspace…</MenuItem>
+      </>, 'w-60')}
     </div>
   )
 }

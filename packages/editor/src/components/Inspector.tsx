@@ -5,6 +5,7 @@ import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
+import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
 import type { CustomFontResource } from '../editor/resources'
 import type { CSSProperties, DragEvent } from 'react'
@@ -21,6 +22,8 @@ type InspectorProps = {
   onSwapPanels: () => void
   width: number
   onWidthChange: (width: number) => void
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }
 
 const tabClass = (active: boolean) =>
@@ -49,7 +52,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels, width, onWidthChange }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -59,7 +62,8 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const filters = normalizeLayerFilters(selected?.filters)
 
   return (
-    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`relative order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[var(--panel-width)] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`relative order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:border-t-0 ${collapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      {collapsed ? <CollapsedPanelRail dockSide={dockSide} label="Properties" onClick={onToggleCollapsed} /> : <>
       <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Properties panel" />
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div draggable onDragStart={(event: DragEvent) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'properties') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-5 active:cursor-grabbing">
@@ -67,13 +71,16 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
           <h1 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Properties</h1>
           <p className="mt-0.5 max-w-44 truncate text-[11px] text-zinc-600">{selectedGroup?.name ?? (document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Document settings')}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => dispatch({ type: 'reset-document' })}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
-        >
-          <ResetIcon className="size-3.5" /> Reset
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => dispatch({ type: 'reset-document' })}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+          >
+            <ResetIcon className="size-3.5" /> Reset
+          </button>
+          <PanelCollapseButton dockSide={dockSide} label="Properties" onClick={onToggleCollapsed} />
+        </div>
       </div>
 
       {selectedGroup ? (
@@ -330,6 +337,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
         </>
       )}
       </div>
+      </>}
     </aside>
   )
 }

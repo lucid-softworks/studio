@@ -22,7 +22,7 @@ import { featherSelection, invertSelection, morphSelection, selectAll, type Sele
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
-import { clampPanelWidth } from './editor/panel-layout'
+import { builtInWorkspacePresets, defaultWorkspaceLayout, normalizeWorkspaceLayout, type WorkspaceLayout, type WorkspacePreset } from './editor/panel-layout'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -47,18 +47,31 @@ function App({ onExit }: AppProps) {
   const [customBrushes, setCustomBrushes] = useState<BrushPreset[]>([])
   const [brushId, setBrushId] = useState(roundBrush.id)
   const [resourceRevision, bumpResourceRevision] = useReducer((value: number) => value + 1, 0)
-  const [propertiesOnLeft, setPropertiesOnLeft] = useState(() => {
-    try { return localStorage.getItem('studio.panel-layout') !== 'layers-left' } catch { return true }
-  })
-  const [panelWidths, setPanelWidths] = useState(() => {
+  const [workspaceLayout, setWorkspaceLayout] = useState<WorkspaceLayout>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('studio.panel-widths') ?? '{}') as { properties?: number; layers?: number }
-      return {
-        properties: clampPanelWidth(saved.properties ?? 310),
-        layers: clampPanelWidth(saved.layers ?? 258),
-      }
+      const saved = localStorage.getItem('studio.workspace-layout')
+      if (saved) return normalizeWorkspaceLayout(JSON.parse(saved))
+      const legacyWidths = JSON.parse(localStorage.getItem('studio.panel-widths') ?? '{}') as { properties?: number; layers?: number }
+      return normalizeWorkspaceLayout({
+        propertiesOnLeft: localStorage.getItem('studio.panel-layout') !== 'layers-left',
+        panelWidths: legacyWidths,
+      })
     } catch {
-      return { properties: 310, layers: 258 }
+      return normalizeWorkspaceLayout(defaultWorkspaceLayout)
+    }
+  })
+  const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspacePreset[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('studio.saved-workspaces') ?? '[]') as unknown
+      if (!Array.isArray(saved)) return []
+      return saved.flatMap((value) => {
+        if (!value || typeof value !== 'object') return []
+        const candidate = value as Partial<WorkspacePreset>
+        const name = typeof candidate.name === 'string' ? candidate.name.trim().slice(0, 48) : ''
+        return name ? [{ name, layout: normalizeWorkspaceLayout(candidate.layout) }] : []
+      })
+    } catch {
+      return []
     }
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -78,12 +91,12 @@ function App({ onExit }: AppProps) {
   useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
 
   useEffect(() => {
-    try { localStorage.setItem('studio.panel-layout', propertiesOnLeft ? 'properties-left' : 'layers-left') } catch { /* local storage is optional */ }
-  }, [propertiesOnLeft])
+    try { localStorage.setItem('studio.workspace-layout', JSON.stringify(workspaceLayout)) } catch { /* local storage is optional */ }
+  }, [workspaceLayout])
 
   useEffect(() => {
-    try { localStorage.setItem('studio.panel-widths', JSON.stringify(panelWidths)) } catch { /* local storage is optional */ }
-  }, [panelWidths])
+    try { localStorage.setItem('studio.saved-workspaces', JSON.stringify(savedWorkspaces)) } catch { /* local storage is optional */ }
+  }, [savedWorkspaces])
 
   useEffect(() => {
     if (!notice) return
@@ -774,6 +787,29 @@ function App({ onExit }: AppProps) {
 
   const backgroundName = document.background.imageAssetId ? assets[document.background.imageAssetId]?.name : undefined
 
+  const applyWorkspace = (workspace: WorkspacePreset) => {
+    setWorkspaceLayout(normalizeWorkspaceLayout(workspace.layout))
+    setNotice(`Applied the ${workspace.name} workspace.`, 'success')
+  }
+
+  const saveCurrentWorkspace = () => {
+    const requestedName = window.prompt('Name this workspace')
+    const name = requestedName?.trim().slice(0, 48)
+    if (!name) return
+    if (builtInWorkspacePresets.some((workspace) => workspace.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setNotice('Choose a different name; built-in workspace names are reserved.', 'warning')
+      return
+    }
+    const preset = { name, layout: normalizeWorkspaceLayout(workspaceLayout) }
+    setSavedWorkspaces((current) => [...current.filter((workspace) => workspace.name.toLocaleLowerCase() !== name.toLocaleLowerCase()), preset])
+    setNotice(`Saved the ${name} workspace locally.`, 'success')
+  }
+
+  const deleteWorkspace = (name: string) => {
+    setSavedWorkspaces((current) => current.filter((workspace) => workspace.name !== name))
+    setNotice(`Deleted the ${name} workspace.`, 'success')
+  }
+
   return (
     <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
       <header className="flex h-12 items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-2.5 sm:px-3">
@@ -818,6 +854,13 @@ function App({ onExit }: AppProps) {
               else resetFilters()
             }}
             onZoom={(command) => setZoom((current) => command === 'actual' ? 100 : Math.max(25, Math.min(250, current + (command === 'in' ? 25 : -25))))}
+            onTogglePanel={(panel) => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, [panel]: !current.collapsedPanels[panel] } }))}
+            onApplyWorkspace={applyWorkspace}
+            onSaveWorkspace={saveCurrentWorkspace}
+            onDeleteWorkspace={deleteWorkspace}
+            workspacePresets={[...builtInWorkspacePresets, ...savedWorkspaces]}
+            propertiesPanelVisible={!workspaceLayout.collapsedPanels.properties}
+            layersPanelVisible={!workspaceLayout.collapsedPanels.layers}
             canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
@@ -843,9 +886,9 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} width={panelWidths.properties} onWidthChange={(width) => setPanelWidths((current) => ({ ...current, properties: width }))} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} width={panelWidths.layers} onWidthChange={(width) => setPanelWidths((current) => ({ ...current, layers: width }))} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />

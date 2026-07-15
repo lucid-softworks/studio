@@ -3,6 +3,7 @@ import { hasEnabledLayerEffects } from '../editor/effects'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
 import type { EditorDispatch, EditorDocument, EditorLayer, LayerGroup } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
+import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
 
 type LayersPanelProps = {
@@ -19,6 +20,8 @@ type LayersPanelProps = {
   onSwapPanels: () => void
   width: number
   onWidthChange: (width: number) => void
+  collapsed: boolean
+  onToggleCollapsed: () => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
@@ -35,7 +38,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
@@ -135,11 +138,12 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const rootItems = getStackChildren(document, null)
 
   return (
-    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[var(--panel-width)] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:border-t-0 ${collapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      {collapsed ? <CollapsedPanelRail dockSide={dockSide} label="Layers" onClick={onToggleCollapsed} /> : <>
       <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Layers panel" />
       <div draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-4 active:cursor-grabbing">
         <div><h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
-        <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button></div>
+        <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button><PanelCollapseButton dockSide={dockSide} label="Layers" onClick={onToggleCollapsed} /></div>
       </div>
 
       <div className={`min-h-0 flex-1 space-y-1 overflow-y-auto p-2 ${dragging ? 'ring-1 ring-inset ring-violet-400/20' : ''}`} onDragOver={(event) => { event.preventDefault(); setDropTarget({ key: 'root', parentId: null }) }} onDrop={dropAtTarget}>
@@ -150,6 +154,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
 
       {activeGroup && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><button type="button" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Ungroup</button><button type="button" aria-label="Delete group and layers" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id, deleteLayers: true })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
       {!activeGroup && document.selectedLayerIds.length > 0 && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><div className="flex items-center gap-1">{document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <><button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>{activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-zinc-700 hover:text-red-300">×</button>}</>}{document.selectedLayerIds.length > 1 && <p className="text-[10px] text-zinc-700">{document.selectedLayerIds.length} selected</p>}</div><button type="button" aria-label="Delete selected layer" onClick={() => dispatch({ type: 'remove-layers', ids: document.selectedLayerIds })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
+      </>}
     </aside>
   )
 }
