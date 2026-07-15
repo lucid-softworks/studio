@@ -7,7 +7,7 @@ import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
-import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
+import type { BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -691,6 +691,7 @@ function drawTintedEffect(
   blur: number,
   offsetX = 0,
   offsetY = 0,
+  blendMode: BlendMode = 'normal',
 ) {
   layerEffectPassCanvas = prepareScratchCanvas(layerEffectPassCanvas, canvas)
   const effectContext = layerEffectPassCanvas.getContext('2d')
@@ -706,7 +707,72 @@ function drawTintedEffect(
   effectContext.fillStyle = color
   effectContext.fillRect(0, 0, canvas.width, canvas.height)
   effectContext.restore()
+  context.save()
+  context.globalCompositeOperation = blendMode === 'normal' ? 'source-over' : blendMode
   context.drawImage(layerEffectPassCanvas, 0, 0)
+  context.restore()
+}
+
+function drawInnerTintedEffect(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, source: HTMLCanvasElement, color: string, opacity: number, blur: number, offsetX: number, offsetY: number, blendMode: BlendMode) {
+  layerEffectPassCanvas = prepareScratchCanvas(layerEffectPassCanvas, canvas)
+  const effectContext = layerEffectPassCanvas.getContext('2d')
+  if (!effectContext) return
+  effectContext.clearRect(0, 0, canvas.width, canvas.height)
+  effectContext.save()
+  effectContext.filter = blur > 0 ? `blur(${blur}px)` : 'none'
+  effectContext.drawImage(source, offsetX, offsetY)
+  effectContext.restore()
+  effectContext.globalCompositeOperation = 'source-in'
+  effectContext.globalAlpha = opacity / 100
+  effectContext.fillStyle = color
+  effectContext.fillRect(0, 0, canvas.width, canvas.height)
+  effectContext.globalCompositeOperation = 'destination-in'
+  effectContext.globalAlpha = 1
+  effectContext.drawImage(source, 0, 0)
+  effectContext.globalCompositeOperation = 'source-over'
+  context.save()
+  context.globalCompositeOperation = blendMode === 'normal' ? 'source-over' : blendMode
+  context.drawImage(layerEffectPassCanvas, 0, 0)
+  context.restore()
+}
+
+function applyGradientOverlay(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, effects: LayerEffects['gradientOverlay']) {
+  const angle = effects.angle * Math.PI / 180
+  const radius = Math.abs(canvas.width * Math.cos(angle)) / 2 + Math.abs(canvas.height * Math.sin(angle)) / 2
+  const gradient = effects.style === 'radial'
+    ? context.createRadialGradient(canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 2 * effects.scale / 100)
+    : context.createLinearGradient(canvas.width / 2 - Math.cos(angle) * radius, canvas.height / 2 - Math.sin(angle) * radius, canvas.width / 2 + Math.cos(angle) * radius, canvas.height / 2 + Math.sin(angle) * radius)
+  const stops = effects.reverse ? [...effects.colorStops].reverse().map((stop) => ({ ...stop, position: 1 - stop.position })) : effects.colorStops
+  for (const stop of stops) gradient.addColorStop(Math.max(0, Math.min(1, stop.position)), stop.color)
+  context.save()
+  context.globalCompositeOperation = effects.blendMode === 'normal' ? 'source-atop' : effects.blendMode
+  context.globalAlpha = effects.opacity / 100
+  context.fillStyle = gradient
+  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.restore()
+}
+
+function applyPatternOverlay(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, effects: LayerEffects['patternOverlay']) {
+  const tile = document.createElement('canvas')
+  const size = Math.max(4, Math.round(12 * effects.scale / 100))
+  tile.width = size * 2
+  tile.height = size * 2
+  const tileContext = tile.getContext('2d')
+  if (!tileContext) return
+  tileContext.fillStyle = '#fff'
+  tileContext.fillRect(0, 0, tile.width, tile.height)
+  tileContext.fillStyle = '#b4b4b4'
+  tileContext.fillRect(0, 0, size, size)
+  tileContext.fillRect(size, size, size, size)
+  const pattern = context.createPattern(tile, 'repeat')
+  if (!pattern) return
+  context.save()
+  context.globalCompositeOperation = effects.blendMode === 'normal' ? 'source-atop' : effects.blendMode
+  context.globalAlpha = effects.opacity / 100
+  context.translate(effects.phase.x, effects.phase.y)
+  context.fillStyle = pattern
+  context.fillRect(-effects.phase.x, -effects.phase.y, canvas.width, canvas.height)
+  context.restore()
 }
 
 function drawLayerWithEffects(
@@ -725,7 +791,7 @@ function drawLayerWithEffects(
   layerContext.clearRect(0, 0, canvas.width, canvas.height)
   draw(layerContext)
 
-  if (effects.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, effects.outerGlow.color, effects.outerGlow.opacity, effects.outerGlow.size)
+  if (effects.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, effects.outerGlow.color, effects.outerGlow.opacity, effects.outerGlow.size, 0, 0, effects.outerGlow.blendMode)
   if (effects.dropShadow.enabled) {
     const angle = effects.dropShadow.angle * Math.PI / 180
     drawTintedEffect(
@@ -737,22 +803,46 @@ function drawLayerWithEffects(
       effects.dropShadow.blur,
       Math.cos(angle) * effects.dropShadow.distance,
       Math.sin(angle) * effects.dropShadow.distance,
+      effects.dropShadow.blendMode,
     )
   }
+  if (effects.stroke.enabled && effects.stroke.position !== 'inside') drawTintedEffect(context, canvas, layerEffectsCanvas, effects.stroke.color, effects.stroke.opacity, effects.stroke.size / (effects.stroke.position === 'center' ? 2 : 1), 0, 0, effects.stroke.blendMode)
+  colorOverlayCanvas = prepareScratchCanvas(colorOverlayCanvas, canvas)
+  const overlayContext = colorOverlayCanvas.getContext('2d')
+  if (!overlayContext) return
+  overlayContext.clearRect(0, 0, canvas.width, canvas.height)
+  overlayContext.drawImage(layerEffectsCanvas, 0, 0)
   if (effects.colorOverlay.enabled) {
-    colorOverlayCanvas = prepareScratchCanvas(colorOverlayCanvas, canvas)
-    const overlayContext = colorOverlayCanvas.getContext('2d')
-    if (!overlayContext) return
-    overlayContext.clearRect(0, 0, canvas.width, canvas.height)
-    overlayContext.drawImage(layerEffectsCanvas, 0, 0)
     overlayContext.save()
     overlayContext.globalCompositeOperation = 'source-atop'
     overlayContext.globalAlpha = effects.colorOverlay.opacity / 100
     overlayContext.fillStyle = effects.colorOverlay.color
     overlayContext.fillRect(0, 0, canvas.width, canvas.height)
     overlayContext.restore()
-    context.drawImage(colorOverlayCanvas, 0, 0)
-  } else context.drawImage(layerEffectsCanvas, 0, 0)
+  }
+  if (effects.gradientOverlay.enabled) applyGradientOverlay(overlayContext, canvas, effects.gradientOverlay)
+  if (effects.patternOverlay.enabled) applyPatternOverlay(overlayContext, canvas, effects.patternOverlay)
+  context.save()
+  context.globalCompositeOperation = effects.colorOverlay.enabled && effects.colorOverlay.blendMode !== 'normal' ? effects.colorOverlay.blendMode : 'source-over'
+  context.drawImage(colorOverlayCanvas, 0, 0)
+  context.restore()
+  if (effects.innerShadow.enabled) {
+    const angle = effects.innerShadow.angle * Math.PI / 180
+    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.innerShadow.color, effects.innerShadow.opacity, effects.innerShadow.blur, Math.cos(angle) * effects.innerShadow.distance, Math.sin(angle) * effects.innerShadow.distance, effects.innerShadow.blendMode)
+  }
+  if (effects.innerGlow.enabled) drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.innerGlow.color, effects.innerGlow.opacity, effects.innerGlow.size, 0, 0, effects.innerGlow.blendMode)
+  if (effects.satin.enabled) {
+    const angle = effects.satin.angle * Math.PI / 180
+    const direction = effects.satin.invert ? -1 : 1
+    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.satin.color, effects.satin.opacity, effects.satin.size, Math.cos(angle) * effects.satin.distance * direction, Math.sin(angle) * effects.satin.distance * direction, effects.satin.blendMode)
+  }
+  if (effects.bevel.enabled) {
+    const angle = effects.bevel.angle * Math.PI / 180
+    const distance = Math.max(1, effects.bevel.size * effects.bevel.depth / 100 / 2) * (effects.bevel.direction === 'down' ? -1 : 1)
+    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.bevel.highlightColor, effects.bevel.highlightOpacity, effects.bevel.size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
+    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.bevel.shadowColor, effects.bevel.shadowOpacity, effects.bevel.size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
+  }
+  if (effects.stroke.enabled && effects.stroke.position === 'inside') drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.stroke.color, effects.stroke.opacity, effects.stroke.size / 2, 0, 0, effects.stroke.blendMode)
 }
 
 function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, base: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {

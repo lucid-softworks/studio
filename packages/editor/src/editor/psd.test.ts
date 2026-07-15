@@ -63,7 +63,7 @@ describe('PSD layer ordering', () => {
         name: 'Artwork',
         children: [
           { name: 'Heading', text: {} as NonNullable<Layer['text']> },
-          { name: 'Glow', effects: { bevel: { enabled: true } } },
+          { name: 'Glow', effects: { stroke: [{ enabled: true, fillType: 'pattern' }] } },
           { name: 'Blend', blendMode: 'linear light' },
         ],
       }],
@@ -89,6 +89,45 @@ describe('PSD layer ordering', () => {
     })).toMatchObject({
       dropShadow: { enabled: true, color: '#0a141e', opacity: 50, angle: 45, distance: 12, blur: 8 },
       outerGlow: { enabled: true, color: '#c86432', opacity: 25, size: 16 },
+    })
+  })
+
+  it('preserves the primary Photoshop layer-style families as editable effects', async () => {
+    const source: Layer = {
+      effects: {
+        innerShadow: [{ enabled: true, color: { r: 20, g: 30, b: 40 }, opacity: 0.4, angle: 35, distance: { units: 'Pixels', value: 7 }, size: { units: 'Pixels', value: 11 }, choke: { units: 'Pixels', value: 2 }, blendMode: 'multiply' }],
+        innerGlow: { enabled: true, color: { r: 240, g: 220, b: 80 }, opacity: 0.6, size: { units: 'Pixels', value: 9 }, source: 'center', blendMode: 'screen' },
+        bevel: { enabled: true, size: { units: 'Pixels', value: 5 }, strength: 180, angle: 125, altitude: 35, highlightColor: { r: 255, g: 255, b: 255 }, highlightOpacity: 0.8, shadowColor: { r: 10, g: 10, b: 20 }, shadowOpacity: 0.65, style: 'inner bevel', direction: 'up' },
+        satin: { enabled: true, color: { r: 50, g: 20, b: 80 }, opacity: 0.45, angle: 25, distance: { units: 'Pixels', value: 8 }, size: { units: 'Pixels', value: 14 }, invert: true, blendMode: 'multiply' },
+        gradientOverlay: [{
+          enabled: true, opacity: 0.9, angle: 42, scale: 130, type: 'linear', reverse: true, blendMode: 'overlay',
+          gradient: { type: 'solid', name: 'Violet', colorStops: [{ color: { r: 255, g: 20, b: 80 }, location: 0, midpoint: 50 }, { color: { r: 80, g: 20, b: 255 }, location: 4096, midpoint: 50 }], opacityStops: [{ opacity: 1, location: 0, midpoint: 50 }, { opacity: 0.5, location: 4096, midpoint: 50 }] },
+        }],
+        patternOverlay: { enabled: true, opacity: 0.55, scale: 75, blendMode: 'soft light', pattern: { id: 'pattern-1', name: 'Paper' }, phase: { x: 4, y: 6 }, align: false },
+        stroke: [{ enabled: true, fillType: 'color', color: { r: 5, g: 200, b: 240 }, opacity: 0.75, size: { units: 'Pixels', value: 6 }, position: 'inside', blendMode: 'normal' }],
+      },
+    }
+    const imported = psdLayerEffects(source)
+    expect(imported).toMatchObject({
+      innerShadow: { enabled: true, color: '#141e28', opacity: 40, distance: 7, blur: 11, choke: 2, blendMode: 'multiply' },
+      innerGlow: { enabled: true, color: '#f0dc50', opacity: 60, size: 9, source: 'center', blendMode: 'screen' },
+      bevel: { enabled: true, size: 5, depth: 180, angle: 125, altitude: 35, highlightOpacity: 80, shadowOpacity: 65 },
+      satin: { enabled: true, color: '#321450', opacity: 45, distance: 8, size: 14, invert: true },
+      gradientOverlay: { enabled: true, opacity: 90, angle: 42, scale: 130, reverse: true, blendMode: 'overlay', name: 'Violet', colorStops: [{ color: '#ff1450', position: 0 }, { color: '#5014ff', position: 1 }] },
+      patternOverlay: { enabled: true, opacity: 55, scale: 75, blendMode: 'soft-light', id: 'pattern-1', name: 'Paper', phase: { x: 4, y: 6 }, linked: false },
+      stroke: { enabled: true, color: '#05c8f0', opacity: 75, size: 6, position: 'inside' },
+    })
+    expect(psdImportWarnings({ width: 100, height: 100, children: [source] })).not.toContain(expect.stringContaining('effects'))
+
+    const shape = { ...createShapeLayer('ellipse', 0), effects: imported }
+    const blob = await exportPsdDocument({ ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 100, height: 100 }, layers: [shape] }, {})
+    const effects = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]?.effects
+    expect(effects).toMatchObject({
+      innerShadow: [{ enabled: true, distance: { value: 7 } }], innerGlow: { enabled: true, source: 'center' },
+      bevel: { enabled: true, strength: 180 }, satin: { enabled: true, invert: true },
+      gradientOverlay: [{ enabled: true, gradient: { type: 'solid', name: 'Violet' } }],
+      patternOverlay: { enabled: true, pattern: { id: 'pattern-1', name: 'Paper' } },
+      stroke: [{ enabled: true, fillType: 'color', position: 'inside' }],
     })
   })
 

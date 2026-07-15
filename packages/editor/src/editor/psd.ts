@@ -1,5 +1,5 @@
 import { initializeCanvas, readPsd, writePsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
-import { defaultLayerEffects } from './effects'
+import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds } from './renderer'
@@ -201,9 +201,17 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
   const effects = layer.effects
   if (!effects || effects.disabled) return null
   const dropShadow = effects.dropShadow?.find(effectEnabled)
+  const innerShadow = effects.innerShadow?.find(effectEnabled)
   const outerGlow = effectEnabled(effects.outerGlow) ? effects.outerGlow : undefined
+  const innerGlow = effectEnabled(effects.innerGlow) ? effects.innerGlow : undefined
+  const bevel = effectEnabled(effects.bevel) ? effects.bevel : undefined
+  const satin = effectEnabled(effects.satin) ? effects.satin : undefined
   const colorOverlay = effects.solidFill?.find(effectEnabled)
-  if (!dropShadow && !outerGlow && !colorOverlay) return null
+  const gradientOverlay = effects.gradientOverlay?.find(effectEnabled)
+  const patternOverlay = effectEnabled(effects.patternOverlay) ? effects.patternOverlay : undefined
+  const stroke = effects.stroke?.find(effectEnabled)
+  if (!dropShadow && !innerShadow && !outerGlow && !innerGlow && !bevel && !satin && !colorOverlay && !gradientOverlay && !patternOverlay && !stroke) return null
+  const gradient = gradientOverlay?.gradient?.type === 'solid' ? gradientOverlay.gradient : undefined
   return {
     ...defaultLayerEffects,
     dropShadow: {
@@ -213,17 +221,61 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
       angle: dropShadow?.angle ?? defaultLayerEffects.dropShadow.angle,
       distance: dropShadow?.distance?.value ?? defaultLayerEffects.dropShadow.distance,
       blur: dropShadow?.size?.value ?? defaultLayerEffects.dropShadow.blur,
+      spread: dropShadow?.choke?.value ?? defaultLayerEffects.dropShadow.spread,
+      blendMode: psdBlendMode(dropShadow?.blendMode),
+    },
+    innerShadow: {
+      enabled: Boolean(innerShadow), color: innerShadow ? colorHex(innerShadow.color) : defaultLayerEffects.innerShadow.color, opacity: Math.round((innerShadow?.opacity ?? 1) * 100),
+      angle: innerShadow?.angle ?? defaultLayerEffects.innerShadow.angle, distance: innerShadow?.distance?.value ?? defaultLayerEffects.innerShadow.distance,
+      blur: innerShadow?.size?.value ?? defaultLayerEffects.innerShadow.blur, choke: innerShadow?.choke?.value ?? defaultLayerEffects.innerShadow.choke,
+      blendMode: psdBlendMode(innerShadow?.blendMode),
     },
     outerGlow: {
       enabled: Boolean(outerGlow),
-      color: colorHex(outerGlow?.color),
+      color: outerGlow ? colorHex(outerGlow.color) : defaultLayerEffects.outerGlow.color,
       opacity: Math.round((outerGlow?.opacity ?? 1) * 100),
       size: outerGlow?.size?.value ?? defaultLayerEffects.outerGlow.size,
+      spread: outerGlow?.choke?.value ?? defaultLayerEffects.outerGlow.spread,
+      blendMode: psdBlendMode(outerGlow?.blendMode),
+    },
+    innerGlow: {
+      enabled: Boolean(innerGlow), color: innerGlow ? colorHex(innerGlow.color) : defaultLayerEffects.innerGlow.color, opacity: Math.round((innerGlow?.opacity ?? 1) * 100),
+      size: innerGlow?.size?.value ?? defaultLayerEffects.innerGlow.size, choke: innerGlow?.choke?.value ?? defaultLayerEffects.innerGlow.choke,
+      source: innerGlow?.source ?? defaultLayerEffects.innerGlow.source, blendMode: psdBlendMode(innerGlow?.blendMode),
+    },
+    bevel: {
+      enabled: Boolean(bevel), size: bevel?.size?.value ?? defaultLayerEffects.bevel.size, depth: bevel?.strength ?? defaultLayerEffects.bevel.depth,
+      angle: bevel?.angle ?? defaultLayerEffects.bevel.angle, altitude: bevel?.altitude ?? defaultLayerEffects.bevel.altitude,
+      highlightColor: colorHex(bevel?.highlightColor), highlightOpacity: Math.round((bevel?.highlightOpacity ?? 1) * 100),
+      shadowColor: colorHex(bevel?.shadowColor ?? { r: 0, g: 0, b: 0 }), shadowOpacity: Math.round((bevel?.shadowOpacity ?? 1) * 100),
+      style: bevel?.style ?? defaultLayerEffects.bevel.style, direction: bevel?.direction ?? defaultLayerEffects.bevel.direction,
+    },
+    satin: {
+      enabled: Boolean(satin), color: satin ? colorHex(satin.color) : defaultLayerEffects.satin.color, opacity: Math.round((satin?.opacity ?? 1) * 100), angle: satin?.angle ?? defaultLayerEffects.satin.angle,
+      distance: satin?.distance?.value ?? defaultLayerEffects.satin.distance, size: satin?.size?.value ?? defaultLayerEffects.satin.size,
+      invert: Boolean(satin?.invert), blendMode: psdBlendMode(satin?.blendMode),
     },
     colorOverlay: {
       enabled: Boolean(colorOverlay),
       color: colorHex(colorOverlay?.color),
       opacity: Math.round((colorOverlay?.opacity ?? 1) * 100),
+      blendMode: psdBlendMode(colorOverlay?.blendMode),
+    },
+    gradientOverlay: {
+      enabled: Boolean(gradientOverlay), opacity: Math.round((gradientOverlay?.opacity ?? 1) * 100), angle: gradientOverlay?.angle ?? defaultLayerEffects.gradientOverlay.angle,
+      scale: gradientOverlay?.scale ?? defaultLayerEffects.gradientOverlay.scale, style: gradientOverlay?.type ?? defaultLayerEffects.gradientOverlay.style,
+      reverse: Boolean(gradientOverlay?.reverse), blendMode: psdBlendMode(gradientOverlay?.blendMode as Layer['blendMode']), name: gradient?.name ?? defaultLayerEffects.gradientOverlay.name,
+      colorStops: gradient?.colorStops.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location })) ?? defaultLayerEffects.gradientOverlay.colorStops,
+      opacityStops: gradient?.opacityStops.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location })) ?? defaultLayerEffects.gradientOverlay.opacityStops,
+    },
+    patternOverlay: {
+      enabled: Boolean(patternOverlay), opacity: Math.round((patternOverlay?.opacity ?? 1) * 100), scale: patternOverlay?.scale ?? 100,
+      blendMode: psdBlendMode(patternOverlay?.blendMode), id: patternOverlay?.pattern?.id ?? '', name: patternOverlay?.pattern?.name ?? 'Pattern',
+      phase: patternOverlay?.phase ?? { x: 0, y: 0 }, linked: patternOverlay?.align ?? true,
+    },
+    stroke: {
+      enabled: Boolean(stroke), color: stroke ? colorHex(stroke.color) : defaultLayerEffects.stroke.color, opacity: Math.round((stroke?.opacity ?? 1) * 100), size: stroke?.size?.value ?? 3,
+      position: stroke?.position ?? 'outside', blendMode: psdBlendMode(stroke?.blendMode),
     },
   }
 }
@@ -324,15 +376,13 @@ function hasUnsupportedEffects(layer: Layer) {
   const effects = layer.effects
   if (!effects || effects.disabled) return false
   return Boolean(
-    effects.innerShadow?.some(effectEnabled)
-    || effectEnabled(effects.innerGlow)
-    || effectEnabled(effects.bevel)
-    || effectEnabled(effects.satin)
-    || effects.stroke?.some(effectEnabled)
-    || effects.gradientOverlay?.some(effectEnabled)
-    || effectEnabled(effects.patternOverlay)
-    || (effects.dropShadow?.filter(effectEnabled).length ?? 0) > 1
+    (effects.dropShadow?.filter(effectEnabled).length ?? 0) > 1
+    || (effects.innerShadow?.filter(effectEnabled).length ?? 0) > 1
     || (effects.solidFill?.filter(effectEnabled).length ?? 0) > 1
+    || (effects.stroke?.filter(effectEnabled).length ?? 0) > 1
+    || (effects.gradientOverlay?.filter(effectEnabled).length ?? 0) > 1
+    || effects.stroke?.some((effect) => effectEnabled(effect) && effect.fillType && effect.fillType !== 'color')
+    || effects.gradientOverlay?.some((effect) => effectEnabled(effect) && effect.gradient?.type === 'noise')
   )
 }
 
@@ -759,10 +809,26 @@ function canvasPixels(canvas: HTMLCanvasElement) {
 
 function exportedEffects(effects: LayerEffects | null | undefined): Layer['effects'] {
   if (!effects) return undefined
+  effects = normalizeLayerEffects(effects)
   const result: NonNullable<Layer['effects']> = {}
-  if (effects.dropShadow.enabled) result.dropShadow = [{ enabled: true, color: psdColor(effects.dropShadow.color), opacity: effects.dropShadow.opacity / 100, angle: effects.dropShadow.angle, distance: { units: 'Pixels', value: effects.dropShadow.distance }, size: { units: 'Pixels', value: effects.dropShadow.blur } }]
-  if (effects.outerGlow.enabled) result.outerGlow = { enabled: true, color: psdColor(effects.outerGlow.color), opacity: effects.outerGlow.opacity / 100, size: { units: 'Pixels', value: effects.outerGlow.size } }
-  if (effects.colorOverlay.enabled) result.solidFill = [{ enabled: true, color: psdColor(effects.colorOverlay.color), opacity: effects.colorOverlay.opacity / 100 }]
+  if (effects.dropShadow.enabled) result.dropShadow = [{ enabled: true, color: psdColor(effects.dropShadow.color), opacity: effects.dropShadow.opacity / 100, angle: effects.dropShadow.angle, distance: { units: 'Pixels', value: effects.dropShadow.distance }, size: { units: 'Pixels', value: effects.dropShadow.blur }, choke: { units: 'Pixels', value: effects.dropShadow.spread }, blendMode: studioPsdBlendModes[effects.dropShadow.blendMode] }]
+  if (effects.innerShadow.enabled) result.innerShadow = [{ enabled: true, color: psdColor(effects.innerShadow.color), opacity: effects.innerShadow.opacity / 100, angle: effects.innerShadow.angle, distance: { units: 'Pixels', value: effects.innerShadow.distance }, size: { units: 'Pixels', value: effects.innerShadow.blur }, choke: { units: 'Pixels', value: effects.innerShadow.choke }, blendMode: studioPsdBlendModes[effects.innerShadow.blendMode] }]
+  if (effects.outerGlow.enabled) result.outerGlow = { enabled: true, color: psdColor(effects.outerGlow.color), opacity: effects.outerGlow.opacity / 100, size: { units: 'Pixels', value: effects.outerGlow.size }, choke: { units: 'Pixels', value: effects.outerGlow.spread }, blendMode: studioPsdBlendModes[effects.outerGlow.blendMode] }
+  if (effects.innerGlow.enabled) result.innerGlow = { enabled: true, color: psdColor(effects.innerGlow.color), opacity: effects.innerGlow.opacity / 100, size: { units: 'Pixels', value: effects.innerGlow.size }, choke: { units: 'Pixels', value: effects.innerGlow.choke }, source: effects.innerGlow.source, blendMode: studioPsdBlendModes[effects.innerGlow.blendMode] }
+  if (effects.bevel.enabled) result.bevel = { enabled: true, size: { units: 'Pixels', value: effects.bevel.size }, strength: effects.bevel.depth, angle: effects.bevel.angle, altitude: effects.bevel.altitude, highlightColor: psdColor(effects.bevel.highlightColor), highlightOpacity: effects.bevel.highlightOpacity / 100, shadowColor: psdColor(effects.bevel.shadowColor), shadowOpacity: effects.bevel.shadowOpacity / 100, style: effects.bevel.style, direction: effects.bevel.direction }
+  if (effects.satin.enabled) result.satin = { enabled: true, color: psdColor(effects.satin.color), opacity: effects.satin.opacity / 100, angle: effects.satin.angle, distance: { units: 'Pixels', value: effects.satin.distance }, size: { units: 'Pixels', value: effects.satin.size }, invert: effects.satin.invert, blendMode: studioPsdBlendModes[effects.satin.blendMode] }
+  if (effects.colorOverlay.enabled) result.solidFill = [{ enabled: true, color: psdColor(effects.colorOverlay.color), opacity: effects.colorOverlay.opacity / 100, blendMode: studioPsdBlendModes[effects.colorOverlay.blendMode] }]
+  if (effects.gradientOverlay.enabled) result.gradientOverlay = [{
+    enabled: true, opacity: effects.gradientOverlay.opacity / 100, angle: effects.gradientOverlay.angle, scale: effects.gradientOverlay.scale,
+    type: effects.gradientOverlay.style, reverse: effects.gradientOverlay.reverse, blendMode: studioPsdBlendModes[effects.gradientOverlay.blendMode],
+    gradient: {
+      type: 'solid', name: effects.gradientOverlay.name,
+      colorStops: effects.gradientOverlay.colorStops.map((stop) => ({ color: psdColor(stop.color), location: Math.round(stop.position * 4096), midpoint: 50 })),
+      opacityStops: effects.gradientOverlay.opacityStops.map((stop) => ({ opacity: stop.opacity, location: Math.round(stop.position * 4096), midpoint: 50 })),
+    },
+  }]
+  if (effects.patternOverlay.enabled) result.patternOverlay = { enabled: true, opacity: effects.patternOverlay.opacity / 100, scale: effects.patternOverlay.scale, blendMode: studioPsdBlendModes[effects.patternOverlay.blendMode], pattern: { id: effects.patternOverlay.id, name: effects.patternOverlay.name }, phase: effects.patternOverlay.phase, align: effects.patternOverlay.linked }
+  if (effects.stroke.enabled) result.stroke = [{ enabled: true, fillType: 'color', color: psdColor(effects.stroke.color), opacity: effects.stroke.opacity / 100, size: { units: 'Pixels', value: effects.stroke.size }, position: effects.stroke.position, blendMode: studioPsdBlendModes[effects.stroke.blendMode] }]
   return Object.keys(result).length ? result : undefined
 }
 
