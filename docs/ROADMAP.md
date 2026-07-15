@@ -42,7 +42,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Apply brightness, contrast, saturation, hue, grayscale, sepia, and invert layer filters natively
   - [x] Apply layer-filter blur through separable native TypeGPU passes
   - [x] Apply color-overlay layer effects natively
-  - [ ] Add native drop-shadow and outer-glow effects
+  - [x] Add native drop-shadow and outer-glow effects
   - [ ] Add GPU/Canvas pixel-parity snapshots
 - [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching

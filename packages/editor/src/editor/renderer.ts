@@ -679,13 +679,13 @@ export function renderNativeLayerPasses(
   plan.layers.forEach((node, index) => {
     const layer = node.kind === 'group' ? undefined : layers.get(node.layerId)
     const signature = node.kind === 'layer'
-      ? layer && !node.filters?.blur ? layerPassSignature(layer, assets) : null
+      ? layer && !node.filters?.blur && !node.effects?.dropShadow.enabled && !node.effects?.outerGlow.enabled ? layerPassSignature(layer, assets) : null
       : node.kind === 'adjustment'
         ? `adjustment:${node.layerId}`
         : groupPassSignature(documentState, node.groupId, assets)
     const pass = preparePass(index + 1, signature)
     if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
-      if (node.filters?.blur) {
+      if (node.filters?.blur || node.effects?.dropShadow.enabled || node.effects?.outerGlow.enabled) {
         const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
         if (clippingBase && clippingBase.type !== 'adjustment') drawClippedLayer(pass.context, pass.canvas, layer, node.maskAssetId, clippingBase, assets, resources)
         else drawMaskedLayer(pass.context, pass.canvas, layer, node.maskAssetId, assets, resources)
@@ -726,11 +726,12 @@ export function renderNativeLayerPasses(
       })
       return
     }
-    const maskSource = node.maskAssetId && !node.filters?.blur
+    const bakedSource = Boolean(node.filters?.blur || node.effects?.dropShadow.enabled || node.effects?.outerGlow.enabled)
+    const maskSource = node.maskAssetId && !bakedSource
       ? canvasImageResource(resources, assets, node.maskAssetId)?.source
       : undefined
     let clipSource: HTMLCanvasElement | undefined
-    const clippingBase = node.clipBaseLayerId && !node.filters?.blur ? layers.get(node.clipBaseLayerId) : null
+    const clippingBase = node.clipBaseLayerId && !bakedSource ? layers.get(node.clipBaseLayerId) : null
     if (clippingBase && clippingBase.type !== 'adjustment') {
       const clipPass = preparePass(clipPassIndex, maskedLayerPassSignature(clippingBase, assets))
       clipPassIndex += 1

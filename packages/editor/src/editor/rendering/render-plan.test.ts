@@ -135,13 +135,11 @@ describe('composition render plan', () => {
     expect(plan?.layers.map((node) => node.kind === 'group' ? node.groupId : node.layerId)).toEqual(['first', 'second'])
   })
 
-  it('keeps layer effects on the compatibility renderer', () => {
-    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', effects: { ...defaultLayerEffects, dropShadow: { ...defaultLayerEffects.dropShadow, enabled: true } } }
-    const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
-    const filteredChild = { ...filtered, groupId: isolated.id }
+  it('keeps shadow and glow effects in the native composition plan', () => {
+    const layer = { ...createShapeLayer('ellipse', 1), id: 'effects', effects: { ...defaultLayerEffects, dropShadow: { ...defaultLayerEffects.dropShadow, enabled: true }, outerGlow: { ...defaultLayerEffects.outerGlow, enabled: true } } }
 
-    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
-    expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [filteredChild] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [layer] })?.layers[0])
+      .toMatchObject({ kind: 'layer', layerId: 'effects', effects: { dropShadow: { enabled: true }, outerGlow: { enabled: true } } })
   })
 
   it('keeps color overlay effects in the native composition plan', () => {

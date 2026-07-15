@@ -91,6 +91,22 @@ export const gpuApplyLayerFilters = tgpu.fn(
   return std.clamp(filtered, d.vec3f(0), d.vec3f(1))
 })
 
+export const gpuTintEffect = tgpu.fn(
+  [d.f32, d.vec3f, d.f32],
+  d.vec4f,
+)((sourceAlpha, color, opacity) => {
+  'use gpu'
+  return d.vec4f(color, std.mul(sourceAlpha, opacity))
+})
+
+export function calculateEffectOffset(angle: number, distance: number, width: number, height: number) {
+  const radians = angle * Math.PI / 180
+  return {
+    x: Math.cos(radians) * distance / width,
+    y: Math.sin(radians) * distance / height,
+  }
+}
+
 export type TypeGpuFramePresenter = {
   present(source: TypeGpuImageSource): void
   dispose(): void
@@ -121,6 +137,8 @@ export type TypeGpuCompositionTextureLayer = {
   } | null
   effects?: {
     colorOverlay: { enabled: boolean; color: string; opacity: number }
+    dropShadow: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; blur: number }
+    outerGlow: { enabled: boolean; color: string; opacity: number; size: number }
   } | null
 }
 
@@ -230,6 +248,9 @@ export function createTypeGpuLayerCompositor(
   const hasColorOverlay = root.createUniform(d.u32, 0)
   const colorOverlayColor = root.createUniform(d.vec3f, d.vec3f(0))
   const colorOverlayOpacity = root.createUniform(d.f32, 0)
+  const effectColor = root.createUniform(d.vec3f, d.vec3f(0))
+  const effectOpacity = root.createUniform(d.f32, 0)
+  const effectOffset = root.createUniform(d.vec2f, d.vec2f(0))
   const adjustmentOpacity = root.createUniform(d.f32, 1)
   const adjustmentBrightness = root.createUniform(d.f32, 1)
   const adjustmentContrast = root.createUniform(d.f32, 1)
@@ -297,6 +318,14 @@ export function createTypeGpuLayerCompositor(
           adjustmentHue.$,
         )
         sourceAlpha = std.mul(adjustmentAlpha, adjustmentOpacity.$)
+      } else if (sourceKind.$ === 2) {
+        const effectUv = std.sub(uv, effectOffset.$)
+        const rawEffectSample = std.textureSample(layerView.$, sampler.$, effectUv)
+        const blurredEffectSample = std.textureSample(blurSampleViews[1].$, sampler.$, effectUv)
+        const effectSample = std.select(rawEffectSample, blurredEffectSample, blurRadius.$ > 0)
+        const tintedEffect = gpuTintEffect(effectSample.w, effectColor.$, effectOpacity.$)
+        source = tintedEffect.xyz
+        sourceAlpha = tintedEffect.w
       } else {
         if (hasColorOverlay.$ === 1) source = std.mix(source, colorOverlayColor.$, colorOverlayOpacity.$)
         if (hasLayerFilters.$ === 1) {
@@ -362,14 +391,47 @@ export function createTypeGpuLayerCompositor(
       return std.textureSample(view.$, sampler.$, uv)
     },
   }))
+  const colorVector = (value: string) => {
+    const color = Number.parseInt(value.slice(1), 16)
+    return d.vec3f(((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255)
+  }
 
   return {
     canvas,
     compose(layers) {
       compositionTextures[0].clear()
-      layers.forEach((layer, index) => {
-        const backdropIndex = index % 2
+      let step = 0
+      const drawBlendPass = () => {
+        const backdropIndex = step % 2
         const outputIndex = 1 - backdropIndex
+        blendPipelines[backdropIndex].withColorAttachment({
+          view: compositionRenderViews[outputIndex],
+          loadOp: 'clear',
+        }).draw(3)
+        step += 1
+      }
+      const blurLayerSource = (radius: number) => {
+        blurRadius.write(radius)
+        if (radius <= 0) return
+        layerHorizontalBlurPipeline.withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
+        verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
+      }
+      const drawEffect = (color: string, opacity: number, radius: number, offset = { x: 0, y: 0 }) => {
+        blurLayerSource(radius)
+        sourceKind.write(2)
+        hasLayerFilters.write(0)
+        hasColorOverlay.write(0)
+        hasMask.write(0)
+        hasClip.write(0)
+        effectColor.write(colorVector(color))
+        effectOpacity.write(opacity)
+        effectOffset.write(d.vec2f(offset.x, offset.y))
+        blendMode.write(typeGpuBlendModeCodes.normal)
+        drawBlendPass()
+      }
+
+      layers.forEach((layer) => {
+        const backdropIndex = step % 2
         if (layer.kind === 'adjustment') {
           sourceKind.write(1)
           hasLayerFilters.write(0)
@@ -387,6 +449,14 @@ export function createTypeGpuLayerCompositor(
             verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
           }
         } else {
+          layerTexture.write(layer.source)
+          const glow = layer.effects?.outerGlow
+          if (glow?.enabled) drawEffect(glow.color, glow.opacity / 100, glow.size)
+          const shadow = layer.effects?.dropShadow
+          if (shadow?.enabled) {
+            const offset = calculateEffectOffset(shadow.angle, shadow.distance, width, height)
+            drawEffect(shadow.color, shadow.opacity / 100, shadow.blur, offset)
+          }
           sourceKind.write(0)
           sourceOpacity.write(layer.opacity ?? 1)
           hasLayerFilters.write(layer.filters ? 1 : 0)
@@ -403,27 +473,21 @@ export function createTypeGpuLayerCompositor(
           const overlay = layer.effects?.colorOverlay
           hasColorOverlay.write(overlay?.enabled ? 1 : 0)
           if (overlay?.enabled) {
-            const color = Number.parseInt(overlay.color.slice(1), 16)
-            colorOverlayColor.write(d.vec3f(((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255))
+            colorOverlayColor.write(colorVector(overlay.color))
             colorOverlayOpacity.write(overlay.opacity / 100)
           }
-          layerTexture.write(layer.source)
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
           hasMask.write(layer.maskSource ? 1 : 0)
           hasClip.write(layer.clipSource ? 1 : 0)
           if ((layer.filters?.blur ?? 0) > 0) {
-            layerHorizontalBlurPipeline.withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
-            verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
+            blurLayerSource(layer.filters?.blur ?? 0)
           }
         }
         blendMode.write(typeGpuBlendModeCodes[layer.blendMode])
-        blendPipelines[backdropIndex].withColorAttachment({
-          view: compositionRenderViews[outputIndex],
-          loadOp: 'clear',
-        }).draw(3)
+        drawBlendPass()
       })
-      const finalIndex = layers.length === 0 ? 0 : layers.length % 2
+      const finalIndex = step % 2
       presentPipelines[finalIndex].withColorAttachment({ view: context, loadOp: 'clear' }).draw(3)
     },
     dispose() {
@@ -448,6 +512,9 @@ export function createTypeGpuLayerCompositor(
       hasColorOverlay.buffer.destroy()
       colorOverlayColor.buffer.destroy()
       colorOverlayOpacity.buffer.destroy()
+      effectColor.buffer.destroy()
+      effectOpacity.buffer.destroy()
+      effectOffset.buffer.destroy()
       adjustmentOpacity.buffer.destroy()
       adjustmentBrightness.buffer.destroy()
       adjustmentContrast.buffer.destroy()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { d } from 'typegpu'
-import { gpuApplyAdjustment, gpuApplyLayerFilters } from './typegpu-compositor'
+import { calculateEffectOffset, gpuApplyAdjustment, gpuApplyLayerFilters, gpuTintEffect } from './typegpu-compositor'
 
 describe('TypeGPU adjustment shader', () => {
   it('keeps neutral adjustment parameters pixel-identical', () => {
@@ -36,5 +36,23 @@ describe('TypeGPU layer filter shader', () => {
     expect(filtered.x).toBeCloseTo(invertedLuminance, 5)
     expect(filtered.y).toBeCloseTo(invertedLuminance, 5)
     expect(filtered.z).toBeCloseTo(invertedLuminance, 5)
+  })
+})
+
+describe('TypeGPU layer effect shader', () => {
+  it('tints the sampled alpha with the configured effect color and opacity', () => {
+    const effect = gpuTintEffect(0.8, d.vec3f(0.25, 0.5, 0.75), 0.5)
+
+    expect(effect.x).toBeCloseTo(0.25, 6)
+    expect(effect.y).toBeCloseTo(0.5, 6)
+    expect(effect.z).toBeCloseTo(0.75, 6)
+    expect(effect.w).toBeCloseTo(0.4, 6)
+  })
+
+  it('normalizes directional shadow offsets into texture coordinates', () => {
+    const offset = calculateEffectOffset(90, 20, 200, 100)
+
+    expect(offset.x).toBeCloseTo(0, 6)
+    expect(offset.y).toBeCloseTo(0.2, 6)
   })
 })
