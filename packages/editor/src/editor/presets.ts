@@ -134,6 +134,7 @@ export function createLayerGroup(index: number): LayerGroup {
     locked: false,
     opacity: 100,
     blendMode: 'normal',
+    passThrough: false,
     collapsed: false,
   }
 }

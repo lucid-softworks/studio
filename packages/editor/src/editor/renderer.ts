@@ -1,4 +1,5 @@
 import { getDocumentSize } from './presets'
+import { flattenStackLayers, getStackChildren, layerIsLocked, layerIsVisible, type StackItem } from './stack'
 import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
@@ -340,17 +341,53 @@ function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanv
   context.restore()
 }
 
-function findClippingBase(layers: EditorLayer[], index: number) {
+const groupCompositionCanvases: HTMLCanvasElement[] = []
+
+function clippingBaseFor(items: StackItem[], index: number) {
   for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
-    const candidate = layers[candidateIndex]
-    if (candidate.type === 'adjustment' || candidate.clipToBelow) continue
-    return candidate
+    const item = items[candidateIndex]
+    if (item.type === 'group') return null
+    if (item.layer.type === 'adjustment' || item.layer.clipToBelow) continue
+    return item.layer
   }
   return null
 }
 
-function drawLayerStack(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layers: EditorLayer[], assets: AssetMap) {
-  for (const [index, layer] of layers.entries()) {
+function drawDocumentStack(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  documentState: EditorDocument,
+  assets: AssetMap,
+  parentId: string | null = null,
+  depth = 0,
+  seen = new Set<string>(),
+) {
+  const items = getStackChildren(documentState, parentId)
+  for (const [index, item] of items.entries()) {
+    if (item.type === 'group') {
+      const group = item.group
+      if (!group.visible || seen.has(group.id)) continue
+      const nextSeen = new Set(seen)
+      nextSeen.add(group.id)
+      if (group.passThrough && group.opacity === 100) {
+        drawDocumentStack(context, canvas, documentState, assets, group.id, depth, nextSeen)
+        continue
+      }
+      const groupCanvas = prepareScratchCanvas(groupCompositionCanvases[depth] ?? null, canvas)
+      groupCompositionCanvases[depth] = groupCanvas
+      const groupContext = groupCanvas.getContext('2d')
+      if (!groupContext) continue
+      groupContext.clearRect(0, 0, canvas.width, canvas.height)
+      drawDocumentStack(groupContext, groupCanvas, documentState, assets, group.id, depth + 1, nextSeen)
+      context.save()
+      context.globalAlpha = group.opacity / 100
+      context.globalCompositeOperation = group.blendMode === 'normal' ? 'source-over' : group.blendMode
+      context.drawImage(groupCanvas, 0, 0)
+      context.restore()
+      continue
+    }
+
+    const layer = item.layer
     if (!layer.visible) continue
     if (layer.type === 'adjustment') {
       drawAdjustmentLayer(context, canvas, layer)
@@ -359,47 +396,9 @@ function drawLayerStack(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
     context.save()
     context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
     if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
-    const clippingBase = layer.clipToBelow ? findClippingBase(layers, index) : null
+    const clippingBase = layer.clipToBelow ? clippingBaseFor(items, index) : null
     if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
-    else if (clippingBase) { /* Hidden clipping bases hide their complete clipping group. */ }
-    else drawMaskedLayer(context, canvas, layer, assets)
-    context.restore()
-  }
-}
-
-let groupCompositionCanvas: HTMLCanvasElement | null = null
-
-function drawDocumentLayers(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, documentState: EditorDocument, assets: AssetMap) {
-  const groups = new Map(documentState.groups.map((group) => [group.id, group]))
-  const renderedGroups = new Set<string>()
-  for (const [index, layer] of documentState.layers.entries()) {
-    const group = layer.groupId ? groups.get(layer.groupId) : null
-    if (!group) {
-      if (!layer.visible) continue
-      if (layer.type === 'adjustment') drawAdjustmentLayer(context, canvas, layer)
-      else {
-        context.save()
-        context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
-        if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
-        const clippingBase = layer.clipToBelow ? findClippingBase(documentState.layers, index) : null
-        if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
-        else if (!clippingBase) drawMaskedLayer(context, canvas, layer, assets)
-        context.restore()
-      }
-      continue
-    }
-    if (renderedGroups.has(group.id)) continue
-    renderedGroups.add(group.id)
-    if (!group.visible) continue
-    groupCompositionCanvas = prepareScratchCanvas(groupCompositionCanvas, canvas)
-    const groupContext = groupCompositionCanvas.getContext('2d')
-    if (!groupContext) continue
-    groupContext.clearRect(0, 0, canvas.width, canvas.height)
-    drawLayerStack(groupContext, groupCompositionCanvas, documentState.layers.filter((candidate) => candidate.groupId === group.id), assets)
-    context.save()
-    context.globalAlpha = group.opacity / 100
-    context.globalCompositeOperation = group.blendMode === 'normal' ? 'source-over' : group.blendMode
-    context.drawImage(groupCompositionCanvas, 0, 0)
+    else if (!clippingBase) drawMaskedLayer(context, canvas, layer, assets)
     context.restore()
   }
 }
@@ -477,11 +476,8 @@ export function findLayerAtPoint(
   assets: AssetMap,
   point: Position,
 ) {
-  const groups = new Map(document.groups.map((group) => [group.id, group]))
-  return document.layers.findLast((layer) => {
-    if (!layer.visible || layer.locked) return false
-    const group = layer.groupId ? groups.get(layer.groupId) : null
-    if (group && (!group.visible || group.locked)) return false
+  return flattenStackLayers(document).findLast((layer) => {
+    if (!layerIsVisible(document, layer) || layerIsLocked(document, layer)) return false
     const bounds = getLayerBounds(context, canvas, layer, assets)
     return bounds ? pointInsideRotatedBounds(point, bounds) : false
   }) ?? null
@@ -527,7 +523,7 @@ export function renderComposition(
   drawBackground(context, canvas.width, canvas.height, document, assets)
   drawPattern(context, canvas.width, canvas.height, document)
 
-  drawDocumentLayers(context, canvas, document, assets)
+  drawDocumentStack(context, canvas, document, assets)
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)

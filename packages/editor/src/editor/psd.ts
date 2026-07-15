@@ -1,7 +1,7 @@
 import { initializeCanvas, readPsd, type Layer } from 'ag-psd'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createId, createRasterLayer, initialDocument } from './presets'
-import type { AssetMap, EditorDocument, RasterLayer } from './types'
+import type { AssetMap, BlendMode, EditorDocument, LayerGroup, RasterLayer } from './types'
 
 let initialized = false
 
@@ -16,14 +16,11 @@ function initializeBrowserCanvas() {
   initialized = true
 }
 
-type FlatLayer = { layer: Layer; path: string; hidden: boolean }
-
-function flattenLayers(layers: Layer[], parent = '', parentHidden = false): FlatLayer[] {
-  return layers.flatMap((layer, index) => {
-    const name = layer.name?.trim() || `Layer ${index + 1}`
+export function psdLayerNamesInEditorOrder(layers: Layer[], parent = ''): string[] {
+  return [...layers].reverse().flatMap((layer, reverseIndex) => {
+    const name = layer.name?.trim() || `Layer ${layers.length - reverseIndex}`
     const path = parent ? `${parent} / ${name}` : name
-    const hidden = parentHidden || Boolean(layer.hidden)
-    return layer.children?.length ? flattenLayers(layer.children, path, hidden) : [{ layer, path, hidden }]
+    return layer.children ? psdLayerNamesInEditorOrder(layer.children, path) : [path]
   })
 }
 
@@ -47,6 +44,15 @@ function layerCanvas(layer: Layer) {
   return layer.canvas ?? null
 }
 
+const supportedBlendModes = new Set<BlendMode>([
+  'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn',
+  'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity',
+])
+
+function blendMode(value: Layer['blendMode']): BlendMode {
+  return value && supportedBlendModes.has(value as BlendMode) ? value as BlendMode : 'normal'
+}
+
 export async function importPsdFile(file: File): Promise<{ document: EditorDocument; assets: AssetMap }> {
   initializeBrowserCanvas()
   let psd
@@ -58,25 +64,54 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
 
   const assets: AssetMap = {}
   const layers: RasterLayer[] = []
-  const flat = flattenLayers(psd.children ?? []).reverse()
+  const groups: LayerGroup[] = []
 
-  for (const { layer, path, hidden } of flat) {
-    const canvas = layerCanvas(layer)
-    if (!canvas || canvas.width === 0 || canvas.height === 0) continue
-    const assetId = createId()
-    assets[assetId] = await sourceFromCanvas(canvas, path)
-    const left = layer.left ?? 0
-    const top = layer.top ?? 0
-    const centerX = left + canvas.width / 2
-    const centerY = top + canvas.height / 2
-    const raster = createRasterLayer(assetId, path, canvas.width, canvas.height, {
-      x: (centerX - psd.width / 2) / psd.width,
-      y: (centerY - psd.height / 2) / psd.height,
-    })
-    raster.visible = !hidden
-    raster.opacity = Math.round((layer.opacity ?? 1) * 100)
-    layers.push(raster)
+  const importChildren = async (children: Layer[], parentId: string | null, parentPath = '') => {
+    const editorOrder = [...children].reverse()
+    for (const [stackOrder, layer] of editorOrder.entries()) {
+      const name = layer.name?.trim() || `Layer ${children.length - stackOrder}`
+      const path = parentPath ? `${parentPath} / ${name}` : name
+      if (layer.children) {
+        const id = createId()
+        groups.push({
+          id,
+          name,
+          visible: !layer.hidden,
+          locked: Boolean(layer.protected?.position || layer.protected?.composite),
+          opacity: Math.round((layer.opacity ?? 1) * 100),
+          blendMode: blendMode(layer.blendMode),
+          passThrough: layer.blendMode === 'pass through',
+          collapsed: layer.opened === false,
+          parentId,
+          stackOrder,
+        })
+        await importChildren(layer.children, id, path)
+        continue
+      }
+      const canvas = layerCanvas(layer)
+      if (!canvas || canvas.width === 0 || canvas.height === 0) continue
+      const assetId = createId()
+      assets[assetId] = await sourceFromCanvas(canvas, path)
+      const left = layer.left ?? 0
+      const top = layer.top ?? 0
+      const centerX = left + canvas.width / 2
+      const centerY = top + canvas.height / 2
+      const raster = createRasterLayer(assetId, name, canvas.width, canvas.height, {
+        x: (centerX - psd.width / 2) / psd.width,
+        y: (centerY - psd.height / 2) / psd.height,
+      })
+      raster.visible = !layer.hidden
+      raster.locked = Boolean(layer.protected?.position || layer.protected?.composite)
+      raster.opacity = Math.round((layer.opacity ?? 1) * 100)
+      raster.blendMode = blendMode(layer.blendMode)
+      raster.clipToBelow = Boolean(layer.clipping)
+      raster.groupId = parentId
+      raster.stackOrder = stackOrder
+      layers.push(raster)
+    }
   }
+
+  await importChildren(psd.children ?? [], null)
 
   const composite = layerCanvas(psd)
   if (layers.length === 0 && composite) {
@@ -94,6 +129,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       canvasPreset: 'custom',
       canvasSize: { width: psd.width, height: psd.height },
       background: { ...initialDocument.background, kind: 'transparent' },
+      groups,
       layers,
       selectedLayerId,
       selectedLayerIds: selectedLayerId ? [selectedLayerId] : [],

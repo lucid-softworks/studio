@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { CanvasStage } from './components/CanvasStage'
 import { downloadBlob } from './editor/download'
 import { DownloadIcon, RedoIcon, UndoIcon, UploadIcon } from './components/Icons'
@@ -9,6 +9,7 @@ import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, crea
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { getLayerBounds, renderComposition } from './editor/renderer'
+import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit } from './editor/raster'
 import type { AssetMap, EditorDispatch } from './editor/types'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
@@ -130,8 +131,6 @@ function App({ onExit }: AppProps) {
 
   const selectedLayers = document.layers.filter((layer) => document.selectedLayerIds.includes(layer.id))
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
-  const groups = useMemo(() => new Map(document.groups.map((group) => [group.id, group])), [document.groups])
-  const groupCount = document.groups.length
 
   useEffect(() => {
     if (!editingMaskLayerId) return
@@ -201,17 +200,29 @@ function App({ onExit }: AppProps) {
       }
       if (command && event.key.toLowerCase() === 'j' && selectedLayers.length > 0) {
         event.preventDefault()
-        const duplicatedGroup = selectedGroup ? createLayerGroup(groupCount) : null
-        if (duplicatedGroup && selectedGroup) {
-          duplicatedGroup.name = `${selectedGroup.name} copy`
-          duplicatedGroup.opacity = selectedGroup.opacity
-          duplicatedGroup.blendMode = selectedGroup.blendMode
-          dispatch({ type: 'add-group', group: duplicatedGroup, layerIds: [] }, { groupKey: 'duplicate-selection' })
+        const groupCopies = new Map<string, string>()
+        const sourceGroups = selectedGroup
+          ? [selectedGroup, ...document.groups.filter((group) => getDescendantGroupIds(document, selectedGroup.id).has(group.id))]
+          : []
+        for (const group of sourceGroups) groupCopies.set(group.id, createId())
+        const duplicatedGroupId = selectedGroup ? groupCopies.get(selectedGroup.id) ?? null : null
+        for (const group of sourceGroups) {
+          dispatch({
+            type: 'add-group',
+            group: {
+              ...group,
+              id: groupCopies.get(group.id)!,
+              name: group.id === selectedGroup?.id ? `${group.name} copy` : group.name,
+              parentId: group.id === selectedGroup?.id ? group.parentId ?? null : groupCopies.get(group.parentId ?? '') ?? null,
+              stackOrder: undefined,
+            },
+            layerIds: [],
+          }, { groupKey: 'duplicate-selection' })
         }
         const copiedAssets: AssetMap = {}
         for (const layer of selectedLayers) {
           const copy = duplicateLayer(layer)
-          if (duplicatedGroup) copy.groupId = duplicatedGroup.id
+          if (duplicatedGroupId) copy.groupId = groupCopies.get(layer.groupId ?? '') ?? duplicatedGroupId
           if (layer.type === 'raster' && copy.type === 'raster') {
             const source = assetsRef.current[layer.assetId]
             if (source) {
@@ -231,7 +242,7 @@ function App({ onExit }: AppProps) {
           dispatch({ type: 'add-layer', layer: copy }, { groupKey: 'duplicate-selection' })
         }
         if (Object.keys(copiedAssets).length) setAssets((current) => ({ ...current, ...copiedAssets }))
-        if (duplicatedGroup) dispatch({ type: 'select-group', id: duplicatedGroup.id }, { record: false })
+        if (duplicatedGroupId) dispatch({ type: 'select-group', id: duplicatedGroupId }, { record: false })
         endHistoryGroup()
         return
       }
@@ -239,7 +250,7 @@ function App({ onExit }: AppProps) {
         dispatch({ type: 'select-layer', id: null }, { record: false })
         return
       }
-      if ((event.key === 'Backspace' || event.key === 'Delete') && selectedGroup && !selectedGroup.locked) {
+      if ((event.key === 'Backspace' || event.key === 'Delete') && selectedGroup && !groupIsLocked(document, selectedGroup)) {
         event.preventDefault()
         dispatch({ type: 'remove-group', id: selectedGroup.id, deleteLayers: true })
         return
@@ -249,14 +260,14 @@ function App({ onExit }: AppProps) {
         dispatch({ type: 'remove-layers', ids: selectedLayers.filter((layer) => !layer.locked).map((layer) => layer.id) })
         return
       }
-      if (selectedLayers.some((layer) => !layer.locked && !(layer.groupId && groups.get(layer.groupId)?.locked)) && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      if (selectedLayers.some((layer) => !layerIsLocked(document, layer)) && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
         event.preventDefault()
         const step = event.shiftKey ? 0.02 : 0.005
         const delta = {
           x: event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
           y: event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0,
         }
-        dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => !layer.locked && !(layer.groupId && groups.get(layer.groupId)?.locked)).map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + delta.x, y: layer.position.y + delta.y } } })) }, { groupKey: 'nudge-selection' })
+        dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => !layerIsLocked(document, layer)).map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + delta.x, y: layer.position.y + delta.y } } })) }, { groupKey: 'nudge-selection' })
       }
     }
     const onKeyUp = (event: KeyboardEvent) => {
@@ -268,7 +279,7 @@ function App({ onExit }: AppProps) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [dispatch, endHistoryGroup, groupCount, groups, performRedo, performUndo, selectedGroup, selectedLayers])
+  }, [dispatch, document, endHistoryGroup, performRedo, performUndo, selectedGroup, selectedLayers])
 
   useEffect(() => () => {
     for (const asset of Object.values(assetsRef.current)) {
@@ -291,6 +302,7 @@ function App({ onExit }: AppProps) {
 
   const addLayerGroup = () => {
     const group = createLayerGroup(document.groups.length)
+    if (selectedGroup) group.parentId = selectedGroup.id
     dispatch({ type: 'add-group', group, layerIds: selectedGroup ? [] : document.selectedLayerIds })
   }
 
@@ -324,7 +336,7 @@ function App({ onExit }: AppProps) {
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !context || selectedLayers.length < 2) return
-    const entries = selectedLayers.filter((layer) => !layer.locked).flatMap((layer) => {
+    const entries = selectedLayers.filter((layer) => !layerIsLocked(document, layer)).flatMap((layer) => {
       const bounds = getLayerBounds(context, canvas, layer, assets)
       return bounds ? [{ layer, bounds }] : []
     })

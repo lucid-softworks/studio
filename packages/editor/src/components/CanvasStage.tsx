@@ -1,6 +1,7 @@
 import { useEffect, useState, type RefObject } from 'react'
 import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
+import { layerIsLocked } from '../editor/stack'
 import type { AssetMap, EditorDispatch, EditorDocument } from '../editor/types'
 import { extractImageData, type RasterEdit } from '../editor/raster'
 import { applySelectionShape, selectionAlphaAt, type SelectionMode, type SelectionState } from '../editor/selection'
@@ -39,7 +40,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const preset = getDocumentSize(document)
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
-  const selectedLayerGroup = selected?.groupId ? document.groups.find((group) => group.id === selected.groupId) : null
+  const selectedLocked = selected ? layerIsLocked(document, selected) : false
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select'
 
@@ -50,7 +51,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   useEffect(() => {
     const clearSelectedPixels = () => {
       if (!selection?.bounds) return false
-      if ((editingMaskLayer ?? selected)?.locked || selectedLayerGroup?.locked) return false
+      if ((editingMaskLayer ?? selected)?.locked || selectedLocked) return false
       const canvas = canvasRef.current
       const context = canvas?.getContext('2d')
       if (!canvas || !context) return false
@@ -125,7 +126,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLayerGroup?.locked, selection])
+  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLocked, selection])
 
   return (
     <section
@@ -208,7 +209,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               className={`block h-auto w-auto max-h-[calc(100vh-205px)] max-w-full rounded-sm shadow-[0_28px_80px_rgba(0,0,0,0.5)] transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}
             />
             <SelectionOverlay canvasRef={canvasRef} enabled={selectionTool} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
-            {(tool === 'brush' || tool === 'eraser') && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLayerGroup?.locked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {(tool === 'brush' || tool === 'eraser') && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
 
           </div>

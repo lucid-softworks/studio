@@ -1,4 +1,5 @@
 import { backgroundPresets, canvasPresets } from '../editor/presets'
+import { getDescendantLayers, getStackChildren } from '../editor/stack'
 import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
@@ -73,13 +74,14 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
               <span className="mb-2 block text-[11px] font-medium text-zinc-500">Blend mode</span>
               <select aria-label="Group blend mode" value={selectedGroup.blendMode} onChange={(event) => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { blendMode: event.target.value as BlendMode } })} className={fieldClass}>{blendModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select>
             </label>
+            <button type="button" aria-pressed={selectedGroup.passThrough === true} onClick={() => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { passThrough: !selectedGroup.passThrough } })} className={`mt-3 w-full rounded-lg border px-3 py-2 text-left text-xs ${selectedGroup.passThrough ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-500'}`}><span className="block font-medium">{selectedGroup.passThrough ? 'Pass through' : 'Isolated group'}</span><span className="mt-0.5 block text-[9px] text-zinc-600">{selectedGroup.passThrough ? 'Child blend modes interact with layers below.' : 'Children composite before the group blend mode.'}</span></button>
             <RangeControl label="Group opacity" value={selectedGroup.opacity} min={0} max={100} suffix="%" onChange={(value) => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { opacity: value } }, { groupKey: `group-opacity-${selectedGroup.id}` })} onChangeEnd={endHistoryGroup} />
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { visible: !selectedGroup.visible } })} className={`rounded-lg border px-3 py-2 text-xs ${selectedGroup.visible ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-600'}`}>{selectedGroup.visible ? 'Visible' : 'Hidden'}</button>
               <button type="button" onClick={() => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { locked: !selectedGroup.locked } })} className={`rounded-lg border px-3 py-2 text-xs ${selectedGroup.locked ? 'border-amber-300/20 bg-amber-300/[0.06] text-amber-100' : 'border-white/[0.08] text-zinc-600'}`}>{selectedGroup.locked ? 'Locked' : 'Unlocked'}</button>
             </div>
           </ControlSection>
-          <ControlSection title="Folder contents"><p className="text-xs leading-6 text-zinc-500">{document.layers.filter((layer) => layer.groupId === selectedGroup.id).length} layers are composited together before the folder opacity and blend mode are applied.</p></ControlSection>
+          <ControlSection title="Folder contents"><p className="text-xs leading-6 text-zinc-500">{getDescendantLayers(document, selectedGroup.id).length} layers and {getStackChildren(document, selectedGroup.id).filter((item) => item.type === 'group').length} nested folders are composited together before the folder opacity and blend mode are applied.</p></ControlSection>
           <button type="button" onClick={() => dispatch({ type: 'select-group', id: null }, { record: false })} className="mx-5 my-4 rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Back to document settings</button>
         </>
       ) : !selected ? (

@@ -1,3 +1,5 @@
+import { useState, type DragEvent } from 'react'
+import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
 import type { EditorDispatch, EditorDocument, EditorLayer, LayerGroup } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
 
@@ -13,6 +15,8 @@ type LayersPanelProps = {
   onRemoveMask: (layerId: string) => void
 }
 
+type DraggedItem = { type: 'layer' | 'group'; id: string }
+
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
 }
@@ -20,101 +24,109 @@ function FolderIcon({ open = false }: { open?: boolean }) {
 function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   if (layer.type === 'image' || layer.type === 'raster') return <ImageIcon className="size-3.5" />
   if (layer.type === 'text') return <TextIcon className="size-3.5" />
-  if (layer.type === 'adjustment') return <CircleIcon className="size-3.5" />
+  if (layer.type === 'adjustment') return <span className="text-xs">◐</span>
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
 export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask }: LayersPanelProps) {
+  const [dragging, setDragging] = useState<DraggedItem | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
-  const groups = new Map(document.groups.map((group) => [group.id, group]))
-  const seenGroups = new Set<string>()
-  const stack: Array<{ kind: 'layer'; layer: EditorLayer } | { kind: 'group'; group: LayerGroup; children: EditorLayer[] }> = []
-  for (const layer of [...document.layers].reverse()) {
-    const group = layer.groupId ? groups.get(layer.groupId) : null
-    if (!group) {
-      stack.push({ kind: 'layer', layer })
-      continue
-    }
-    if (seenGroups.has(group.id)) continue
-    seenGroups.add(group.id)
-    stack.push({ kind: 'group', group, children: [...document.layers].reverse().filter((candidate) => candidate.groupId === group.id) })
-  }
-  for (const group of document.groups) if (!seenGroups.has(group.id)) stack.push({ kind: 'group', group, children: [] })
 
-  const layerRow = (layer: EditorLayer, nested = false) => {
+  const startDrag = (event: DragEvent, item: DraggedItem) => {
+    event.stopPropagation()
+    setDragging(item)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', `${item.type}:${item.id}`)
+  }
+
+  const drop = (event: DragEvent, parentId: string | null, beforeId?: string | null) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (dragging) dispatch({ type: 'move-stack-item', itemType: dragging.type, id: dragging.id, parentId, beforeId })
+    setDragging(null)
+    setDropTarget(null)
+  }
+
+  const layerRow = (layer: EditorLayer, depth: number) => {
     const selected = document.selectedLayerIds.includes(layer.id) && !document.selectedGroupId
     const active = layer.id === document.selectedLayerId
-    const actualIndex = document.layers.findIndex((candidate) => candidate.id === layer.id)
+    const inheritedLock = layerIsLocked(document, layer) && !layer.locked
     return (
-      <div key={layer.id} className={`group flex w-full items-center rounded-lg border p-1 transition ${nested ? 'ml-4 w-[calc(100%-1rem)]' : ''} ${selected ? 'border-violet-400/25 bg-violet-400/10 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}`}>
+      <div
+        key={layer.id}
+        draggable
+        onDragStart={(event) => startDrag(event, { type: 'layer', id: layer.id })}
+        onDragEnd={() => { setDragging(null); setDropTarget(null) }}
+        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDropTarget(`layer:${layer.id}`) }}
+        onDrop={(event) => drop(event, layer.groupId ?? null, layer.id)}
+        style={{ marginLeft: depth * 14 }}
+        className={`group flex w-[calc(100%-var(--indent,0px))] items-center rounded-lg border p-1 transition ${dropTarget === `layer:${layer.id}` ? 'border-violet-300/60 bg-violet-400/10' : selected ? 'border-violet-400/25 bg-violet-400/10 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}`}
+      >
         <button type="button" onClick={(event) => dispatch({ type: 'select-layer', id: layer.id, mode: event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace' }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-violet-400">
           <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${active ? 'bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/30' : selected ? 'bg-violet-400/10 text-violet-400' : 'bg-white/[0.04]'}`}><LayerTypeIcon layer={layer} /></span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-xs font-medium">{layer.clipToBelow && <span className="mr-1 text-violet-300/60">↳</span>}{layer.name}</span>
-            <span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{layer.type}</span>
-          </span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{layer.clipToBelow && <span className="mr-1 text-violet-300/60">↳</span>}{layer.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{layer.type}</span></span>
           {!layer.visible && <span className="size-1.5 rounded-full bg-zinc-700" />}
         </button>
         <div className={`flex shrink-0 items-center ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
-          {layer.maskAssetId && <button type="button" aria-label={editingMaskLayerId === layer.id ? 'Edit layer pixels' : 'Edit layer mask'} title={editingMaskLayerId === layer.id ? 'Return to layer pixels' : 'Edit layer mask'} onClick={() => onEditMask(layer.id)} className={`flex size-6 items-center justify-center rounded text-[8px] font-bold ${editingMaskLayerId === layer.id ? 'bg-cyan-400/15 text-cyan-200 ring-1 ring-cyan-300/25' : 'text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300'}`}>M</button>}
-          <button type="button" aria-label={layer.visible ? 'Hide layer' : 'Show layer'} title={layer.visible ? 'Hide layer' : 'Show layer'} onClick={() => dispatch({ type: 'update-layer', id: layer.id, patch: { visible: !layer.visible } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300"><EyeIcon className="size-3.5" closed={!layer.visible} /></button>
-          <button type="button" aria-label={layer.locked ? 'Unlock layer' : 'Lock layer'} title={layer.locked ? 'Unlock layer' : 'Lock layer'} onClick={() => dispatch({ type: 'update-layer', id: layer.id, patch: { locked: !layer.locked } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300"><LockIcon className="size-3.5" locked={layer.locked} /></button>
-          {active && <>
-            <button type="button" aria-label="Move layer up" disabled={actualIndex === document.layers.length - 1} onClick={() => dispatch({ type: 'move-layer', id: layer.id, direction: 'up' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300 disabled:opacity-20">↑</button>
-            <button type="button" aria-label="Move layer down" disabled={actualIndex === 0} onClick={() => dispatch({ type: 'move-layer', id: layer.id, direction: 'down' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-300 disabled:opacity-20">↓</button>
-          </>}
+          {layer.maskAssetId && <button type="button" aria-label={editingMaskLayerId === layer.id ? 'Edit layer pixels' : 'Edit layer mask'} onClick={() => onEditMask(layer.id)} className={`flex size-6 items-center justify-center rounded text-[8px] font-bold ${editingMaskLayerId === layer.id ? 'bg-cyan-400/15 text-cyan-200' : 'text-zinc-600 hover:text-zinc-300'}`}>M</button>}
+          <button type="button" aria-label={layer.visible ? 'Hide layer' : 'Show layer'} onClick={() => dispatch({ type: 'update-layer', id: layer.id, patch: { visible: !layer.visible } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-zinc-300"><EyeIcon className="size-3.5" closed={!layer.visible} /></button>
+          <button type="button" aria-label={layer.locked ? 'Unlock layer' : inheritedLock ? 'Locked by parent group' : 'Lock layer'} disabled={inheritedLock} onClick={() => dispatch({ type: 'update-layer', id: layer.id, patch: { locked: !layer.locked } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-zinc-300 disabled:text-amber-700"><LockIcon className="size-3.5" locked={layer.locked || inheritedLock} /></button>
+          {active && <><button type="button" aria-label="Move layer up" onClick={() => dispatch({ type: 'move-layer', id: layer.id, direction: 'up' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↑</button><button type="button" aria-label="Move layer down" onClick={() => dispatch({ type: 'move-layer', id: layer.id, direction: 'down' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↓</button>{layer.groupId && <button type="button" aria-label="Move layer out of group" onClick={() => dispatch({ type: 'move-stack-item', itemType: 'layer', id: layer.id, parentId: document.groups.find((group) => group.id === layer.groupId)?.parentId ?? null })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">←</button>}</>}
         </div>
       </div>
     )
   }
 
-  const groupRow = (group: LayerGroup, children: EditorLayer[]) => {
+  const groupRow = (group: LayerGroup, depth: number) => {
     const selected = group.id === document.selectedGroupId
+    const children = getStackChildren(document, group.id)
+    const descendantCount = getDescendantLayers(document, group.id).length
+    const inheritedLock = groupIsLocked(document, group) && !group.locked
     return (
-      <div key={group.id} className={`rounded-lg border transition ${selected ? 'border-cyan-300/20 bg-cyan-300/[0.06]' : 'border-white/[0.04] bg-black/10'}`}>
-        <div className="group flex items-center p-1">
+      <div key={group.id} style={{ marginLeft: depth * 14 }} className={`rounded-lg border transition ${dropTarget === `group:${group.id}` ? 'border-cyan-200/60 bg-cyan-300/10' : selected ? 'border-cyan-300/20 bg-cyan-300/[0.06]' : 'border-white/[0.04] bg-black/10'}`}>
+        <div
+          className="group flex items-center p-1"
+          draggable
+          onDragStart={(event) => startDrag(event, { type: 'group', id: group.id })}
+          onDragEnd={() => { setDragging(null); setDropTarget(null) }}
+          onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDropTarget(`group:${group.id}`) }}
+          onDrop={(event) => drop(event, group.id)}
+        >
           <button type="button" aria-label={group.collapsed ? 'Expand group' : 'Collapse group'} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { collapsed: !group.collapsed } }, { record: false })} className="flex size-6 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">{group.collapsed ? '›' : '⌄'}</button>
           <button type="button" onClick={() => dispatch({ type: 'select-group', id: group.id }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-cyan-300">
             <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-cyan-300/15 text-cyan-200 ring-1 ring-cyan-200/20' : 'bg-white/[0.04] text-zinc-600'}`}><FolderIcon open={!group.collapsed} /></span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-zinc-300">{group.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{children.length} layer{children.length === 1 ? '' : 's'}</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-zinc-300">{group.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{descendantCount} layer{descendantCount === 1 ? '' : 's'} · {children.filter((item) => item.type === 'group').length} folder{children.filter((item) => item.type === 'group').length === 1 ? '' : 's'}</span></span>
           </button>
           <div className={`flex items-center ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>
             <button type="button" aria-label={group.visible ? 'Hide group' : 'Show group'} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { visible: !group.visible } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-zinc-300"><EyeIcon className="size-3.5" closed={!group.visible} /></button>
-            <button type="button" aria-label={group.locked ? 'Unlock group' : 'Lock group'} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { locked: !group.locked } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-zinc-300"><LockIcon className="size-3.5" locked={group.locked} /></button>
-            {selected && <><button type="button" aria-label="Move group up" onClick={() => dispatch({ type: 'move-group', id: group.id, direction: 'up' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↑</button><button type="button" aria-label="Move group down" onClick={() => dispatch({ type: 'move-group', id: group.id, direction: 'down' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↓</button></>}
+            <button type="button" aria-label={group.locked ? 'Unlock group' : inheritedLock ? 'Locked by parent group' : 'Lock group'} disabled={inheritedLock} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { locked: !group.locked } })} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-zinc-300 disabled:text-amber-700"><LockIcon className="size-3.5" locked={group.locked || inheritedLock} /></button>
+            {selected && <><button type="button" aria-label="Move group up" onClick={() => dispatch({ type: 'move-group', id: group.id, direction: 'up' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↑</button><button type="button" aria-label="Move group down" onClick={() => dispatch({ type: 'move-group', id: group.id, direction: 'down' })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">↓</button>{group.parentId && <button type="button" aria-label="Move group out of parent" onClick={() => dispatch({ type: 'move-stack-item', itemType: 'group', id: group.id, parentId: document.groups.find((candidate) => candidate.id === group.parentId)?.parentId ?? null })} className="flex size-5 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">←</button>}</>}
           </div>
         </div>
-        {!group.collapsed && <div className="space-y-1 border-t border-white/[0.04] py-1 pr-1">{children.map((layer) => layerRow(layer, true))}{children.length === 0 && <p className="px-4 py-3 text-center text-[9px] text-zinc-700">Empty group</p>}</div>}
+        {!group.collapsed && <div className="space-y-1 border-t border-white/[0.04] py-1 pr-1">{[...children].reverse().map((item) => item.type === 'group' ? groupRow(item.group, 0) : layerRow(item.layer, 0))}{children.length === 0 && <p className="px-4 py-3 text-center text-[9px] text-zinc-700">Empty group — drop layers or folders here</p>}</div>}
       </div>
     )
   }
+
+  const rootItems = getStackChildren(document, null)
 
   return (
     <aside className="order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-65px)] lg:w-[258px] lg:border-t-0 lg:border-l">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
         <div><h2 className="text-sm font-semibold text-zinc-100">Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
-        <div className="flex items-center gap-0.5">
-          <button type="button" title="Group selected layers" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400"><FolderIcon /></button>
-          <button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400">◐</button>
-          <button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400">+</button>
-        </div>
+        <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button></div>
       </div>
 
-      <div className="min-h-44 flex-1 space-y-1 overflow-y-auto p-2">
-        {stack.map((item) => item.kind === 'group' ? groupRow(item.group, item.children) : layerRow(item.layer))}
-        {document.layers.length === 0 && document.groups.length === 0 && <div className="flex min-h-40 flex-col items-center justify-center px-6 text-center"><span className="mb-3 flex size-10 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-700"><ImageIcon /></span><p className="text-xs font-medium text-zinc-500">Blank document</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-700">Press + to create an empty raster layer.</p></div>}
+      <div className={`min-h-0 flex-1 space-y-1 overflow-y-auto p-2 ${dragging ? 'ring-1 ring-inset ring-violet-400/20' : ''}`} onDragOver={(event) => { event.preventDefault(); setDropTarget('root') }} onDrop={(event) => drop(event, null)}>
+        {dragging && <div className={`rounded-md border border-dashed px-2 py-1.5 text-center text-[9px] ${dropTarget === 'root' ? 'border-violet-300/60 text-violet-200' : 'border-white/[0.08] text-zinc-700'}`}>Drop here to move to the document root</div>}
+        {[...rootItems].reverse().map((item) => item.type === 'group' ? groupRow(item.group, 0) : layerRow(item.layer, 0))}
+        {rootItems.length === 0 && <div className="flex min-h-40 flex-col items-center justify-center px-6 text-center"><span className="mb-3 flex size-10 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-700"><ImageIcon /></span><p className="text-xs font-medium text-zinc-500">Blank document</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-700">Press + to create an empty raster layer.</p></div>}
       </div>
 
-      {activeGroup && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><button type="button" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Ungroup</button><button type="button" aria-label="Delete group and layers" title="Delete group and its layers" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id, deleteLayers: true })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
-
-      {!activeGroup && document.selectedLayerIds.length > 0 && <div className="flex items-center justify-between border-t border-white/[0.07] p-3">
-        <div className="flex items-center gap-1">
-          {document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <><button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] font-medium ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600 hover:text-zinc-300'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>{activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-[11px] text-zinc-700 hover:bg-red-400/10 hover:text-red-300">×</button>}</>}
-          {document.selectedLayerIds.length > 1 && <p className="text-[10px] text-zinc-700">{document.selectedLayerIds.length} selected</p>}
-        </div>
-        <button type="button" aria-label="Delete selected layer" onClick={() => dispatch({ type: 'remove-layers', ids: document.selectedLayerIds })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button>
-      </div>}
+      {activeGroup && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><button type="button" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Ungroup</button><button type="button" aria-label="Delete group and layers" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id, deleteLayers: true })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
+      {!activeGroup && document.selectedLayerIds.length > 0 && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><div className="flex items-center gap-1">{document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <><button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>{activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-zinc-700 hover:text-red-300">×</button>}</>}{document.selectedLayerIds.length > 1 && <p className="text-[10px] text-zinc-700">{document.selectedLayerIds.length} selected</p>}</div><button type="button" aria-label="Delete selected layer" onClick={() => dispatch({ type: 'remove-layers', ids: document.selectedLayerIds })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
     </aside>
   )
 }

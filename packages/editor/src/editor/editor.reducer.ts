@@ -1,30 +1,59 @@
 import { getCanvasPreset, initialDocument } from './presets'
+import { flattenStackLayers, getDescendantGroupIds, getGroupAncestors, getStackChildren } from './stack'
 import type { DocumentAction, EditorDocument, EditorLayer, HistoryAction, HistoryState } from './types'
 
-type LayerBlock = { groupId: string | null; layers: EditorLayer[] }
+type StackRef = { type: 'layer' | 'group'; id: string }
 
-function stackBlocks(layers: EditorLayer[]) {
-  const seenGroups = new Set<string>()
-  const blocks: LayerBlock[] = []
-  for (const layer of layers) {
-    if (!layer.groupId) {
-      blocks.push({ groupId: null, layers: [layer] })
-      continue
-    }
-    if (seenGroups.has(layer.groupId)) continue
-    seenGroups.add(layer.groupId)
-    blocks.push({ groupId: layer.groupId, layers: layers.filter((candidate) => candidate.groupId === layer.groupId) })
-  }
-  return blocks
+function siblingRefs(state: EditorDocument, parentId: string | null): StackRef[] {
+  return getStackChildren(state, parentId).map(({ type, id }) => ({ type, id }))
 }
 
-function moveBlock(layers: EditorLayer[], groupId: string | null, layerId: string | null, direction: 'up' | 'down') {
-  const blocks = stackBlocks(layers)
-  const index = blocks.findIndex((block) => groupId ? block.groupId === groupId : block.groupId === null && block.layers[0]?.id === layerId)
+function assignSiblingOrders(state: EditorDocument, refs: StackRef[]) {
+  const orders = new Map(refs.map((item, index) => [`${item.type}:${item.id}`, index]))
+  return {
+    ...state,
+    layers: state.layers.map((layer) => orders.has(`layer:${layer.id}`) ? { ...layer, stackOrder: orders.get(`layer:${layer.id}`) } as EditorLayer : layer),
+    groups: state.groups.map((group) => orders.has(`group:${group.id}`) ? { ...group, stackOrder: orders.get(`group:${group.id}`) } : group),
+  }
+}
+
+function canonicalizeLayers(state: EditorDocument) {
+  return { ...state, layers: flattenStackLayers(state) }
+}
+
+function itemParent(state: EditorDocument, item: StackRef) {
+  return item.type === 'layer'
+    ? state.layers.find((layer) => layer.id === item.id)?.groupId ?? null
+    : state.groups.find((group) => group.id === item.id)?.parentId ?? null
+}
+
+function moveStackItem(state: EditorDocument, item: StackRef, parentId: string | null, beforeId?: string | null) {
+  if (item.type === 'group') {
+    if (item.id === parentId) return state
+    if (parentId && getGroupAncestors(state, parentId).some((group) => group.id === item.id)) return state
+  }
+  const oldParentId = itemParent(state, item)
+  const oldRefs = siblingRefs(state, oldParentId).filter((candidate) => candidate.id !== item.id)
+  const targetRefs = (oldParentId === parentId ? oldRefs : siblingRefs(state, parentId).filter((candidate) => candidate.id !== item.id))
+  const beforeIndex = beforeId ? targetRefs.findIndex((candidate) => candidate.id === beforeId) : -1
+  targetRefs.splice(beforeIndex < 0 ? targetRefs.length : beforeIndex, 0, item)
+
+  let next: EditorDocument = item.type === 'layer'
+    ? { ...state, layers: state.layers.map((layer) => layer.id === item.id ? { ...layer, groupId: parentId } as EditorLayer : layer) }
+    : { ...state, groups: state.groups.map((group) => group.id === item.id ? { ...group, parentId } : group) }
+  if (oldParentId !== parentId) next = assignSiblingOrders(next, oldRefs)
+  next = assignSiblingOrders(next, targetRefs)
+  return canonicalizeLayers(next)
+}
+
+function moveWithinParent(state: EditorDocument, item: StackRef, direction: 'up' | 'down') {
+  const parentId = itemParent(state, item)
+  const refs = siblingRefs(state, parentId)
+  const index = refs.findIndex((candidate) => candidate.type === item.type && candidate.id === item.id)
   const target = direction === 'up' ? index + 1 : index - 1
-  if (index < 0 || target < 0 || target >= blocks.length) return layers
-  ;[blocks[index], blocks[target]] = [blocks[target], blocks[index]]
-  return blocks.flatMap((block) => block.layers)
+  if (index < 0 || target < 0 || target >= refs.length) return state
+  ;[refs[index], refs[target]] = [refs[target], refs[index]]
+  return canonicalizeLayers(assignSiblingOrders(state, refs))
 }
 
 export function documentReducer(state: EditorDocument, action: DocumentAction): EditorDocument {
@@ -40,17 +69,32 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
     case 'set-pattern':
       return { ...state, pattern: { ...state.pattern, ...action.patch } }
     case 'add-layer': {
-      const layer = state.selectedGroupId ? { ...action.layer, groupId: state.selectedGroupId } as EditorLayer : action.layer
-      return { ...state, layers: [...state.layers, layer], selectedLayerId: layer.id, selectedLayerIds: [layer.id], selectedGroupId: null }
+      const parentId = action.layer.groupId !== undefined ? action.layer.groupId : state.selectedGroupId ?? null
+      const layer = { ...action.layer, groupId: parentId, stackOrder: siblingRefs(state, parentId).length } as EditorLayer
+      const next = canonicalizeLayers({ ...state, layers: [...state.layers, layer] })
+      return { ...next, selectedLayerId: layer.id, selectedLayerIds: [layer.id], selectedGroupId: null }
     }
     case 'add-group': {
       const ids = new Set(action.layerIds)
-      const grouped = state.layers.filter((layer) => ids.has(layer.id)).map((layer) => ({ ...layer, groupId: action.group.id } as EditorLayer))
-      const topIndex = Math.max(-1, ...state.layers.map((layer, index) => ids.has(layer.id) ? index : -1))
-      const remaining = state.layers.filter((layer) => !ids.has(layer.id))
-      const insertion = topIndex < 0 ? remaining.length : state.layers.slice(0, topIndex + 1).filter((layer) => !ids.has(layer.id)).length
-      const layers = [...remaining.slice(0, insertion), ...grouped, ...remaining.slice(insertion)]
-      return { ...state, groups: [...state.groups, action.group], layers, selectedGroupId: action.group.id, selectedLayerId: null, selectedLayerIds: grouped.map((layer) => layer.id) }
+      const selected = state.layers.filter((layer) => ids.has(layer.id))
+      const selectedParents = new Set(selected.map((layer) => layer.groupId ?? null))
+      const parentId = selected.length && selectedParents.size === 1 ? selected[0].groupId ?? null : action.group.parentId ?? null
+      const parentRefs = siblingRefs(state, parentId)
+      const selectedRefIds = new Set(selected.filter((layer) => (layer.groupId ?? null) === parentId).map((layer) => layer.id))
+      const topIndex = Math.max(-1, ...parentRefs.map((item, index) => item.type === 'layer' && selectedRefIds.has(item.id) ? index : -1))
+      const remainingRefs = parentRefs.filter((item) => item.type !== 'layer' || !selectedRefIds.has(item.id))
+      const insertion = topIndex < 0 ? remainingRefs.length : parentRefs.slice(0, topIndex + 1).filter((item) => item.type !== 'layer' || !selectedRefIds.has(item.id)).length
+      const group = { ...action.group, parentId, stackOrder: insertion }
+      const grouped = selected.map((layer, index) => ({ ...layer, groupId: group.id, stackOrder: index } as EditorLayer))
+      const groupedById = new Map(grouped.map((layer) => [layer.id, layer]))
+      let next: EditorDocument = {
+        ...state,
+        groups: [...state.groups, group],
+        layers: state.layers.map((layer) => groupedById.get(layer.id) ?? layer),
+      }
+      next = assignSiblingOrders(next, [...remainingRefs.slice(0, insertion), { type: 'group', id: group.id }, ...remainingRefs.slice(insertion)])
+      next = canonicalizeLayers(next)
+      return { ...next, selectedGroupId: group.id, selectedLayerId: null, selectedLayerIds: grouped.map((layer) => layer.id) }
     }
     case 'update-layer':
       return {
@@ -88,14 +132,36 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, layers, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [], selectedGroupId: null }
     }
     case 'remove-group': {
-      const children = state.layers.filter((layer) => layer.groupId === action.id)
-      const layers = action.deleteLayers
-        ? state.layers.filter((layer) => layer.groupId !== action.id)
-        : state.layers.map((layer) => layer.groupId === action.id ? { ...layer, groupId: null } as EditorLayer : layer)
-      const removedIds = new Set(children.map((layer) => layer.id))
+      const group = state.groups.find((candidate) => candidate.id === action.id)
+      if (!group) return state
+      const parentId = group.parentId ?? null
+      const parentRefs = siblingRefs(state, parentId)
+      const groupIndex = parentRefs.findIndex((item) => item.type === 'group' && item.id === action.id)
+      const descendantGroupIds = getDescendantGroupIds(state, action.id)
+      descendantGroupIds.add(action.id)
+      const removedIds = new Set(state.layers.filter((layer) => layer.groupId && descendantGroupIds.has(layer.groupId)).map((layer) => layer.id))
+      let next: EditorDocument
+      if (action.deleteLayers) {
+        next = {
+          ...state,
+          groups: state.groups.filter((candidate) => !descendantGroupIds.has(candidate.id)),
+          layers: state.layers.filter((layer) => !removedIds.has(layer.id)),
+        }
+        next = assignSiblingOrders(next, parentRefs.filter((item) => item.id !== action.id))
+      } else {
+        const children = siblingRefs(state, action.id)
+        next = {
+          ...state,
+          groups: state.groups.filter((candidate) => candidate.id !== action.id).map((candidate) => (candidate.parentId ?? null) === action.id ? { ...candidate, parentId } : candidate),
+          layers: state.layers.map((layer) => (layer.groupId ?? null) === action.id ? { ...layer, groupId: parentId } as EditorLayer : layer),
+        }
+        const insertion = groupIndex < 0 ? parentRefs.length : groupIndex
+        next = assignSiblingOrders(next, [...parentRefs.filter((item) => item.id !== action.id).slice(0, insertion), ...children, ...parentRefs.filter((item) => item.id !== action.id).slice(insertion)])
+      }
+      next = canonicalizeLayers(next)
       const selectedLayerIds = action.deleteLayers ? state.selectedLayerIds.filter((id) => !removedIds.has(id)) : state.selectedLayerIds
       const selectedLayerId = state.selectedLayerId && selectedLayerIds.includes(state.selectedLayerId) ? state.selectedLayerId : null
-      return { ...state, groups: state.groups.filter((group) => group.id !== action.id), layers, selectedGroupId: null, selectedLayerId, selectedLayerIds }
+      return { ...next, selectedGroupId: null, selectedLayerId, selectedLayerIds }
     }
     case 'select-layer': {
       if (!action.id) return state.selectedLayerIds.length === 0 && !state.selectedGroupId ? state : { ...state, selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null }
@@ -113,25 +179,17 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
     }
     case 'select-group': {
       if (!action.id) return { ...state, selectedGroupId: null, selectedLayerId: null, selectedLayerIds: [] }
-      const childIds = state.layers.filter((layer) => layer.groupId === action.id).map((layer) => layer.id)
+      const descendantIds = getDescendantGroupIds(state, action.id)
+      descendantIds.add(action.id)
+      const childIds = state.layers.filter((layer) => layer.groupId && descendantIds.has(layer.groupId)).map((layer) => layer.id)
       return { ...state, selectedGroupId: action.id, selectedLayerId: null, selectedLayerIds: childIds }
     }
-    case 'move-layer': {
-      const index = state.layers.findIndex((layer) => layer.id === action.id)
-      if (index < 0) return state
-      const layer = state.layers[index]
-      if (!layer.groupId) return { ...state, layers: moveBlock(state.layers, null, layer.id, action.direction) }
-      const members = state.layers.filter((candidate) => candidate.groupId === layer.groupId)
-      const memberIndex = members.findIndex((candidate) => candidate.id === layer.id)
-      const targetMember = action.direction === 'up' ? members[memberIndex + 1] : members[memberIndex - 1]
-      if (!targetMember) return state
-      const targetIndex = state.layers.findIndex((candidate) => candidate.id === targetMember.id)
-      const layers = [...state.layers]
-      ;[layers[index], layers[targetIndex]] = [layers[targetIndex], layers[index]]
-      return { ...state, layers }
-    }
+    case 'move-layer':
+      return moveWithinParent(state, { type: 'layer', id: action.id }, action.direction)
     case 'move-group':
-      return { ...state, layers: moveBlock(state.layers, action.id, null, action.direction) }
+      return moveWithinParent(state, { type: 'group', id: action.id }, action.direction)
+    case 'move-stack-item':
+      return moveStackItem(state, { type: action.itemType, id: action.id }, action.parentId, action.beforeId)
     case 'reset-document':
       return initialDocument
   }

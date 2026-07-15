@@ -30,6 +30,7 @@ export type BaseLayer = {
   maskAssetId?: string | null
   clipToBelow?: boolean
   groupId?: string | null
+  stackOrder?: number
 }
 
 export type LayerGroup = {
@@ -39,7 +40,10 @@ export type LayerGroup = {
   locked: boolean
   opacity: number
   blendMode: BlendMode
+  passThrough?: boolean
   collapsed: boolean
+  parentId?: string | null
+  stackOrder?: number
 }
 
 export type ImageLayer = BaseLayer & {
@@ -134,6 +138,7 @@ export type LayerPatch = Partial<{
   maskAssetId: string | null
   clipToBelow: boolean
   groupId: string | null
+  stackOrder: number
   assetId: string
   padding: number
   scale: number
@@ -179,6 +184,7 @@ export type DocumentAction =
   | { type: 'select-group'; id: string | null }
   | { type: 'move-layer'; id: string; direction: 'up' | 'down' }
   | { type: 'move-group'; id: string; direction: 'up' | 'down' }
+  | { type: 'move-stack-item'; itemType: 'layer' | 'group'; id: string; parentId: string | null; beforeId?: string | null }
   | { type: 'reset-document' }
 
 export type HistoryState = {

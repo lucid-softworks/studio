@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { findLayerAtPoint, getLayerBounds, type LayerBounds, type ResizeHandle } from '../editor/renderer'
+import { layerIsLocked, layerIsVisible } from '../editor/stack'
 import { calculateLayerResize, calculateRotation, type TransformResizeSnapshot } from '../editor/transform'
 import type { AssetMap, EditorDispatch, EditorDocument, Position } from '../editor/types'
 
@@ -34,11 +35,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const interactionRef = useRef<Interaction | null>(null)
   const canvas = canvasRef.current
   const context = canvas?.getContext('2d') ?? null
-  const groups = new Map(document.groups.map((group) => [group.id, group]))
-  const selectedLayers = document.layers.filter((layer) => {
-    const group = layer.groupId ? groups.get(layer.groupId) : null
-    return document.selectedLayerIds.includes(layer.id) && layer.visible && group?.visible !== false
-  })
+  const selectedLayers = document.layers.filter((layer) => document.selectedLayerIds.includes(layer.id) && layerIsVisible(document, layer))
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const activeBounds = canvas && context && activeLayer ? getLayerBounds(context, canvas, activeLayer, assets) : null
   const selectedBounds = useMemo(() => {
@@ -71,7 +68,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   }
 
   const startResize = (event: ReactPointerEvent<SVGRectElement>, handle: ResizeHandle) => {
-    if (!activeLayer || !activeBounds || activeLayer.locked || !canvas) return
+    if (!activeLayer || !activeBounds || layerIsLocked(document, activeLayer) || !canvas) return
     event.stopPropagation()
     interactionRef.current = {
       mode: 'resize', pointerId: event.pointerId,
@@ -81,7 +78,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   }
 
   const startRotate = (event: ReactPointerEvent<SVGCircleElement>) => {
-    if (!activeLayer || !activeBounds || activeLayer.locked) return
+    if (!activeLayer || !activeBounds || layerIsLocked(document, activeLayer)) return
     event.stopPropagation()
     const cursor = point(event)
     const centerX = activeBounds.x + activeBounds.width / 2
@@ -107,7 +104,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const movingIds = document.selectedLayerIds.includes(layer.id) ? document.selectedLayerIds : [layer.id]
     if (!document.selectedLayerIds.includes(layer.id)) dispatch({ type: 'select-layer', id: layer.id }, { record: false })
     const layers = document.layers
-      .filter((candidate) => movingIds.includes(candidate.id) && !candidate.locked && !(candidate.groupId && groups.get(candidate.groupId)?.locked))
+      .filter((candidate) => movingIds.includes(candidate.id) && !layerIsLocked(document, candidate))
       .map((candidate) => ({ id: candidate.id, position: candidate.position }))
     if (layers.length === 0) return
     interactionRef.current = { mode: 'move', pointerId: event.pointerId, start: cursor, layers }
@@ -163,7 +160,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
         )
       })}
 
-      {enabled && activeLayer && activeBounds && !activeLayer.locked && (
+      {enabled && activeLayer && activeBounds && !layerIsLocked(document, activeLayer) && (
         <g transform={`translate(${activeBounds.x + activeBounds.width / 2} ${activeBounds.y + activeBounds.height / 2}) rotate(${activeBounds.rotation})`}>
           <line x1="0" y1={-activeBounds.height / 2} x2="0" y2={-activeBounds.height / 2 - rotationOffset} stroke="#a78bfa" strokeWidth="2" vectorEffect="non-scaling-stroke" className="pointer-events-none" />
           <circle cx="0" cy={-activeBounds.height / 2 - rotationOffset} r={handleSize * 0.55} fill="#18181b" stroke="#c4b5fd" strokeWidth="2" vectorEffect="non-scaling-stroke" style={{ cursor: 'grab' }} onPointerDown={startRotate} />

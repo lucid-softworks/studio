@@ -1,5 +1,6 @@
 import { createRasterSurface, loadImageBlob, surfaceToBlob } from './image'
 import { getCanvasPreset } from './presets'
+import { flattenStackLayers, getStackChildren } from './stack'
 import type { AssetMap, EditorDocument } from './types'
 
 const PROJECT_VERSION = 1
@@ -21,11 +22,37 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     : selectedLayerId ? [selectedLayerId] : []
   const fallback = getCanvasPreset(value.canvasPreset)
   const canvasSize = value.canvasSize ?? { width: fallback.width, height: fallback.height }
-  const groups = Array.isArray(value.groups) ? value.groups : []
+  const rawGroups = Array.isArray(value.groups) ? value.groups : []
+  const rawGroupIds = new Set(rawGroups.map((group) => group.id))
+  const rawParents = new Map(rawGroups.map((group) => [group.id, group.parentId ?? null]))
+  const groups = rawGroups.map((group) => ({
+    ...group,
+    parentId: (() => {
+      if (!group.parentId || !rawGroupIds.has(group.parentId) || group.parentId === group.id) return null
+      const seen = new Set([group.id])
+      let current: string | null = group.parentId
+      while (current) {
+        if (seen.has(current)) return null
+        seen.add(current)
+        current = rawParents.get(current) ?? null
+      }
+      return group.parentId
+    })(),
+  }))
   const groupIds = new Set(groups.map((group) => group.id))
-  const layers = value.layers.map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer)
+  let layers = value.layers.map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer)
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
-  return { ...value, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
+  let normalized = { ...value, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
+  for (const parentId of [null, ...groups.map((group) => group.id)]) {
+    const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
+    normalized = {
+      ...normalized,
+      groups: normalized.groups.map((group) => orders.has(`group:${group.id}`) ? { ...group, stackOrder: orders.get(`group:${group.id}`) } : group),
+      layers: normalized.layers.map((layer) => orders.has(`layer:${layer.id}`) ? { ...layer, stackOrder: orders.get(`layer:${layer.id}`) } : layer),
+    }
+  }
+  layers = flattenStackLayers(normalized)
+  return { ...normalized, layers }
 }
 
 function openDatabase() {

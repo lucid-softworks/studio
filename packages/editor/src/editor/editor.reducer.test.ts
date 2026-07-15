@@ -23,7 +23,7 @@ const textLayer: TextLayer = {
 describe('documentReducer', () => {
   it('adds and selects a typed layer', () => {
     const next = documentReducer(initialDocument, { type: 'add-layer', layer: textLayer })
-    expect(next.layers).toEqual([textLayer])
+    expect(next.layers).toEqual([{ ...textLayer, groupId: null, stackOrder: 0 }])
     expect(next.selectedLayerId).toBe(textLayer.id)
   })
 
@@ -89,6 +89,33 @@ describe('documentReducer', () => {
     const ungrouped = documentReducer(moved, { type: 'remove-group', id: group.id })
     expect(moved.layers.map((layer) => layer.id)).toEqual(['loose', 'text-1', 'second'])
     expect(ungrouped.layers.map((layer) => layer.groupId ?? null)).toEqual([null, null, null])
+  })
+
+  it('supports nested folders and prevents hierarchy cycles', () => {
+    const parent = { ...createLayerGroup(0), id: 'parent', stackOrder: 0 }
+    const child = { ...createLayerGroup(1), id: 'child', parentId: parent.id, stackOrder: 0 }
+    const nestedLayer = { ...textLayer, groupId: child.id, stackOrder: 0 }
+    const state = { ...initialDocument, groups: [parent, child], layers: [nestedLayer] }
+
+    const selected = documentReducer(state, { type: 'select-group', id: parent.id })
+    const rejectedCycle = documentReducer(state, { type: 'move-stack-item', itemType: 'group', id: parent.id, parentId: child.id })
+    const movedToRoot = documentReducer(state, { type: 'move-stack-item', itemType: 'layer', id: nestedLayer.id, parentId: null })
+
+    expect(selected.selectedLayerIds).toEqual([nestedLayer.id])
+    expect(rejectedCycle).toBe(state)
+    expect(movedToRoot.layers[0]).toMatchObject({ id: nestedLayer.id, groupId: null })
+  })
+
+  it('ungroups a nested folder into its parent and preserves child order', () => {
+    const parent = { ...createLayerGroup(0), id: 'parent', stackOrder: 0 }
+    const child = { ...createLayerGroup(1), id: 'child', parentId: parent.id, stackOrder: 0 }
+    const bottom = { ...textLayer, id: 'bottom', groupId: child.id, stackOrder: 0 }
+    const top = { ...textLayer, id: 'top', groupId: child.id, stackOrder: 1 }
+    const state = { ...initialDocument, groups: [parent, child], layers: [bottom, top] }
+    const next = documentReducer(state, { type: 'remove-group', id: child.id })
+
+    expect(next.groups.map((group) => group.id)).toEqual([parent.id])
+    expect(next.layers.map((layer) => [layer.id, layer.groupId])).toEqual([['bottom', parent.id], ['top', parent.id]])
   })
 })
 
