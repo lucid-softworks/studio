@@ -7,7 +7,7 @@ import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
-import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
+import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -331,22 +331,48 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   context.globalAlpha = 1
 }
 
-function setTextStyle(context: CanvasRenderingContext2D, layer: TextLayer) {
-  const family = (layer.fontFamily || 'Inter').replace(/["\\]/g, '')
-  context.font = `${layer.fontWeight} ${layer.fontSize}px "${family}", Inter, system-ui, sans-serif`
+function textStyleAt(layer: TextLayer, index: number): TextStyleRun {
+  return layer.styleRuns?.find((run) => index >= run.start && index < run.start + run.length) ?? {
+    start: 0,
+    length: layer.text.length,
+    fontFamily: layer.fontFamily || 'Inter',
+    fontSize: layer.fontSize,
+    fontWeight: layer.fontWeight,
+    color: layer.color,
+    letterSpacing: layer.letterSpacing,
+  }
+}
+
+function setTextStyle(context: CanvasRenderingContext2D, layer: TextLayer, style = textStyleAt(layer, 0)) {
+  const family = style.fontFamily.replace(/["\\]/g, '')
+  context.font = `${style.fauxItalic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px "${family}", Inter, system-ui, sans-serif`
   context.textBaseline = 'middle'
-  context.textAlign = layer.textAlign
-  ;(context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${layer.letterSpacing}px`
+  context.textAlign = 'left'
+  ;(context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${style.letterSpacing}px`
 }
 
 function textMetrics(context: CanvasRenderingContext2D, layer: TextLayer) {
+  if (layer.paragraphBox) return { lines: layer.text.split('\n'), width: layer.paragraphBox.width, height: layer.paragraphBox.height, lineHeight: layer.fontSize * 1.18 }
   context.save()
-  setTextStyle(context, layer)
   const lines = layer.text.split('\n')
-  const width = Math.max(layer.fontSize, ...lines.map((line) => context.measureText(line || ' ').width))
-  const lineHeight = layer.fontSize * 1.18
+  let index = 0
+  const widths = lines.map((line) => {
+    let width = 0
+    for (const character of line || ' ') {
+      const style = textStyleAt(layer, index)
+      setTextStyle(context, layer, style)
+      width += context.measureText(character).width + style.letterSpacing
+      index += 1
+    }
+    index += 1
+    return width
+  })
+  const maximumSize = Math.max(layer.fontSize, ...(layer.styleRuns?.map((run) => run.fontSize) ?? []))
+  const width = layer.orientation === 'vertical' ? maximumSize * Math.max(1, lines.length) : Math.max(maximumSize, ...widths)
+  const lineHeight = maximumSize * 1.18
+  const height = layer.orientation === 'vertical' ? Math.max(lineHeight, layer.text.replace(/\n/g, '').length * lineHeight) : lineHeight * lines.length
   context.restore()
-  return { lines, width, height: lineHeight * lines.length, lineHeight }
+  return { lines, width, height, lineHeight }
 }
 
 function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: TextLayer) {
@@ -357,12 +383,54 @@ function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElem
 
   context.globalAlpha = layer.opacity / 100
   withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
-    setTextStyle(context, layer)
-    context.fillStyle = layer.color
-    const x = layer.textAlign === 'left' ? -metrics.width / 2 : layer.textAlign === 'right' ? metrics.width / 2 : 0
-    metrics.lines.forEach((line, index) => {
-      const y = -metrics.height / 2 + metrics.lineHeight / 2 + index * metrics.lineHeight
-      context.fillText(line, x, y)
+    if (layer.orientation === 'vertical') {
+      const characters = [...layer.text].filter((character) => character !== '\n' && character !== '\r')
+      characters.forEach((character, index) => {
+        const style = textStyleAt(layer, index)
+        setTextStyle(context, layer, style)
+        context.fillStyle = style.color
+        const y = -metrics.height / 2 + metrics.lineHeight / 2 + index * metrics.lineHeight
+        context.fillText(character, -context.measureText(character).width / 2, y)
+      })
+      return
+    }
+
+    let sourceIndex = 0
+    metrics.lines.forEach((line, lineIndex) => {
+      const glyphs = [...line].map((character) => {
+        const index = sourceIndex
+        const style = textStyleAt(layer, index)
+        setTextStyle(context, layer, style)
+        const width = context.measureText(character).width + style.letterSpacing
+        sourceIndex += 1
+        return { character, index, style, width }
+      })
+      sourceIndex += 1
+      const lineWidth = glyphs.reduce((total, glyph) => total + glyph.width, 0)
+      let x = layer.textAlign === 'center' ? -lineWidth / 2 : layer.textAlign === 'right' ? metrics.width / 2 - lineWidth : -metrics.width / 2
+      const baseY = -metrics.height / 2 + metrics.lineHeight / 2 + lineIndex * metrics.lineHeight
+      glyphs.forEach((glyph) => {
+        setTextStyle(context, layer, glyph.style)
+        context.fillStyle = glyph.style.color
+        const progress = metrics.width ? (x + metrics.width / 2) / metrics.width : 0.5
+        const warp = layer.warp ? -Math.sin(Math.max(0, Math.min(1, progress)) * Math.PI) * layer.warp.value / 100 * metrics.height / 2 : 0
+        const y = baseY + warp - (glyph.style.baselineShift ?? 0)
+        context.save()
+        context.translate(x, y)
+        context.scale((glyph.style.horizontalScale ?? 100) / 100, (glyph.style.verticalScale ?? 100) / 100)
+        context.fillText(glyph.character, 0, 0)
+        if (glyph.style.underline || glyph.style.strikethrough) {
+          context.strokeStyle = glyph.style.color
+          context.lineWidth = Math.max(1, glyph.style.fontSize / 18)
+          const decorationY = glyph.style.underline ? glyph.style.fontSize * 0.42 : 0
+          context.beginPath()
+          context.moveTo(0, decorationY)
+          context.lineTo(glyph.width, decorationY)
+          context.stroke()
+        }
+        context.restore()
+        x += glyph.width
+      })
     })
   })
   context.globalAlpha = 1

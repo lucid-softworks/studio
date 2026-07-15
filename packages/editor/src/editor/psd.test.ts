@@ -181,4 +181,62 @@ describe('PSD layer ordering', () => {
     expect(psdImportWarnings({ width: 400, height: 200, children: [layer] }))
       .not.toContain(expect.stringContaining('masks were not preserved'))
   })
+
+  it('preserves mixed styles, paragraph boxes, vertical orientation, warps, and missing fonts', async () => {
+    const layer: Layer = {
+      name: 'Mixed heading',
+      left: 10,
+      top: 20,
+      right: 210,
+      bottom: 140,
+      text: {
+        text: 'Hello\rworld',
+        orientation: 'vertical',
+        shapeType: 'box',
+        boxBounds: [0, 0, 200, 120],
+        warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
+        styleRuns: [
+          { length: 5, style: { font: { name: 'Missing Sans' }, fontSize: 30, fillColor: { r: 255, g: 40, b: 80 }, tracking: 20, underline: true } },
+          { length: 6, style: { font: { name: 'Missing Serif Bold' }, fontSize: 18, fillColor: { r: 40, g: 90, b: 255 }, fauxBold: true, baselineShift: 3 } },
+        ],
+        paragraphStyleRuns: [
+          { length: 6, style: { justification: 'center', firstLineIndent: 8 } },
+          { length: 5, style: { justification: 'justify-left', spaceBefore: 4 } },
+        ],
+      },
+    }
+
+    const imported = psdTextLayer(layer, 300, 200)
+    expect(imported).toMatchObject({
+      orientation: 'vertical',
+      paragraphBox: { width: 200, height: 120 },
+      warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
+      styleRuns: [
+        { start: 0, length: 5, fontFamily: 'Missing Sans', fontSize: 30, color: '#ff2850', underline: true },
+        { start: 5, length: 6, fontFamily: 'Missing Serif Bold', fontWeight: 700, baselineShift: 3 },
+      ],
+      paragraphRuns: [
+        { start: 0, length: 6, textAlign: 'center', firstLineIndent: 8 },
+        { start: 6, length: 5, textAlign: 'justify', spaceBefore: 4 },
+      ],
+      missingFonts: ['Missing Sans', 'Missing Serif Bold'],
+    })
+    expect(psdImportWarnings({ width: 300, height: 200, children: [layer] })).not.toContain(expect.stringContaining('text was rasterized'))
+
+    const blob = await exportPsdDocument({
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 300, height: 200 },
+      layers: imported ? [imported] : [],
+    }, {})
+    const roundTripped = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]?.text
+    expect(roundTripped).toMatchObject({
+      orientation: 'vertical',
+      shapeType: 'box',
+      boxBounds: [0, 0, 200, 120],
+      warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
+      styleRuns: [{ length: 5 }, { length: 6 }],
+      paragraphStyleRuns: [{ length: 6 }, { length: 5 }],
+    })
+  })
 })

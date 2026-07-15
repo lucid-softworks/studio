@@ -62,6 +62,43 @@ export type RasterLayer = BaseLayer & {
   scale: number
 }
 
+export type TextStyleRun = {
+  start: number
+  length: number
+  fontFamily: string
+  fontSize: number
+  fontWeight: 400 | 600 | 700
+  color: string
+  letterSpacing: number
+  leading?: number
+  baselineShift?: number
+  horizontalScale?: number
+  verticalScale?: number
+  fauxItalic?: boolean
+  underline?: boolean
+  strikethrough?: boolean
+}
+
+export type TextParagraphRun = {
+  start: number
+  length: number
+  textAlign: 'left' | 'center' | 'right' | 'justify'
+  firstLineIndent?: number
+  startIndent?: number
+  endIndent?: number
+  spaceBefore?: number
+  spaceAfter?: number
+  leading?: number
+}
+
+export type TextWarp = {
+  style: string
+  value: number
+  perspective: number
+  perspectiveOther: number
+  rotate: 'horizontal' | 'vertical'
+}
+
 export type TextLayer = BaseLayer & {
   type: 'text'
   text: string
@@ -71,6 +108,12 @@ export type TextLayer = BaseLayer & {
   fontWeight: 400 | 600 | 700
   textAlign: 'left' | 'center' | 'right'
   letterSpacing: number
+  styleRuns?: TextStyleRun[]
+  paragraphRuns?: TextParagraphRun[]
+  paragraphBox?: { width: number; height: number }
+  orientation?: 'horizontal' | 'vertical'
+  warp?: TextWarp | null
+  missingFonts?: string[]
 }
 
 export type ShapeLayer = BaseLayer & {
@@ -153,6 +196,12 @@ export type LayerPatch = Partial<{
   fontWeight: 400 | 600 | 700
   textAlign: 'left' | 'center' | 'right'
   letterSpacing: number
+  styleRuns: TextStyleRun[]
+  paragraphRuns: TextParagraphRun[]
+  paragraphBox: { width: number; height: number } | null
+  orientation: 'horizontal' | 'vertical'
+  warp: TextWarp | null
+  missingFonts: string[]
   shape: ShapeKind
   width: number
   height: number

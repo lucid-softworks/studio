@@ -292,9 +292,7 @@ export function psdAdjustmentLayer(layer: Layer, index: number): AdjustmentLayer
 
 export function canImportPsdText(layer: Layer) {
   const text = layer.text
-  if (!text || text.orientation === 'vertical' || (text.warp?.style && text.warp.style !== 'none')) return false
-  if ((text.styleRuns?.length ?? 0) > 1 || (text.paragraphStyleRuns?.length ?? 0) > 1) return false
-  return Boolean(text.styleRuns?.[0]?.style ?? text.style)
+  return Boolean(text && (text.styleRuns?.some((run) => run.style) || text.style))
 }
 
 export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight: number): TextLayer | null {
@@ -315,6 +313,63 @@ export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight
   const textAlign = justification?.startsWith('right') ? 'right' : justification?.startsWith('center') ? 'center' : 'left'
   const semibold = /semibold|demibold|medium/i.test(fontName)
   const bold = Boolean(style.fauxBold || (!semibold && /bold|black|heavy/i.test(fontName)))
+  const fontWeight = bold ? 700 as const : semibold ? 600 as const : 400 as const
+  let styleStart = 0
+  const styleRuns = (text.styleRuns ?? [{ length: text.text.length, style }]).map((run) => {
+    const runStyle = run.style ?? style
+    const runFontName = runStyle.font?.name ?? fontName
+    const runSemibold = /semibold|demibold|medium/i.test(runFontName)
+    const runBold = Boolean(runStyle.fauxBold || (!runSemibold && /bold|black|heavy/i.test(runFontName)))
+    const start = styleStart
+    styleStart += run.length
+    const runFontSize = Math.max(1, (runStyle.fontSize ?? style.fontSize ?? 24) * scale)
+    return {
+      start,
+      length: run.length,
+      fontFamily: runFontName,
+      fontSize: runFontSize,
+      fontWeight: runBold ? 700 as const : runSemibold ? 600 as const : 400 as const,
+      color: colorHex(runStyle.fillColor ?? style.fillColor),
+      letterSpacing: (runStyle.tracking ?? 0) * runFontSize / 1000,
+      leading: runStyle.leading,
+      baselineShift: runStyle.baselineShift,
+      horizontalScale: runStyle.horizontalScale,
+      verticalScale: runStyle.verticalScale,
+      fauxItalic: runStyle.fauxItalic,
+      underline: runStyle.underline,
+      strikethrough: runStyle.strikethrough,
+    }
+  })
+  let paragraphStart = 0
+  const paragraphRuns = (text.paragraphStyleRuns ?? (paragraph ? [{ length: text.text.length, style: paragraph }] : [])).map((run) => {
+    const justification = run.style.justification
+    const start = paragraphStart
+    paragraphStart += run.length
+    return {
+      start,
+      length: run.length,
+      textAlign: justification?.startsWith('right') ? 'right' as const : justification?.startsWith('center') ? 'center' as const : justification?.startsWith('justify') ? 'justify' as const : 'left' as const,
+      firstLineIndent: run.style.firstLineIndent,
+      startIndent: run.style.startIndent,
+      endIndent: run.style.endIndent,
+      spaceBefore: run.style.spaceBefore,
+      spaceAfter: run.style.spaceAfter,
+      leading: run.style.autoLeading,
+    }
+  })
+  const box = text.boxBounds
+  const unitsBounds = text.bounds
+  const paragraphBox = text.shapeType === 'box'
+    ? box && box.length >= 4
+      ? { width: Math.abs(box[2] - box[0]), height: Math.abs(box[3] - box[1]) }
+      : unitsBounds
+        ? { width: Math.abs(unitsBounds.right.value - unitsBounds.left.value), height: Math.abs(unitsBounds.bottom.value - unitsBounds.top.value) }
+        : { width: right - left, height: bottom - top }
+    : undefined
+  const fontNames = [...new Set(styleRuns.map((run) => run.fontFamily))]
+  const missingFonts = typeof document !== 'undefined' && document.fonts
+    ? fontNames.filter((family) => !document.fonts.check(`12px "${family.replace(/["\\]/g, '')}"`))
+    : fontNames
 
   return {
     id: createId(),
@@ -334,9 +389,21 @@ export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight
     color: colorHex(style.fillColor),
     fontFamily: fontName,
     fontSize,
-    fontWeight: bold ? 700 : semibold ? 600 : 400,
+    fontWeight,
     textAlign,
     letterSpacing: (style.tracking ?? 0) * fontSize / 1000,
+    styleRuns,
+    paragraphRuns,
+    paragraphBox,
+    orientation: text.orientation ?? 'horizontal',
+    warp: text.warp?.style && text.warp.style !== 'none' ? {
+      style: text.warp.style,
+      value: text.warp.value ?? 0,
+      perspective: text.warp.perspective ?? 0,
+      perspectiveOther: text.warp.perspectiveOther ?? 0,
+      rotate: text.warp.rotate ?? 'horizontal',
+    } : null,
+    missingFonts,
   }
 }
 
@@ -624,12 +691,39 @@ function exportedMask(assetId: string | null | undefined, assets: AssetMap, widt
 function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds>): Layer['text'] {
   if (!bounds) return undefined
   const angle = layer.rotation * Math.PI / 180
+  const styleRuns = layer.styleRuns?.slice().sort((left, right) => left.start - right.start).map((run) => ({
+    length: run.length,
+    style: {
+      font: { name: run.fontFamily }, fontSize: run.fontSize, fauxBold: run.fontWeight === 700, fauxItalic: run.fauxItalic,
+      tracking: run.fontSize ? run.letterSpacing / run.fontSize * 1000 : 0, fillColor: psdColor(run.color), leading: run.leading,
+      baselineShift: run.baselineShift, horizontalScale: run.horizontalScale, verticalScale: run.verticalScale,
+      underline: run.underline, strikethrough: run.strikethrough,
+    },
+  }))
+  const paragraphStyleRuns = layer.paragraphRuns?.slice().sort((left, right) => left.start - right.start).map((run) => ({
+    length: run.length,
+    style: {
+      justification: run.textAlign === 'justify' ? 'justify-left' as const : run.textAlign,
+      firstLineIndent: run.firstLineIndent, startIndent: run.startIndent, endIndent: run.endIndent,
+      spaceBefore: run.spaceBefore, spaceAfter: run.spaceAfter, autoLeading: run.leading,
+    },
+  }))
   return {
-    text: layer.text.replace(/\n/g, '\r'), orientation: 'horizontal',
+    text: layer.text.replace(/\n/g, '\r'), orientation: layer.orientation ?? 'horizontal',
     transform: [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0],
-    left: bounds.x, top: bounds.y, right: bounds.x + bounds.width, bottom: bounds.y + bounds.height, shapeType: 'point',
+    left: bounds.x, top: bounds.y, right: bounds.x + bounds.width, bottom: bounds.y + bounds.height,
+    shapeType: layer.paragraphBox ? 'box' : 'point', boxBounds: layer.paragraphBox ? [0, 0, layer.paragraphBox.width, layer.paragraphBox.height] : undefined,
     style: { font: { name: layer.fontFamily || 'Inter' }, fontSize: layer.fontSize, fauxBold: layer.fontWeight === 700, tracking: layer.fontSize ? layer.letterSpacing / layer.fontSize * 1000 : 0, fillColor: psdColor(layer.color) },
     paragraphStyle: { justification: layer.textAlign },
+    styleRuns,
+    paragraphStyleRuns,
+    warp: layer.warp ? {
+      style: layer.warp.style as NonNullable<NonNullable<Layer['text']>['warp']>['style'],
+      value: layer.warp.value,
+      perspective: layer.warp.perspective,
+      perspectiveOther: layer.warp.perspectiveOther,
+      rotate: layer.warp.rotate,
+    } : undefined,
   }
 }
 
