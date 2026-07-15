@@ -1,4 +1,5 @@
 import type { AssetMap, SourceImage } from '../runtime-assets'
+import { getDescendantGroupIds } from '../stack'
 import type { EditorDocument, EditorLayer } from '../types'
 
 const assetIdentities = new WeakMap<SourceImage, number>()
@@ -41,6 +42,16 @@ export function maskedLayerPassSignature(layer: EditorLayer, assets: AssetMap): 
     layer.maskAssetId,
     assetSignature(layer.maskAssetId ? assets[layer.maskAssetId] : undefined),
   ])
+}
+
+export function groupPassSignature(document: EditorDocument, groupId: string, assets: AssetMap): string | null {
+  const groupIds = getDescendantGroupIds(document, groupId)
+  groupIds.add(groupId)
+  const groups = document.groups.filter((group) => groupIds.has(group.id))
+  const layers = document.layers.filter((layer) => layer.groupId && groupIds.has(layer.groupId))
+  const layerSignatures = layers.map((layer) => maskedLayerPassSignature(layer, assets))
+  if (layerSignatures.some((signature) => signature === null)) return null
+  return JSON.stringify([groups, layerSignatures])
 }
 
 export class RenderPassCache {

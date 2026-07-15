@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createRasterLayer, createShapeLayer, createTextLayer, initialDocument } from '../presets'
+import { createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, initialDocument } from '../presets'
 import type { AssetMap, SourceImage } from '../runtime-assets'
-import { backgroundPassSignature, layerPassSignature, RenderPassCache } from './render-pass-cache'
+import { backgroundPassSignature, groupPassSignature, layerPassSignature, RenderPassCache } from './render-pass-cache'
 
 function source(revision = 0): SourceImage {
   return {
@@ -37,5 +37,19 @@ describe('native render pass cache', () => {
     expect(backgroundPassSignature(initialDocument, {})).toBe(backgroundPassSignature(initialDocument, {}))
     expect(layerPassSignature(createShapeLayer('rectangle', 0), {})).not.toBeNull()
     expect(layerPassSignature(createTextLayer(0), {})).toBeNull()
+  })
+
+  it('invalidates isolated group passes when descendants or assets change', () => {
+    const group = { ...createLayerGroup(0), id: 'group' }
+    const nested = { ...createLayerGroup(1), id: 'nested', parentId: group.id }
+    const layer = { ...createRasterLayer('raster', 'Raster', 320, 200), id: 'layer', groupId: nested.id }
+    const assets: AssetMap = { raster: source(0) }
+    const document = { ...initialDocument, groups: [group, nested], layers: [layer] }
+    const before = groupPassSignature(document, group.id, assets)
+
+    expect(before).toBe(groupPassSignature(document, group.id, assets))
+    assets.raster.revision = 1
+    expect(groupPassSignature(document, group.id, assets)).not.toBe(before)
+    expect(groupPassSignature({ ...document, layers: [{ ...layer, opacity: 50 }] }, group.id, assets)).not.toBe(before)
   })
 })

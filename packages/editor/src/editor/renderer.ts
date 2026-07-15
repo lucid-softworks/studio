@@ -3,7 +3,7 @@ import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
-import { backgroundPassSignature, layerPassSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
+import { backgroundPassSignature, groupPassSignature, layerPassSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
@@ -678,9 +678,11 @@ export function renderNativeLayerPasses(
   const layers = new Map(documentState.layers.map((layer) => [layer.id, layer]))
   plan.layers.forEach((node, index) => {
     const layer = node.kind === 'group' ? undefined : layers.get(node.layerId)
-    const signature = node.kind === 'layer' && layer
-      ? node.filters?.blur ? null : layerPassSignature(layer, assets)
-      : node.kind === 'adjustment' ? `adjustment:${node.layerId}` : null
+    const signature = node.kind === 'layer'
+      ? layer && !node.filters?.blur ? layerPassSignature(layer, assets) : null
+      : node.kind === 'adjustment'
+        ? `adjustment:${node.layerId}`
+        : groupPassSignature(documentState, node.groupId, assets)
     const pass = preparePass(index + 1, signature)
     if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
       if (node.filters?.blur) {
