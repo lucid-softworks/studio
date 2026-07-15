@@ -14,6 +14,7 @@ export type LayerRenderNode = {
   clipBaseLayerId: string | null
   filters: LayerFilters | null
   effects: LayerEffects | null
+  additionalEffects?: LayerEffects[]
 }
 
 export type AdjustmentRenderNode = {
@@ -111,6 +112,7 @@ function planNodes(
       clipBaseLayerId: clippingBase?.id ?? null,
       filters: layer.filters ? normalizeLayerFilters(layer.filters) : null,
       effects: hasEnabledLayerEffects(layer.effects) ? normalizeLayerEffects(layer.effects) : null,
+      ...((layer.additionalEffects ?? []).some(hasEnabledLayerEffects) ? { additionalEffects: (layer.additionalEffects ?? []).filter(hasEnabledLayerEffects).map(normalizeLayerEffects) } : {}),
     }]
   })
 }
@@ -159,6 +161,7 @@ export function buildNativeLayerCompositionPlan(document: EditorDocument): Nativ
     return effects.innerShadow.enabled || effects.innerGlow.enabled || effects.bevel.enabled || effects.satin.enabled
       || effects.gradientOverlay.enabled || effects.patternOverlay.enabled || effects.stroke.enabled
   })) return null
+  if (document.layers.some((layer) => layer.additionalEffects?.some(hasEnabledLayerEffects))) return null
   const plan = buildCompositionRenderPlan(document)
   const layers: Array<LayerRenderNode | AdjustmentRenderNode | GroupRenderNode> = []
   if (!collectNativeLayers(plan.nodes, layers)) return null

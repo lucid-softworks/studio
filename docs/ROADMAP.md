@@ -76,7 +76,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Preserve every PSD adjustment descriptor as typed Studio data and render supported adjustments locally
   - [x] Evaluate embedded `.cube` Color Lookup LUT previews entirely on-device
   - [x] Preserve and render deterministic seeded noise-gradient layer styles
-  - [ ] Preserve multiple style instances and custom contours, and preview remaining Color Lookup encodings
+  - [x] Preserve and render multiple style instances while retaining custom contour descriptors
+  - [ ] Preview remaining Color Lookup encodings
 - [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [x] Write layered PSD files from Studio documents

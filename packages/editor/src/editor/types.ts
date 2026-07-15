@@ -64,6 +64,8 @@ export type BaseLayer = {
   blendMode?: BlendMode
   filters?: LayerFilters
   effects?: LayerEffects | null
+  additionalEffects?: LayerEffects[]
+  psdEffectsMetadata?: SerializedPsdValue
   maskAssetId?: string | null
   maskSettings?: LayerMaskSettings
   vectorMask?: VectorMask
@@ -272,6 +274,8 @@ export type LayerPatch = Partial<{
   blendMode: BlendMode
   filters: LayerFilters
   effects: LayerEffects | null
+  additionalEffects: LayerEffects[]
+  psdEffectsMetadata: SerializedPsdValue | null
   maskAssetId: string | null
   maskSettings: LayerMaskSettings
   vectorMask: VectorMask | null

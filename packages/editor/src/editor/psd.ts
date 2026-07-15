@@ -343,6 +343,8 @@ function applyPsdLayerMetadata(target: EditorLayer, source: Layer, documentWidth
   target.blendIf = psdBlendIf(source)
   target.psdLayerId = source.id
   target.psdPlacedLayer = source.placedLayer ? serializePsdValue(source.placedLayer) : undefined
+  target.additionalEffects = psdAdditionalLayerEffects(source)
+  target.psdEffectsMetadata = source.effects ? serializePsdValue(source.effects) : undefined
 }
 
 function effectEnabled(effect: { enabled?: boolean; present?: boolean } | undefined) {
@@ -438,6 +440,19 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
       position: stroke?.position ?? 'outside', blendMode: psdBlendMode(stroke?.blendMode),
     },
   }
+}
+
+function psdAdditionalLayerEffects(layer: Layer) {
+  const effects = layer.effects
+  if (!effects || effects.disabled) return []
+  const entries: Array<Layer['effects']> = [
+    ...(effects.dropShadow?.slice(1).map((effect) => ({ dropShadow: [effect] })) ?? []),
+    ...(effects.innerShadow?.slice(1).map((effect) => ({ innerShadow: [effect] })) ?? []),
+    ...(effects.solidFill?.slice(1).map((effect) => ({ solidFill: [effect] })) ?? []),
+    ...(effects.gradientOverlay?.slice(1).map((effect) => ({ gradientOverlay: [effect] })) ?? []),
+    ...(effects.stroke?.slice(1).map((effect) => ({ stroke: [effect] })) ?? []),
+  ]
+  return entries.map((value) => psdLayerEffects({ effects: value })).filter((value): value is LayerEffects => Boolean(value))
 }
 
 function psdShapeGeometry(layer: Layer, documentWidth = 1, documentHeight = 1) {
@@ -536,12 +551,7 @@ function hasUnsupportedEffects(layer: Layer) {
   const effects = layer.effects
   if (!effects || effects.disabled) return false
   return Boolean(
-    (effects.dropShadow?.filter(effectEnabled).length ?? 0) > 1
-    || (effects.innerShadow?.filter(effectEnabled).length ?? 0) > 1
-    || (effects.solidFill?.filter(effectEnabled).length ?? 0) > 1
-    || (effects.stroke?.filter(effectEnabled).length ?? 0) > 1
-    || (effects.gradientOverlay?.filter(effectEnabled).length ?? 0) > 1
-    || effects.stroke?.some((effect) => effectEnabled(effect) && effect.fillType && effect.fillType !== 'color')
+    effects.stroke?.some((effect) => effectEnabled(effect) && effect.fillType && effect.fillType !== 'color')
   )
 }
 
@@ -1004,7 +1014,7 @@ function canvasPixels(canvas: HTMLCanvasElement) {
   return canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, canvas.width, canvas.height)
 }
 
-function exportedEffects(effects: LayerEffects | null | undefined): Layer['effects'] {
+function generatedEffects(effects: LayerEffects | null | undefined): Layer['effects'] {
   if (!effects) return undefined
   effects = normalizeLayerEffects(effects)
   const result: NonNullable<Layer['effects']> = {}
@@ -1030,6 +1040,28 @@ function exportedEffects(effects: LayerEffects | null | undefined): Layer['effec
   }]
   if (effects.patternOverlay.enabled) result.patternOverlay = { enabled: true, opacity: effects.patternOverlay.opacity / 100, scale: effects.patternOverlay.scale, blendMode: studioPsdBlendModes[effects.patternOverlay.blendMode], pattern: { id: effects.patternOverlay.id, name: effects.patternOverlay.name }, phase: effects.patternOverlay.phase, align: effects.patternOverlay.linked }
   if (effects.stroke.enabled) result.stroke = [{ enabled: true, fillType: 'color', color: psdColor(effects.stroke.color), opacity: effects.stroke.opacity / 100, size: { units: 'Pixels', value: effects.stroke.size }, position: effects.stroke.position, blendMode: studioPsdBlendModes[effects.stroke.blendMode] }]
+  return Object.keys(result).length ? result : undefined
+}
+
+function exportedEffects(effects: LayerEffects | null | undefined, metadata?: SerializedPsdValue, additionalEffects: LayerEffects[] = []): Layer['effects'] {
+  const original = metadata ? revivePsdValue(metadata) as NonNullable<Layer['effects']> : {}
+  const primary = generatedEffects(effects) ?? {}
+  const additional = additionalEffects.map((value) => generatedEffects(value) ?? {})
+  const result: NonNullable<Layer['effects']> = { ...original }
+  const arrayKeys = ['dropShadow', 'innerShadow', 'solidFill', 'gradientOverlay', 'stroke'] as const
+  for (const key of arrayKeys) {
+    const primaryValues = (primary[key] ?? []) as Array<Record<string, unknown>>
+    const generated = [...primaryValues, ...additional.flatMap((entry) => (entry[key] ?? []) as Array<Record<string, unknown>>)]
+    const originals = (original[key] ?? []) as Array<Record<string, unknown>>
+    const merged = generated.map((value, index) => ({ ...originals[index], ...value }))
+    if (merged.length) result[key] = merged as never
+    else delete result[key]
+  }
+  const singletonKeys = ['outerGlow', 'innerGlow', 'bevel', 'satin', 'patternOverlay'] as const
+  for (const key of singletonKeys) {
+    if (primary[key]) result[key] = { ...(original[key] as Record<string, unknown> | undefined), ...(primary[key] as Record<string, unknown>) } as never
+    else delete result[key]
+  }
   return Object.keys(result).length ? result : undefined
 }
 
@@ -1212,11 +1244,11 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
       protected: layer.locked ? { position: true, composite: true } : undefined,
       mask: exportedMask(layer, assets, width, height), vectorMask: exportedVectorMask(layer, width, height),
-      blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects), id: layer.psdLayerId,
+      blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects, layer.psdEffectsMetadata, layer.additionalEffects), id: layer.psdLayerId,
       placedLayer: layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined,
     }
     if (layer.type === 'adjustment') return { ...base, adjustment: exportedAdjustment(layer) }
-    const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, groupId: null, stackOrder: 0 }])
+    const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, additionalEffects: [], groupId: null, stackOrder: 0 }])
     Object.assign(base, { left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(rendered) })
     const bounds = getLayerBounds(geometryContext, geometryCanvas, layer, assets)
     if (layer.type === 'text') base.text = exportedText(layer, bounds)

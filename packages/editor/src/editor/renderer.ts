@@ -801,9 +801,11 @@ function drawLayerWithEffects(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   effects: LayerEffects | null,
+  additionalEffects: LayerEffects[],
   draw: (target: CanvasRenderingContext2D) => void,
 ) {
-  if (!effects) {
+  const effectStack = [...(effects ? [effects] : []), ...additionalEffects]
+  if (!effectStack.length) {
     draw(context)
     return
   }
@@ -813,58 +815,51 @@ function drawLayerWithEffects(
   layerContext.clearRect(0, 0, canvas.width, canvas.height)
   draw(layerContext)
 
-  if (effects.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, effects.outerGlow.color, effects.outerGlow.opacity, effects.outerGlow.size, 0, 0, effects.outerGlow.blendMode)
-  if (effects.dropShadow.enabled) {
-    const angle = effects.dropShadow.angle * Math.PI / 180
-    drawTintedEffect(
-      context,
-      canvas,
-      layerEffectsCanvas,
-      effects.dropShadow.color,
-      effects.dropShadow.opacity,
-      effects.dropShadow.blur,
-      Math.cos(angle) * effects.dropShadow.distance,
-      Math.sin(angle) * effects.dropShadow.distance,
-      effects.dropShadow.blendMode,
-    )
+  for (const value of effectStack) {
+    if (value.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, value.outerGlow.color, value.outerGlow.opacity, value.outerGlow.size, 0, 0, value.outerGlow.blendMode)
+    if (value.dropShadow.enabled) {
+      const angle = value.dropShadow.angle * Math.PI / 180
+      drawTintedEffect(context, canvas, layerEffectsCanvas, value.dropShadow.color, value.dropShadow.opacity, value.dropShadow.blur, Math.cos(angle) * value.dropShadow.distance, Math.sin(angle) * value.dropShadow.distance, value.dropShadow.blendMode)
+    }
+    if (value.stroke.enabled && value.stroke.position !== 'inside') drawTintedEffect(context, canvas, layerEffectsCanvas, value.stroke.color, value.stroke.opacity, value.stroke.size / (value.stroke.position === 'center' ? 2 : 1), 0, 0, value.stroke.blendMode)
   }
-  if (effects.stroke.enabled && effects.stroke.position !== 'inside') drawTintedEffect(context, canvas, layerEffectsCanvas, effects.stroke.color, effects.stroke.opacity, effects.stroke.size / (effects.stroke.position === 'center' ? 2 : 1), 0, 0, effects.stroke.blendMode)
   colorOverlayCanvas = prepareScratchCanvas(colorOverlayCanvas, canvas)
   const overlayContext = colorOverlayCanvas.getContext('2d')
   if (!overlayContext) return
   overlayContext.clearRect(0, 0, canvas.width, canvas.height)
   overlayContext.drawImage(layerEffectsCanvas, 0, 0)
-  if (effects.colorOverlay.enabled) {
-    overlayContext.save()
-    overlayContext.globalCompositeOperation = 'source-atop'
-    overlayContext.globalAlpha = effects.colorOverlay.opacity / 100
-    overlayContext.fillStyle = effects.colorOverlay.color
-    overlayContext.fillRect(0, 0, canvas.width, canvas.height)
-    overlayContext.restore()
+  for (const value of effectStack) {
+    if (value.colorOverlay.enabled) {
+      overlayContext.save()
+      overlayContext.globalCompositeOperation = value.colorOverlay.blendMode === 'normal' ? 'source-atop' : value.colorOverlay.blendMode
+      overlayContext.globalAlpha = value.colorOverlay.opacity / 100
+      overlayContext.fillStyle = value.colorOverlay.color
+      overlayContext.fillRect(0, 0, canvas.width, canvas.height)
+      overlayContext.restore()
+    }
+    if (value.gradientOverlay.enabled) applyGradientOverlay(overlayContext, canvas, value.gradientOverlay)
+    if (value.patternOverlay.enabled) applyPatternOverlay(overlayContext, canvas, value.patternOverlay)
   }
-  if (effects.gradientOverlay.enabled) applyGradientOverlay(overlayContext, canvas, effects.gradientOverlay)
-  if (effects.patternOverlay.enabled) applyPatternOverlay(overlayContext, canvas, effects.patternOverlay)
-  context.save()
-  context.globalCompositeOperation = effects.colorOverlay.enabled && effects.colorOverlay.blendMode !== 'normal' ? effects.colorOverlay.blendMode : 'source-over'
   context.drawImage(colorOverlayCanvas, 0, 0)
-  context.restore()
-  if (effects.innerShadow.enabled) {
-    const angle = effects.innerShadow.angle * Math.PI / 180
-    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.innerShadow.color, effects.innerShadow.opacity, effects.innerShadow.blur, Math.cos(angle) * effects.innerShadow.distance, Math.sin(angle) * effects.innerShadow.distance, effects.innerShadow.blendMode)
+  for (const value of effectStack) {
+    if (value.innerShadow.enabled) {
+      const angle = value.innerShadow.angle * Math.PI / 180
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.innerShadow.color, value.innerShadow.opacity, value.innerShadow.blur, Math.cos(angle) * value.innerShadow.distance, Math.sin(angle) * value.innerShadow.distance, value.innerShadow.blendMode)
+    }
+    if (value.innerGlow.enabled) drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.innerGlow.color, value.innerGlow.opacity, value.innerGlow.size, 0, 0, value.innerGlow.blendMode)
+    if (value.satin.enabled) {
+      const angle = value.satin.angle * Math.PI / 180
+      const direction = value.satin.invert ? -1 : 1
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.satin.color, value.satin.opacity, value.satin.size, Math.cos(angle) * value.satin.distance * direction, Math.sin(angle) * value.satin.distance * direction, value.satin.blendMode)
+    }
+    if (value.bevel.enabled) {
+      const angle = value.bevel.angle * Math.PI / 180
+      const distance = Math.max(1, value.bevel.size * value.bevel.depth / 100 / 2) * (value.bevel.direction === 'down' ? -1 : 1)
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.highlightColor, value.bevel.highlightOpacity, value.bevel.size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.shadowColor, value.bevel.shadowOpacity, value.bevel.size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
+    }
+    if (value.stroke.enabled && value.stroke.position === 'inside') drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.stroke.color, value.stroke.opacity, value.stroke.size / 2, 0, 0, value.stroke.blendMode)
   }
-  if (effects.innerGlow.enabled) drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.innerGlow.color, effects.innerGlow.opacity, effects.innerGlow.size, 0, 0, effects.innerGlow.blendMode)
-  if (effects.satin.enabled) {
-    const angle = effects.satin.angle * Math.PI / 180
-    const direction = effects.satin.invert ? -1 : 1
-    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.satin.color, effects.satin.opacity, effects.satin.size, Math.cos(angle) * effects.satin.distance * direction, Math.sin(angle) * effects.satin.distance * direction, effects.satin.blendMode)
-  }
-  if (effects.bevel.enabled) {
-    const angle = effects.bevel.angle * Math.PI / 180
-    const distance = Math.max(1, effects.bevel.size * effects.bevel.depth / 100 / 2) * (effects.bevel.direction === 'down' ? -1 : 1)
-    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.bevel.highlightColor, effects.bevel.highlightOpacity, effects.bevel.size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
-    drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.bevel.shadowColor, effects.bevel.shadowOpacity, effects.bevel.size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
-  }
-  if (effects.stroke.enabled && effects.stroke.position === 'inside') drawInnerTintedEffect(context, canvas, layerEffectsCanvas, effects.stroke.color, effects.stroke.opacity, effects.stroke.size / 2, 0, 0, effects.stroke.blendMode)
 }
 
 function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, base: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
@@ -1147,8 +1142,8 @@ function drawRenderPlan(
     context.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode
     if (node.filters) context.filter = layerFilterCss(node.filters)
     const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
-    if (clippingBase) drawLayerWithEffects(context, canvas, node.effects, (target) => drawClippedLayer(target, canvas, layer, node.maskAssetId, clippingBase, assets, resources))
-    else drawLayerWithEffects(context, canvas, node.effects, (target) => drawMaskedLayer(target, canvas, layer, node.maskAssetId, assets, resources))
+    if (clippingBase) drawLayerWithEffects(context, canvas, node.effects, node.additionalEffects ?? [], (target) => drawClippedLayer(target, canvas, layer, node.maskAssetId, clippingBase, assets, resources))
+    else drawLayerWithEffects(context, canvas, node.effects, node.additionalEffects ?? [], (target) => drawMaskedLayer(target, canvas, layer, node.maskAssetId, assets, resources))
     context.restore()
   }
 }

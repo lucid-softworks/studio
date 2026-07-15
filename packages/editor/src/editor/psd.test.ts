@@ -143,6 +143,27 @@ describe('PSD layer ordering', () => {
       .toMatchObject({ type: 'noise', name: 'Chromatic noise', roughness: 72, randomSeed: 12345, min: [0.1, 0.2, 0.3, 0], max: [0.9, 0.8, 0.7, 1] })
   })
 
+  it('renders and round-trips multiple style instances without losing custom contours', async () => {
+    const imageData = new ImageData(8, 8)
+    imageData.data.fill(255)
+    const contour = { name: 'Custom S', curve: [{ x: 0, y: 0 }, { x: 128, y: 210 }, { x: 255, y: 255 }] }
+    const source: Psd = {
+      width: 8, height: 8, imageData,
+      children: [{ name: 'Styled', left: 0, top: 0, right: 8, bottom: 8, imageData, effects: { dropShadow: [
+        { enabled: true, color: { r: 0, g: 0, b: 0 }, opacity: 0.5, distance: { units: 'Pixels', value: 2 }, size: { units: 'Pixels', value: 3 }, contour },
+        { enabled: true, color: { r: 80, g: 20, b: 180 }, opacity: 0.35, distance: { units: 'Pixels', value: 5 }, size: { units: 'Pixels', value: 7 }, contour: { ...contour, name: 'Second' } },
+      ] } }],
+    }
+    const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'styles.psd')
+    expect(imported.document.layers[0].additionalEffects).toHaveLength(1)
+    expect(psdImportWarnings(source)).not.toContain(expect.stringContaining('effects'))
+    const blob = await exportPsdDocument(imported.document, imported.assets)
+    const shadows = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]?.effects?.dropShadow
+    expect(shadows).toHaveLength(2)
+    expect(shadows?.[0]).toMatchObject({ distance: { value: 2 }, contour: { name: 'Custom S', curve: [{ x: 0, y: 0 }, { x: 128, y: 210 }, { x: 255, y: 255 }] } })
+    expect(shadows?.[1]).toMatchObject({ distance: { value: 5 }, contour: { name: 'Second' } })
+  })
+
   it('preserves basic vector rectangles and ellipses as editable shapes', () => {
     const rectangle: Layer = {
       name: 'Label',
