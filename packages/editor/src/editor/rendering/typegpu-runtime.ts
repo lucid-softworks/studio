@@ -60,6 +60,13 @@ export function initializeTypeGpuRuntime(): Promise<TypeGpuRuntimeStatus> {
         return status
       }
 
+      const { validateTypeGpuCompositor } = await import('./typegpu-compositor')
+      try {
+        validateTypeGpuCompositor(nextRoot)
+      } catch (error) {
+        nextRoot.destroy()
+        throw error
+      }
       root = nextRoot
       const ready: TypeGpuRuntimeStatus = {
         state: 'ready',
