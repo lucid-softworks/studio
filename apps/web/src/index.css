@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../packages/editor/src";
 
 @theme {
   --font-sans: "Inter", "SF Pro Display", "Segoe UI", sans-serif;
@@ -11,6 +12,7 @@
 
   html {
     background: #0b0b0c;
+    scroll-behavior: smooth;
   }
 
   body {
@@ -29,6 +31,16 @@
   input,
   select {
     font: inherit;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
   }
 }
 

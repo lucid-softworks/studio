@@ -1,59 +1,86 @@
 # Studio
 
-A structured, client-side composition editor for turning screenshots, text, images, and shapes into presentation-ready visual assets.
+Studio is a local-first image editor built as a pnpm/Turborepo monorepo. The editor runs entirely on the client and is shared between the web app and the Electron desktop shell.
 
-## Stack
+## Workspace
 
-- React 19
-- Vite 8
-- Tailwind CSS 4 via `@tailwindcss/vite`
-- TypeScript 6
-- Vitest
+```text
+apps/
+  web/          Landing page and Vite web application
+  desktop/      Secure Electron wrapper
+packages/
+  editor/       Shared React editor and raster engine
+```
+
+The workspace currently uses React 19, Vite 8, Tailwind CSS 4, TypeScript 6, pnpm 11, Turborepo 2, and Electron 43.
 
 ## Development
 
-```sh
-npm install
-npm run dev
-```
-
-In this Nix-based workspace, where Node is not on the default `PATH`, use:
+Install dependencies and start the web app:
 
 ```sh
-nix shell nixpkgs#nodejs_latest -c npm run dev -- --host 0.0.0.0
+pnpm install
+pnpm dev
 ```
 
-The editor requires no backend. Uploaded images remain in the browser, autosave uses IndexedDB, and portable `.studio` project files are assembled and downloaded locally.
+- Landing page: <http://localhost:5173/>
+- Image editor: <http://localhost:5173/app>
+
+To launch the web app and Electron shell together:
+
+```sh
+pnpm dev:desktop
+```
+
+In this Nix-based workspace, where Node is not on the default `PATH`, the equivalent web command is:
+
+```sh
+nix shell nixpkgs#nodejs_latest -c npx pnpm@11.13.0 dev
+```
 
 ## Quality checks
 
+Turborepo runs checks across every workspace:
+
 ```sh
-npm run lint
-npm run test
-npm run typecheck
-npm run build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
-## Current scope
+Run all four with `pnpm check`.
 
-- Transparent checkerboard document on first launch, with one-click empty raster layers
-- Typed image, text, rectangle, and ellipse layers
-- Single and multi-layer selection, visibility, locking, ordering, naming, duplication, deletion, and alignment
-- Dedicated SVG transform overlay with eight resize handles, rotation, Shift aspect locking, and Alt/Option centre resizing
-- Undo/redo with grouped drag and slider history
-- PNG, JPEG, and WebP upload, drop, paste, and native-size document opening
-- Layered PSD import in the browser through `ag-psd`
-- Gradient, solid, and uploaded-image backgrounds
-- Grid, dot, and wave patterns
-- Per-layer positioning, opacity, rotation, image flip, scale, corners, and shadows
-- Text content, sizing, weight, colour, alignment, and tracking
-- Shape sizing, fill, stroke, and corners
-- Canvas zoom and keyboard nudging
-- Full-resolution PNG, JPEG, and WebP export
-- Client-side `.studio` project save/open and automatic local recovery
-- Mutable raster layers with Brush and Eraser tools
-- Dirty-region pixel undo/redo and transparent canvas support
+## Architecture
 
-The next raster milestones are brush hardness/flow presets, marquee and lasso selections, layer masks, and adjustment layers. Server-side processing is intentionally outside the product architecture.
+`@studio/editor` owns the document model, raster engine, rendering, selection system, masks, project persistence, and editor interface. It exports a `StudioEditor` React component so web and desktop surfaces share the same implementation.
 
-PSD import currently follows `ag-psd` support: RGB 8-bit PSD files are supported, while PSB, 16-bit, and several non-RGB colour modes are not yet available through the decoder.
+`@studio/web` owns navigation and presentation. `/` renders the product landing page and `/app` mounts the shared editor. The route also understands `#/app`, allowing the production Electron build to load the static Vite bundle over `file:`.
+
+`@studio/desktop` is a minimal Electron host with context isolation, renderer sandboxing, and Node integration disabled. Packaging, signing, auto-update, and native file integrations will be added when desktop distribution begins.
+
+All image decoding, editing, autosave, project serialization, and export remain client-side. No application backend is required.
+
+## Current editor scope
+
+- Transparent blank documents and mutable raster layers
+- Brush, eraser, rectangle and ellipse selections
+- Selection add, subtract, intersect, clear, and selection-aware pixel deletion
+- Editable layer masks, blend modes, and non-destructive layer adjustments
+- Transform handles, rotation, multi-selection, alignment, visibility, locking, and ordering
+- PNG, JPEG, WebP, and layered PSD opening
+- PNG, JPEG, and WebP export
+- Portable `.studio` projects and IndexedDB recovery
+- Dirty-region raster undo/redo
+
+PSD support currently follows `ag-psd`: RGB 8-bit PSD files are supported, while PSB, 16-bit, and several non-RGB colour modes are not.
+
+## Commits
+
+Use Conventional Commit messages, for example:
+
+```text
+feat(editor): add clipping masks
+fix(web): preserve editor route on refresh
+refactor: move shared rendering into the editor package
+```

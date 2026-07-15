@@ -16,7 +16,9 @@ import { useCanvasRenderer } from './editor/use-canvas-renderer'
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
-function App() {
+type AppProps = { onExit?: () => void }
+
+function App({ onExit }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialHistoryState)
   const [, bumpRasterHistory] = useReducer((value: number) => value + 1, 0)
   const [selectionResetToken, resetSelection] = useReducer((value: number) => value + 1, 0)
@@ -415,15 +417,17 @@ function App() {
     <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
       <header className="flex h-[65px] items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-3 sm:px-5">
         <div className="flex items-center gap-2.5">
-          <div className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg bg-violet-500 shadow-[0_0_24px_rgba(139,92,246,0.25)]">
-            <div className="absolute -top-3 -left-2 size-7 rounded-full bg-fuchsia-400/80 blur-[5px]" />
-            <div className="absolute -right-2 -bottom-3 size-8 rounded-full bg-cyan-300/70 blur-[6px]" />
-            <span className="relative text-xs font-black tracking-tighter text-white">S</span>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold tracking-tight text-white">Studio</span>
-            <span className="hidden text-[10px] font-medium tracking-wide text-zinc-600 uppercase md:inline">Composition editor</span>
-          </div>
+          <button type="button" title={onExit ? 'Back to Studio home' : undefined} onClick={onExit} className={`flex items-center gap-2.5 rounded-lg text-left ${onExit ? 'focus-visible:outline-2 focus-visible:outline-violet-400' : 'cursor-default'}`}>
+            <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg bg-violet-500 shadow-[0_0_24px_rgba(139,92,246,0.25)]">
+              <span className="absolute -top-3 -left-2 size-7 rounded-full bg-fuchsia-400/80 blur-[5px]" />
+              <span className="absolute -right-2 -bottom-3 size-8 rounded-full bg-cyan-300/70 blur-[6px]" />
+              <span className="relative text-xs font-black tracking-tighter text-white">S</span>
+            </span>
+            <span className="flex items-baseline gap-2">
+              <span className="text-sm font-semibold tracking-tight text-white">Studio</span>
+              <span className="hidden text-[10px] font-medium tracking-wide text-zinc-600 uppercase md:inline">Composition editor</span>
+            </span>
+          </button>
           <div className="ml-1 hidden items-center gap-0.5 border-l border-white/[0.07] pl-2 sm:flex">
             <button type="button" disabled={history.past.length === 0 && rasterUndoRef.current.length === 0} aria-label="Undo" title="Undo (⌘Z)" onClick={performUndo} className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-25"><UndoIcon /></button>
             <button type="button" disabled={history.future.length === 0 && rasterRedoRef.current.length === 0} aria-label="Redo" title="Redo (⇧⌘Z)" onClick={performRedo} className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-25"><RedoIcon /></button>

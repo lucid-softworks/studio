@@ -1,0 +1,19 @@
+{
+  "name": "@studio/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json && wait-on http://127.0.0.1:5173 && STUDIO_WEB_URL=http://127.0.0.1:5173/app electron .",
+    "build": "tsc -p tsconfig.json",
+    "lint": "oxlint src",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "electron": "^43.1.1",
+    "wait-on": "^9.0.3"
+  }
+}
