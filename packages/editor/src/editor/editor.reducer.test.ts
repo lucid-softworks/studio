@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { documentReducer, historyReducer, initialHistoryState } from './editor.reducer'
-import { initialDocument } from './presets'
+import { createAdjustmentLayer, initialDocument } from './presets'
 import type { TextLayer } from './types'
 
 const textLayer: TextLayer = {
@@ -58,6 +58,14 @@ describe('documentReducer', () => {
       { id: second.id, patch: { opacity: 75 } },
     ] })
     expect(next.layers.map((layer) => layer.opacity)).toEqual([50, 75])
+  })
+
+  it('adds stack adjustments and preserves clipping relationships', () => {
+    const clipped = documentReducer({ ...initialDocument, layers: [textLayer] }, { type: 'update-layer', id: textLayer.id, patch: { clipToBelow: true } })
+    const adjustment = createAdjustmentLayer(0)
+    const next = documentReducer(clipped, { type: 'add-layer', layer: adjustment })
+    expect(next.layers[0].clipToBelow).toBe(true)
+    expect(next.layers[1]).toMatchObject({ type: 'adjustment', brightness: 100, saturation: 100, hue: 0 })
   })
 })
 

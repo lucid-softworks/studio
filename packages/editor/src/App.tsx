@@ -6,7 +6,7 @@ import { Inspector } from './components/Inspector'
 import { LayersPanel } from './components/LayersPanel'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
-import { createId, createImageLayer, createRasterLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
+import { createAdjustmentLayer, createId, createImageLayer, createRasterLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { getLayerBounds, renderComposition } from './editor/renderer'
 import type { RasterEdit } from './editor/raster'
@@ -268,9 +268,13 @@ function App({ onExit }: AppProps) {
     dispatch({ type: 'add-layer', layer: createRasterLayer(assetId, name, size.width, size.height) })
   }
 
+  const addAdjustment = () => {
+    dispatch({ type: 'add-layer', layer: createAdjustmentLayer(document.layers.filter((layer) => layer.type === 'adjustment').length) })
+  }
+
   const addLayerMask = (layerId: string) => {
     const layer = document.layers.find((candidate) => candidate.id === layerId)
-    if (!layer || layer.maskAssetId) return
+    if (!layer || layer.type === 'adjustment' || layer.maskAssetId) return
     const size = getDocumentSize(document)
     const assetId = createId()
     const source = createLayerMaskSource(size.width, size.height, `${layer.name} mask`)
@@ -455,7 +459,7 @@ function App({ onExit }: AppProps) {
       <main className="flex flex-col lg:flex-row">
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />

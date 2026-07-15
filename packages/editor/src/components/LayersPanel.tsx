@@ -5,6 +5,7 @@ type LayersPanelProps = {
   document: EditorDocument
   dispatch: EditorDispatch
   onAddLayer: () => void
+  onAddAdjustment: () => void
   editingMaskLayerId: string | null
   onAddMask: (layerId: string) => void
   onEditMask: (layerId: string) => void
@@ -14,10 +15,11 @@ type LayersPanelProps = {
 function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   if (layer.type === 'image' || layer.type === 'raster') return <ImageIcon className="size-3.5" />
   if (layer.type === 'text') return <TextIcon className="size-3.5" />
+  if (layer.type === 'adjustment') return <CircleIcon className="size-3.5" />
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask }: LayersPanelProps) {
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   return (
     <aside className="order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-65px)] lg:w-[258px] lg:border-t-0 lg:border-l">
@@ -26,7 +28,10 @@ export function LayersPanel({ document, dispatch, onAddLayer, editingMaskLayerId
           <h2 className="text-sm font-semibold text-zinc-100">Layers</h2>
           <p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'}</p>
         </div>
-        <button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400">+</button>
+        <div className="flex items-center gap-0.5">
+          <button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400">◐</button>
+          <button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-violet-400">+</button>
+        </div>
       </div>
 
       <div className="min-h-44 flex-1 space-y-1 overflow-y-auto p-2">
@@ -52,7 +57,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, editingMaskLayerId
                   <LayerTypeIcon layer={layer} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium">{layer.name}</span>
+                  <span className="block truncate text-xs font-medium">{layer.clipToBelow && <span className="mr-1 text-violet-300/60">↳</span>}{layer.name}</span>
                   <span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{layer.type}</span>
                 </span>
                 {!layer.visible && <span className="size-1.5 rounded-full bg-zinc-700" />}
@@ -98,7 +103,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, editingMaskLayerId
       {document.selectedLayerIds.length > 0 && (
         <div className="flex items-center justify-between border-t border-white/[0.07] p-3">
           <div className="flex items-center gap-1">
-            {document.selectedLayerIds.length === 1 && activeLayer && (
+            {document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && (
               <>
                 <button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] font-medium ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600 hover:text-zinc-300'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>
                 {activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" title="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-[11px] text-zinc-700 hover:bg-red-400/10 hover:text-red-300">×</button>}

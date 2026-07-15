@@ -60,6 +60,7 @@ export function calculateLayerResize(
   options: { fromCenter: boolean; preserveAspect: boolean },
 ): LayerPatch {
   const { layer, bounds, handle, canvasWidth, canvasHeight } = snapshot
+  if (layer.type === 'adjustment') return {}
 
   if (layer.type !== 'shape' || options.preserveAspect) {
     const { ratio, shift } = uniformRatio(snapshot, point, options.fromCenter)

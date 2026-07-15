@@ -66,7 +66,7 @@ All image decoding, editing, autosave, project serialization, and export remain 
 - Transparent blank documents and mutable raster layers
 - Brush, eraser, rectangle and ellipse selections
 - Selection add, subtract, intersect, clear, and selection-aware pixel deletion
-- Editable layer masks, blend modes, and non-destructive layer adjustments
+- Editable layer masks, clipping masks, blend modes, stack-based adjustment layers, and non-destructive per-layer filters
 - Transform handles, rotation, multi-selection, alignment, visibility, locking, and ordering
 - PNG, JPEG, WebP, and layered PSD opening
 - PNG, JPEG, and WebP export

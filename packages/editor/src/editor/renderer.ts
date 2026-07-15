@@ -1,5 +1,5 @@
 import { getDocumentSize } from './presets'
-import type { AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -268,7 +268,7 @@ function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   if (layer.type === 'image') drawImageLayer(context, canvas, layer, assets)
   else if (layer.type === 'raster') drawRasterLayer(context, canvas, layer, assets)
   else if (layer.type === 'text') drawTextLayer(context, canvas, layer)
-  else drawShapeLayer(context, canvas, layer)
+  else if (layer.type === 'shape') drawShapeLayer(context, canvas, layer)
 }
 
 let maskCompositionCanvas: HTMLCanvasElement | null = null
@@ -297,6 +297,58 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   context.drawImage(composition, 0, 0)
 }
 
+let clippedLayerCanvas: HTMLCanvasElement | null = null
+let clippingBaseCanvas: HTMLCanvasElement | null = null
+let adjustmentCanvas: HTMLCanvasElement | null = null
+
+function prepareScratchCanvas(current: HTMLCanvasElement | null, canvas: HTMLCanvasElement) {
+  const scratch = current ?? document.createElement('canvas')
+  if (scratch.width !== canvas.width) scratch.width = canvas.width
+  if (scratch.height !== canvas.height) scratch.height = canvas.height
+  return scratch
+}
+
+function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, base: EditorLayer, assets: AssetMap) {
+  clippedLayerCanvas = prepareScratchCanvas(clippedLayerCanvas, canvas)
+  clippingBaseCanvas = prepareScratchCanvas(clippingBaseCanvas, canvas)
+  const layerContext = clippedLayerCanvas.getContext('2d')
+  const baseContext = clippingBaseCanvas.getContext('2d')
+  if (!layerContext || !baseContext) return
+  layerContext.clearRect(0, 0, canvas.width, canvas.height)
+  baseContext.clearRect(0, 0, canvas.width, canvas.height)
+  drawMaskedLayer(layerContext, clippedLayerCanvas, layer, assets)
+  drawMaskedLayer(baseContext, clippingBaseCanvas, base, assets)
+  layerContext.save()
+  layerContext.globalAlpha = 1
+  layerContext.globalCompositeOperation = 'destination-in'
+  layerContext.drawImage(clippingBaseCanvas, 0, 0)
+  layerContext.restore()
+  context.drawImage(clippedLayerCanvas, 0, 0)
+}
+
+function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: AdjustmentLayer) {
+  adjustmentCanvas = prepareScratchCanvas(adjustmentCanvas, canvas)
+  const adjustmentContext = adjustmentCanvas.getContext('2d')
+  if (!adjustmentContext) return
+  adjustmentContext.clearRect(0, 0, canvas.width, canvas.height)
+  adjustmentContext.drawImage(canvas, 0, 0)
+  context.save()
+  context.globalAlpha = layer.opacity / 100
+  context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
+  context.filter = `brightness(${layer.brightness}%) contrast(${layer.contrast}%) saturate(${layer.saturation}%) hue-rotate(${layer.hue}deg) blur(${layer.blur}px)`
+  context.drawImage(adjustmentCanvas, 0, 0)
+  context.restore()
+}
+
+function findClippingBase(layers: EditorLayer[], index: number) {
+  for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
+    const candidate = layers[candidateIndex]
+    if (candidate.type === 'adjustment' || candidate.clipToBelow) continue
+    return candidate
+  }
+  return null
+}
+
 export function getLayerBounds(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -309,6 +361,7 @@ export function getLayerBounds(
   }
   if (layer.type === 'raster') return rasterBounds(canvas, layer)
   if (layer.type === 'shape') return shapeBounds(canvas, layer)
+  if (layer.type === 'adjustment') return null
   const metrics = textMetrics(context, layer)
   return {
     x: canvas.width / 2 - metrics.width / 2 + layer.position.x * canvas.width,
@@ -416,12 +469,19 @@ export function renderComposition(
   drawBackground(context, canvas.width, canvas.height, document, assets)
   drawPattern(context, canvas.width, canvas.height, document)
 
-  for (const layer of document.layers) {
+  for (const [index, layer] of document.layers.entries()) {
     if (!layer.visible) continue
+    if (layer.type === 'adjustment') {
+      drawAdjustmentLayer(context, canvas, layer)
+      continue
+    }
     context.save()
     context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
     if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
-    drawMaskedLayer(context, canvas, layer, assets)
+    const clippingBase = layer.clipToBelow ? findClippingBase(document.layers, index) : null
+    if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
+    else if (clippingBase) { /* Hidden clipping bases hide their complete clipping group. */ }
+    else drawMaskedLayer(context, canvas, layer, assets)
     context.restore()
   }
 

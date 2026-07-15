@@ -39,6 +39,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
 
 export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
+  const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
   const updateLayer = (layer: EditorLayer, patch: LayerPatch, groupKey?: string) => {
     dispatch({ type: 'update-layer', id: layer.id, patch }, groupKey ? { groupKey } : undefined)
   }
@@ -183,11 +184,16 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 {blendModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
               </select>
             </label>
+            {selected.type !== 'adjustment' && selectedIndex > 0 && (
+              <button type="button" aria-pressed={Boolean(selected.clipToBelow)} onClick={() => updateLayer(selected, { clipToBelow: !selected.clipToBelow })} className={`mt-3 flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-xs transition ${selected.clipToBelow ? 'border-violet-400/30 bg-violet-400/10 text-violet-200' : 'border-white/[0.08] text-zinc-500 hover:text-zinc-200'}`}>
+                <span>Clip to layer below</span><span className="text-sm">↳</span>
+              </button>
+            )}
             <RangeControl label="Opacity" value={selected.opacity} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { opacity: value }, `opacity-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Rotation" value={selected.rotation} min={-180} max={180} suffix="°" onChange={(value) => updateLayer(selected, { rotation: value }, `rotation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
           </ControlSection>
 
-          <ControlSection title="Adjustments">
+          {selected.type !== 'adjustment' && <ControlSection title="Layer filters">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[10px] leading-relaxed text-zinc-600">Non-destructive layer filters</p>
               <button type="button" onClick={() => updateLayer(selected, { filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 } })} className="rounded px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">Reset</button>
@@ -196,7 +202,19 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
             <RangeControl label="Contrast" value={filters.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, contrast: value } }, `contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Saturation" value={filters.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, saturation: value } }, `saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-          </ControlSection>
+          </ControlSection>}
+
+          {selected.type === 'adjustment' && (
+            <ControlSection title="Adjustment layer">
+              <div className="mb-2 rounded-lg border border-cyan-300/10 bg-cyan-300/[0.04] p-3 text-[10px] leading-relaxed text-cyan-100/60">Affects the complete visible stack beneath this layer without changing its pixels.</div>
+              <RangeControl label="Brightness" value={selected.brightness} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { brightness: value }, `adjustment-brightness-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Contrast" value={selected.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { contrast: value }, `adjustment-contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Saturation" value={selected.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { saturation: value }, `adjustment-saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Hue" value={selected.hue} min={-180} max={180} suffix="°" onChange={(value) => updateLayer(selected, { hue: value }, `adjustment-hue-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Blur" value={selected.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { blur: value }, `adjustment-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <button type="button" onClick={() => updateLayer(selected, { brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0 })} className="mt-3 w-full rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Reset adjustment</button>
+            </ControlSection>
+          )}
 
           {selected.type === 'image' && (
             <ControlSection title="Image">

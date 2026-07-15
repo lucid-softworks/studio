@@ -28,6 +28,7 @@ export type BaseLayer = {
   blendMode?: BlendMode
   filters?: LayerFilters
   maskAssetId?: string | null
+  clipToBelow?: boolean
 }
 
 export type ImageLayer = BaseLayer & {
@@ -70,7 +71,16 @@ export type ShapeLayer = BaseLayer & {
   cornerRadius: number
 }
 
-export type EditorLayer = ImageLayer | RasterLayer | TextLayer | ShapeLayer
+export type AdjustmentLayer = BaseLayer & {
+  type: 'adjustment'
+  brightness: number
+  contrast: number
+  saturation: number
+  hue: number
+  blur: number
+}
+
+export type EditorLayer = ImageLayer | RasterLayer | TextLayer | ShapeLayer | AdjustmentLayer
 
 export type BackgroundSettings = {
   kind: BackgroundKind
@@ -109,6 +119,7 @@ export type LayerPatch = Partial<{
   blendMode: BlendMode
   filters: LayerFilters
   maskAssetId: string | null
+  clipToBelow: boolean
   assetId: string
   padding: number
   scale: number
@@ -128,6 +139,11 @@ export type LayerPatch = Partial<{
   fill: string
   stroke: string
   strokeWidth: number
+  brightness: number
+  contrast: number
+  saturation: number
+  hue: number
+  blur: number
 }>
 
 export type DocumentAction =

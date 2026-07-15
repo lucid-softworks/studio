@@ -1,4 +1,4 @@
-import type { EditorDocument, EditorLayer, ImageLayer, RasterLayer, ShapeKind, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, RasterLayer, ShapeKind, ShapeLayer, TextLayer } from './types'
 
 export const canvasPresets = [
   { id: 'landscape', label: 'Landscape', shortLabel: '16:10', width: 1600, height: 1000 },
@@ -103,6 +103,24 @@ export function createShapeLayer(shape: ShapeKind, index: number): ShapeLayer {
     stroke: '#ffffff',
     strokeWidth: 0,
     cornerRadius: 24,
+  }
+}
+
+export function createAdjustmentLayer(index: number): AdjustmentLayer {
+  return {
+    id: createId(),
+    type: 'adjustment',
+    name: `Adjustment ${index + 1}`,
+    visible: true,
+    locked: false,
+    opacity: 100,
+    position: { x: 0, y: 0 },
+    rotation: 0,
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+    hue: 0,
+    blur: 0,
   }
 }
 
