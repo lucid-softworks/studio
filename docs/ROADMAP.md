@@ -57,7 +57,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M1 — PSD fidelity and round-tripping
 
-- [ ] Build a corpus of legal PSD/PSB fixtures and visual golden tests
+- [x] Build a corpus of legal PSD/PSB fixtures and visual golden tests
 - [ ] Preserve editable text layers, font metadata, and text bounds on import
   - [x] Preserve single-style horizontal text, font, color, alignment, tracking, rotation, and bounds
   - [ ] Preserve mixed style runs, paragraph boxes, vertical text, warps, and missing-font metadata
