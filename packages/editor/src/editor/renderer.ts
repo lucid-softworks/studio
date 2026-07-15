@@ -2,6 +2,7 @@ import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
 import { buildCompositionRenderPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
+import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
@@ -34,11 +35,25 @@ export function calculateImageRect(
   }
 }
 
-function drawCover(context: CanvasRenderingContext2D, image: HTMLImageElement, width: number, height: number) {
-  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight)
-  const drawWidth = image.naturalWidth * scale
-  const drawHeight = image.naturalHeight * scale
-  context.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+type CanvasImageResource = { source: CanvasImageSource; width: number; height: number }
+
+function canvasImageResource(resources: RenderResourceRegistry, assets: AssetMap, assetId: string): CanvasImageResource | null {
+  const asset = assets[assetId]
+  if (!asset) return null
+  return resources.resolve('canvas2d', assetId, asset, (source) => ({
+    resource: {
+      source: source.surface ?? source.element,
+      width: source.surface?.width ?? source.element.naturalWidth,
+      height: source.surface?.height ?? source.element.naturalHeight,
+    },
+  }))
+}
+
+function drawCover(context: CanvasRenderingContext2D, image: CanvasImageResource, width: number, height: number) {
+  const scale = Math.max(width / image.width, height / image.height)
+  const drawWidth = image.width * scale
+  const drawHeight = image.height * scale
+  context.drawImage(image.source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
 }
 
 function drawGradient(context: CanvasRenderingContext2D, width: number, height: number, colors: [string, string], angleValue: number) {
@@ -55,19 +70,20 @@ function drawGradient(context: CanvasRenderingContext2D, width: number, height: 
   context.fillRect(0, 0, width, height)
 }
 
-function drawBackground(context: CanvasRenderingContext2D, width: number, height: number, document: EditorDocument, assets: AssetMap) {
+function drawBackground(context: CanvasRenderingContext2D, width: number, height: number, document: EditorDocument, assets: AssetMap, resources: RenderResourceRegistry) {
   const background = document.background
+  const backgroundImage = background.imageAssetId ? canvasImageResource(resources, assets, background.imageAssetId) : null
   if (background.kind === 'transparent') {
     context.clearRect(0, 0, width, height)
   } else if (background.kind === 'solid') {
     context.fillStyle = background.solidColor
     context.fillRect(0, 0, width, height)
-  } else if (background.kind === 'image' && background.imageAssetId && assets[background.imageAssetId]) {
+  } else if (background.kind === 'image' && backgroundImage) {
     context.save()
     context.filter = background.imageBlur ? `blur(${background.imageBlur}px)` : 'none'
     const bleed = background.imageBlur * 2
     context.translate(-bleed, -bleed)
-    drawCover(context, assets[background.imageAssetId].element, width + bleed * 2, height + bleed * 2)
+    drawCover(context, backgroundImage, width + bleed * 2, height + bleed * 2)
     context.restore()
     if (background.imageOverlay > 0) {
       context.fillStyle = `rgba(0,0,0,${background.imageOverlay / 100})`
@@ -142,10 +158,10 @@ function withLayerTransform(
   context.restore()
 }
 
-function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: ImageLayer, assets: AssetMap) {
-  const asset = assets[layer.assetId]
+function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: ImageLayer, assets: AssetMap, resources: RenderResourceRegistry) {
+  const asset = canvasImageResource(resources, assets, layer.assetId)
   if (!asset) return
-  const bounds = calculateImageRect(canvas.width, canvas.height, asset.element.naturalWidth, asset.element.naturalHeight, layer)
+  const bounds = calculateImageRect(canvas.width, canvas.height, asset.width, asset.height, layer)
   const radius = Math.min(layer.cornerRadius, bounds.width / 2, bounds.height / 2)
 
   context.globalAlpha = layer.opacity / 100
@@ -167,7 +183,7 @@ function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
     context.beginPath()
     context.roundRect(x, y, bounds.width, bounds.height, radius)
     context.clip()
-    context.drawImage(asset.surface ?? asset.element, x, y, bounds.width, bounds.height)
+    context.drawImage(asset.source, x, y, bounds.width, bounds.height)
     context.restore()
     context.strokeStyle = 'rgba(255,255,255,0.16)'
     context.lineWidth = Math.max(1, canvas.width / 900)
@@ -190,13 +206,13 @@ function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer): LayerBound
   }
 }
 
-function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: RasterLayer, assets: AssetMap) {
-  const asset = assets[layer.assetId]
+function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: RasterLayer, assets: AssetMap, resources: RenderResourceRegistry) {
+  const asset = canvasImageResource(resources, assets, layer.assetId)
   if (!asset) return
   const bounds = rasterBounds(canvas, layer)
   context.globalAlpha = layer.opacity / 100
   withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
-    context.drawImage(asset.surface ?? asset.element, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
+    context.drawImage(asset.source, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
   })
   context.globalAlpha = 1
 }
@@ -270,20 +286,19 @@ function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
   context.globalAlpha = 1
 }
 
-function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, assets: AssetMap) {
-  if (layer.type === 'image') drawImageLayer(context, canvas, layer, assets)
-  else if (layer.type === 'raster') drawRasterLayer(context, canvas, layer, assets)
+function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
+  if (layer.type === 'image') drawImageLayer(context, canvas, layer, assets, resources)
+  else if (layer.type === 'raster') drawRasterLayer(context, canvas, layer, assets, resources)
   else if (layer.type === 'text') drawTextLayer(context, canvas, layer)
   else if (layer.type === 'shape') drawShapeLayer(context, canvas, layer)
 }
 
 let maskCompositionCanvas: HTMLCanvasElement | null = null
 
-function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap) {
-  const mask = maskAssetId ? assets[maskAssetId] : null
-  const maskSource = mask?.surface ?? mask?.element
+function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap, resources: RenderResourceRegistry) {
+  const maskSource = maskAssetId ? canvasImageResource(resources, assets, maskAssetId)?.source : null
   if (!maskSource) {
-    drawEditorLayer(context, canvas, layer, assets)
+    drawEditorLayer(context, canvas, layer, assets, resources)
     return
   }
 
@@ -294,7 +309,7 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   const compositionContext = composition.getContext('2d')
   if (!compositionContext) return
   compositionContext.clearRect(0, 0, composition.width, composition.height)
-  drawEditorLayer(compositionContext, composition, layer, assets)
+  drawEditorLayer(compositionContext, composition, layer, assets, resources)
   compositionContext.save()
   compositionContext.globalAlpha = 1
   compositionContext.globalCompositeOperation = 'destination-in'
@@ -390,7 +405,7 @@ function drawLayerWithEffects(
   } else context.drawImage(layerEffectsCanvas, 0, 0)
 }
 
-function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, base: EditorLayer, assets: AssetMap) {
+function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, base: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   clippedLayerCanvas = prepareScratchCanvas(clippedLayerCanvas, canvas)
   clippingBaseCanvas = prepareScratchCanvas(clippingBaseCanvas, canvas)
   const layerContext = clippedLayerCanvas.getContext('2d')
@@ -398,8 +413,8 @@ function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasE
   if (!layerContext || !baseContext) return
   layerContext.clearRect(0, 0, canvas.width, canvas.height)
   baseContext.clearRect(0, 0, canvas.width, canvas.height)
-  drawMaskedLayer(layerContext, clippedLayerCanvas, layer, maskAssetId, assets)
-  drawMaskedLayer(baseContext, clippingBaseCanvas, base, base.maskAssetId ?? null, assets)
+  drawMaskedLayer(layerContext, clippedLayerCanvas, layer, maskAssetId, assets, resources)
+  drawMaskedLayer(baseContext, clippingBaseCanvas, base, base.maskAssetId ?? null, assets, resources)
   layerContext.save()
   layerContext.globalAlpha = 1
   layerContext.globalCompositeOperation = 'destination-in'
@@ -429,6 +444,7 @@ function drawRenderPlan(
   canvas: HTMLCanvasElement,
   documentState: EditorDocument,
   assets: AssetMap,
+  resources: RenderResourceRegistry,
   nodes: RenderPlanNode[],
   depth = 0,
 ) {
@@ -436,7 +452,7 @@ function drawRenderPlan(
   for (const node of nodes) {
     if (node.kind === 'group') {
       if (!node.isolated) {
-        drawRenderPlan(context, canvas, documentState, assets, node.children, depth)
+        drawRenderPlan(context, canvas, documentState, assets, resources, node.children, depth)
         continue
       }
       const groupCanvas = prepareScratchCanvas(groupCompositionCanvases[depth] ?? null, canvas)
@@ -444,7 +460,7 @@ function drawRenderPlan(
       const groupContext = groupCanvas.getContext('2d')
       if (!groupContext) continue
       groupContext.clearRect(0, 0, canvas.width, canvas.height)
-      drawRenderPlan(groupContext, groupCanvas, documentState, assets, node.children, depth + 1)
+      drawRenderPlan(groupContext, groupCanvas, documentState, assets, resources, node.children, depth + 1)
       context.save()
       context.globalAlpha = node.opacity / 100
       context.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode
@@ -464,8 +480,8 @@ function drawRenderPlan(
     context.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode
     if (node.filters) context.filter = layerFilterCss(node.filters)
     const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
-    if (clippingBase) drawLayerWithEffects(context, canvas, node.effects, (target) => drawClippedLayer(target, canvas, layer, node.maskAssetId, clippingBase, assets))
-    else drawLayerWithEffects(context, canvas, node.effects, (target) => drawMaskedLayer(target, canvas, layer, node.maskAssetId, assets))
+    if (clippingBase) drawLayerWithEffects(context, canvas, node.effects, (target) => drawClippedLayer(target, canvas, layer, node.maskAssetId, clippingBase, assets, resources))
+    else drawLayerWithEffects(context, canvas, node.effects, (target) => drawMaskedLayer(target, canvas, layer, node.maskAssetId, assets, resources))
     context.restore()
   }
 }
@@ -579,6 +595,7 @@ export function renderComposition(
   document: EditorDocument,
   assets: AssetMap,
   options: RenderCompositionOptions = {},
+  resources = new RenderResourceRegistry(),
 ) {
   const preset = getDocumentSize(document)
   if (canvas.width !== preset.width) canvas.width = preset.width
@@ -587,10 +604,11 @@ export function renderComposition(
   if (!context) return
 
   context.clearRect(0, 0, canvas.width, canvas.height)
-  drawBackground(context, canvas.width, canvas.height, document, assets)
+  resources.prune('canvas2d', new Set(Object.keys(assets)))
+  drawBackground(context, canvas.width, canvas.height, document, assets, resources)
   drawPattern(context, canvas.width, canvas.height, document)
 
-  drawRenderPlan(context, canvas, document, assets, buildCompositionRenderPlan(document).nodes)
+  drawRenderPlan(context, canvas, document, assets, resources, buildCompositionRenderPlan(document).nodes)
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)

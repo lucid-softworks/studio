@@ -34,7 +34,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Keep a Canvas2D compatibility renderer
 - [x] Add lazy TypeGPU capability detection and runtime lifecycle management
 - [ ] Implement the TypeGPU compositor with parity snapshots against Canvas2D
-- [ ] Move layer surfaces to a shared texture/resource registry
+- [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching
 - [ ] Move rendering and heavy pixel operations to a Worker with OffscreenCanvas where supported
 - [ ] Add GPU device-loss recovery and automatic Canvas2D fallback
