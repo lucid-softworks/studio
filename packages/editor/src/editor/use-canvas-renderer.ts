@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { renderComposition } from './renderer'
+import { canvas2dCompositionRenderer } from './rendering/composition-renderer'
 import type { AssetMap, EditorDocument } from './types'
 
 export function useCanvasRenderer(
@@ -11,7 +11,7 @@ export function useCanvasRenderer(
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const frame = requestAnimationFrame(() => renderComposition(canvas, document, assets))
+    const frame = requestAnimationFrame(() => canvas2dCompositionRenderer.render(canvas, document, assets))
     return () => cancelAnimationFrame(frame)
   }, [assets, canvasRef, document, resourceRevision])
 }

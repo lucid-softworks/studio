@@ -11,7 +11,9 @@ import { hasEnabledLayerEffects } from './editor/effects'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
-import { calculateImageRect, getLayerBounds, renderComposition } from './editor/renderer'
+import { calculateImageRect, getLayerBounds } from './editor/renderer'
+import { canvas2dCompositionRenderer } from './editor/rendering/composition-renderer'
+import { useRendererCapabilities } from './editor/rendering/use-renderer-capabilities'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit } from './editor/raster'
 import type { AssetMap, EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
@@ -52,6 +54,7 @@ function App({ onExit }: AppProps) {
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const assetsRef = useRef(assets)
   const document = history.present
+  const rendererCapabilities = useRendererCapabilities()
 
   assetsRef.current = assets
   useCanvasRenderer(canvasRef, document, assets, resourceRevision)
@@ -563,7 +566,7 @@ function App({ onExit }: AppProps) {
     if (!layer || layer.type === 'raster' || layer.type === 'adjustment') return
     const { width, height } = getDocumentSize(document)
     const canvas = window.document.createElement('canvas')
-    renderComposition(canvas, {
+    canvas2dCompositionRenderer.render(canvas, {
       ...document,
       background: { ...document.background, kind: 'transparent' },
       pattern: { ...document.pattern, kind: 'none' },
@@ -624,7 +627,7 @@ function App({ onExit }: AppProps) {
   const exportImage = (format: ExportFormat) => {
     setIsExporting(true)
     const exportCanvas = window.document.createElement('canvas')
-    renderComposition(exportCanvas, { ...document, selectedLayerId: null }, assets)
+    canvas2dCompositionRenderer.render(exportCanvas, { ...document, selectedLayerId: null }, assets)
     const mime = `image/${format}`
     exportCanvas.toBlob((blob) => {
       if (!blob) {
@@ -787,7 +790,15 @@ function App({ onExit }: AppProps) {
           />
         </div>
 
-        <div className="hidden items-center gap-2 text-[9px] font-medium text-zinc-700 sm:flex"><span className={`size-1.5 rounded-full ${saveStatus === 'saving' ? 'bg-amber-400' : saveStatus === 'saved' ? 'bg-emerald-400/70' : 'bg-zinc-700'}`} /><span>{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span></div>
+        <div className="hidden items-center gap-3 text-[9px] font-medium text-zinc-700 sm:flex">
+          <span
+            className="text-zinc-600"
+            title={rendererCapabilities.typegpu.state === 'unavailable' || rendererCapabilities.typegpu.state === 'lost' ? rendererCapabilities.typegpu.reason : 'The editor currently renders with Canvas2D while the TypeGPU compositor is built.'}
+          >
+            Canvas2D · {rendererCapabilities.typegpu.state === 'ready' ? 'TypeGPU ready' : rendererCapabilities.typegpu.state === 'initializing' ? 'Checking WebGPU…' : 'WebGPU fallback'}
+          </span>
+          <span className="flex items-center gap-2"><span className={`size-1.5 rounded-full ${saveStatus === 'saving' ? 'bg-amber-400' : saveStatus === 'saved' ? 'bg-emerald-400/70' : 'bg-zinc-700'}`} /><span>{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span></span>
+        </div>
       </header>
 
       <main className="flex flex-col lg:flex-row">

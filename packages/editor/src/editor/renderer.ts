@@ -6,6 +6,7 @@ import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+export type RenderCompositionOptions = { showSelection?: boolean }
 
 export function calculateImageRect(
   canvasWidth: number,
@@ -591,7 +592,7 @@ export function renderComposition(
   canvas: HTMLCanvasElement,
   document: EditorDocument,
   assets: AssetMap,
-  options: { showSelection?: boolean } = {},
+  options: RenderCompositionOptions = {},
 ) {
   const preset = getDocumentSize(document)
   if (canvas.width !== preset.width) canvas.width = preset.width
