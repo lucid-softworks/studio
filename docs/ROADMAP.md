@@ -146,6 +146,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
 - [ ] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
 - [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
+  - [x] Add a persistent local custom-swatch library connected to shared foreground/background tool colours
+  - [ ] Add pattern, gradient, tool-preset, and expanded brush-preset libraries with import/export
 - [ ] Add tablet tilt, twist, barrel button, and per-device pressure calibration
 
 ## M9 — workflow and extensibility
@@ -158,8 +160,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
   - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
-  - [x] Add functional Properties, Layers, History, Navigator, Histogram, and Info panels
-  - [ ] Add Actions, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
+  - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, and Swatches panels
+  - [ ] Add Actions, Channels, Paths, Gradients, Patterns, and Libraries panels
 - [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server

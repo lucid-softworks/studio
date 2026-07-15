@@ -18,7 +18,7 @@ describe('panel resizing', () => {
       panelWidths: { properties: 220, layers: 258 },
       collapsedPanels: { properties: true, layers: false },
       activeUtilityPanel: 'layers',
-      utilityPanelOrder: ['layers', 'history', 'navigator', 'histogram', 'info'],
+      utilityPanelOrder: ['layers', 'history', 'navigator', 'histogram', 'swatches', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
     })
@@ -26,7 +26,7 @@ describe('panel resizing', () => {
   })
 
   it('reorders utility tabs and keeps floating headers recoverable', () => {
-    expect(reorderUtilityPanels(['layers', 'history', 'navigator', 'histogram', 'info'], 'info', 'history')).toEqual(['layers', 'info', 'history', 'navigator', 'histogram'])
+    expect(reorderUtilityPanels(['layers', 'history', 'navigator', 'histogram', 'swatches', 'info'], 'info', 'history')).toEqual(['layers', 'info', 'history', 'navigator', 'histogram', 'swatches'])
     expect(clampFloatingPanelPosition({ x: 2000, y: -20 }, 320, { width: 1440, height: 900 })).toEqual({ x: 1392, y: 48 })
   })
 })

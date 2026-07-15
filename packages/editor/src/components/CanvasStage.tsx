@@ -50,6 +50,10 @@ type CanvasStageProps = {
   brushId: string
   onBrushChange: (id: string) => void
   onLoadBrush: () => void
+  foregroundColor: string
+  backgroundColor: string
+  onForegroundColorChange: (color: string) => void
+  onBackgroundColorChange: (color: string) => void
 }
 
 const toolNames: Record<EditorTool, string> = {
@@ -129,17 +133,15 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   }
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop, brushes, brushId, onBrushChange, onLoadBrush }: CanvasStageProps) {
+export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop, brushes, brushId, onBrushChange, onLoadBrush, foregroundColor, backgroundColor, onForegroundColorChange, onBackgroundColorChange }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [brushSize, setBrushSize] = useState(48)
-  const [brushColor, setBrushColor] = useState('#ff3b81')
   const [brushHardness, setBrushHardness] = useState(80)
   const [brushOpacity, setBrushOpacity] = useState(100)
   const [brushFlow, setBrushFlow] = useState(100)
   const [brushSpacing, setBrushSpacing] = useState(12)
   const [pressureSize, setPressureSize] = useState(true)
   const [pressureOpacity, setPressureOpacity] = useState(false)
-  const [secondaryColor, setSecondaryColor] = useState('#5b21b6')
   const [toolStrength, setToolStrength] = useState(45)
   const [tolerance, setTolerance] = useState(32)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('replace')
@@ -331,16 +333,16 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} /></>}
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
-              {tool === 'brush' && <input aria-label="Brush color" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
+              {tool === 'brush' && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
               {(retouchTool || tool === 'dodge' || tool === 'burn') && <><span className="text-[9px] text-zinc-600">Strength</span><input aria-label="Tool strength" type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
             </div>
           )}
           {(tool === 'eyedropper' || tool === 'text' || tool === 'rectangle' || tool === 'ellipse' || tool === 'fill' || tool === 'gradient') && (
             <label className="hidden items-center gap-2 text-[9px] text-zinc-600 md:flex">
               <span>{tool === 'text' ? 'Colour' : tool === 'eyedropper' ? 'Sample' : 'Fill'}</span>
-              <input aria-label="Foreground color" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />
-              {tool === 'gradient' && <><span>to</span><input aria-label="Background color" type="color" value={secondaryColor} onChange={(event) => setSecondaryColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" /></>}
-              <span className="hidden font-mono uppercase xl:inline">{brushColor}</span>
+              <input aria-label="Foreground color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />
+              {tool === 'gradient' && <><span>to</span><input aria-label="Background color" type="color" value={backgroundColor} onChange={(event) => onBackgroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" /></>}
+              <span className="hidden font-mono uppercase xl:inline">{foregroundColor}</span>
             </label>
           )}
           {(tool === 'magic-wand' || tool === 'fill') && <label className="hidden items-center gap-2 text-[9px] text-zinc-600 xl:flex"><span>Tolerance</span><input aria-label="Tolerance" type="range" min="0" max="128" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} className="studio-range w-16" /><span className="w-5 font-mono">{tolerance}</span></label>}
@@ -407,11 +409,11 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
             <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
-            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={brushColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
-            {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={brushColor} secondaryColor={secondaryColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move' || tool === 'object-select'} />
-            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={setBrushColor} onAddText={(position) => onAddText(position, brushColor)} onAddShape={(shape, position) => onAddShape(shape, position, brushColor)} onZoom={changeZoom} />
+            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
           </div>
         </div>
 

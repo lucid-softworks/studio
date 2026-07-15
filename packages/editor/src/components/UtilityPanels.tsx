@@ -5,6 +5,7 @@ import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
+import { defaultSwatches } from '../editor/swatches'
 import type { DocumentHistoryCommand, EditorDocument } from '../editor/types'
 
 export function HistoryPanel({ past, future, rasterUndoDepth, onJump }: {
@@ -172,6 +173,37 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
         <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Samples</p><p className="mt-1 truncate font-mono text-[11px] text-zinc-300">{result ? result.pixels.toLocaleString() : '—'}</p></div>
       </div>
       <p className={`mt-3 text-center text-[9px] ${status === 'error' ? 'text-red-300/70' : 'text-zinc-700'}`}>{status === 'error' ? 'The rendered canvas could not be sampled.' : status === 'sampling' ? 'Updating sampled histogram…' : 'RGB and luminance reduction runs in a local Worker.'}</p>
+    </div>
+  )
+}
+
+export function SwatchesPanel({ foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch }: {
+  foregroundColor: string
+  backgroundColor: string
+  customSwatches: string[]
+  onForegroundColorChange: (color: string) => void
+  onBackgroundColorChange: (color: string) => void
+  onAddSwatch: (color: string) => void
+  onRemoveSwatch: (color: string) => void
+}) {
+  const [target, setTarget] = useState<'foreground' | 'background'>('foreground')
+  const activeColor = target === 'foreground' ? foregroundColor : backgroundColor
+  const setActiveColor = target === 'foreground' ? onForegroundColorChange : onBackgroundColorChange
+
+  return (
+    <div role="tabpanel" aria-label="Swatches" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="flex items-center justify-between rounded-lg border border-white/[0.07] bg-black/20 p-3">
+        <div className="relative h-12 w-16">
+          <button type="button" aria-label="Edit background color" aria-pressed={target === 'background'} onClick={() => setTarget('background')} style={{ backgroundColor }} className={`absolute right-0 bottom-0 size-9 rounded-md border shadow ${target === 'background' ? 'z-10 border-violet-300 ring-2 ring-violet-400/20' : 'border-white/20'}`} />
+          <button type="button" aria-label="Edit foreground color" aria-pressed={target === 'foreground'} onClick={() => setTarget('foreground')} style={{ backgroundColor: foregroundColor }} className={`absolute top-0 left-0 size-9 rounded-md border shadow ${target === 'foreground' ? 'z-10 border-violet-300 ring-2 ring-violet-400/20' : 'border-white/20'}`} />
+        </div>
+        <div className="min-w-0 flex-1 pl-3"><p className="text-[8px] font-semibold tracking-[0.14em] text-zinc-700 uppercase">{target}</p><p className="mt-1 truncate font-mono text-xs text-zinc-300 uppercase">{activeColor}</p></div>
+        <div className="flex items-center gap-1"><button type="button" aria-label="Swap foreground and background colors" title="Swap colors" onClick={() => { onForegroundColorChange(backgroundColor); onBackgroundColorChange(foregroundColor) }} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-200">⇄</button><button type="button" aria-label="Reset foreground and background colors" title="Default colors" onClick={() => { onForegroundColorChange('#000000'); onBackgroundColorChange('#ffffff') }} className="flex size-7 items-center justify-center rounded-md text-[10px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-200">D</button></div>
+      </div>
+      <label className="mt-3 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-black/15 p-2 text-[9px] text-zinc-600"><input aria-label={`Choose ${target} color`} type="color" value={activeColor} onChange={(event) => setActiveColor(event.target.value)} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" /><span className="flex-1">Choose colour</span><span className="font-mono text-zinc-400 uppercase">{activeColor}</span></label>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio palette</h3><div className="grid grid-cols-5 gap-1.5">{defaultSwatches.map((color) => <button key={color} type="button" aria-label={`Set ${target} color to ${color}`} title={color.toUpperCase()} onClick={() => setActiveColor(color)} style={{ backgroundColor: color }} className={`aspect-square rounded-md border transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-violet-400 ${activeColor === color ? 'border-violet-300 ring-2 ring-violet-400/20' : color === '#ffffff' ? 'border-zinc-600' : 'border-white/10'}`} />)}</div></section>
+      <section className="mt-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom swatches</h3><button type="button" onClick={() => onAddSwatch(activeColor)} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">+ Save current</button></div>{customSwatches.length ? <div className="grid grid-cols-5 gap-1.5">{customSwatches.map((color) => <div key={color} className="group relative aspect-square"><button type="button" aria-label={`Set ${target} color to custom swatch ${color}`} title={color.toUpperCase()} onClick={() => setActiveColor(color)} style={{ backgroundColor: color }} className={`size-full rounded-md border transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-violet-400 ${activeColor === color ? 'border-violet-300 ring-2 ring-violet-400/20' : 'border-white/10'}`} /><button type="button" aria-label={`Delete custom swatch ${color}`} onClick={() => onRemoveSwatch(color)} className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-zinc-900 text-[9px] text-zinc-500 opacity-0 shadow transition hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button></div>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save the active colour to build a local palette.</div>}</section>
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Swatches set the shared brush, fill, gradient, text, and shape colour.</p>
     </div>
   )
 }
