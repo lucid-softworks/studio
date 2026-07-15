@@ -3,6 +3,7 @@ import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
+import { backgroundPassSignature, layerPassSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
@@ -641,6 +642,7 @@ export function renderNativeLayerPasses(
   assets: AssetMap,
   resources: RenderResourceRegistry,
   options: RenderCompositionOptions = {},
+  passCache?: RenderPassCache,
 ): NativeLayerPasses | null {
   const plan = buildNativeLayerCompositionPlan(documentState)
   if (!plan) return null
@@ -650,26 +652,33 @@ export function renderNativeLayerPasses(
   while (passCanvases.length < passCount) passCanvases.push(globalThis.document.createElement('canvas'))
   resources.prune('canvas2d', new Set(Object.keys(assets)))
 
-  const preparePass = (index: number) => {
+  const preparePass = (index: number, signature: string | null = null) => {
     while (passCanvases.length <= index) passCanvases.push(globalThis.document.createElement('canvas'))
     const canvas = passCanvases[index]
+    const sizeChanged = canvas.width !== size.width || canvas.height !== size.height
     if (canvas.width !== size.width) canvas.width = size.width
     if (canvas.height !== size.height) canvas.height = size.height
     const context = canvas.getContext('2d')
-    context?.clearRect(0, 0, size.width, size.height)
-    return { canvas, context }
+    const shouldRender = passCache?.shouldRender(index, signature, sizeChanged) ?? true
+    if (shouldRender && !sizeChanged) context?.clearRect(0, 0, size.width, size.height)
+    return { canvas, context, shouldRender }
   }
 
-  const background = preparePass(0)
+  const background = preparePass(0, backgroundPassSignature(documentState, assets))
   if (!background.context) return null
-  drawBackground(background.context, size.width, size.height, documentState, assets, resources)
-  drawPattern(background.context, size.width, size.height, documentState)
+  if (background.shouldRender) {
+    drawBackground(background.context, size.width, size.height, documentState, assets, resources)
+    drawPattern(background.context, size.width, size.height, documentState)
+  }
 
   const layers = new Map(documentState.layers.map((layer) => [layer.id, layer]))
   plan.layers.forEach((node, index) => {
-    const pass = preparePass(index + 1)
     const layer = layers.get(node.layerId)
-    if (node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
+    const signature = node.kind === 'layer' && layer
+      ? layerPassSignature(layer, assets)
+      : `adjustment:${node.layerId}`
+    const pass = preparePass(index + 1, signature)
+    if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
       drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
     }
   })
@@ -701,9 +710,9 @@ export function renderNativeLayerPasses(
     let clipSource: HTMLCanvasElement | undefined
     const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
     if (clippingBase && clippingBase.type !== 'adjustment') {
-      const clipPass = preparePass(clipPassIndex)
+      const clipPass = preparePass(clipPassIndex, maskedLayerPassSignature(clippingBase, assets))
       clipPassIndex += 1
-      if (clipPass.context) {
+      if (clipPass.shouldRender && clipPass.context) {
         drawMaskedLayer(
           clipPass.context,
           clipPass.canvas,
@@ -726,5 +735,6 @@ export function renderNativeLayerPasses(
   if (passCount > plan.layers.length + 1) {
     compositionLayers.push({ kind: 'layer', source: passCanvases[passCount - 1], blendMode: 'normal' })
   }
+  passCache?.truncate(clipPassIndex)
   return { width: size.width, height: size.height, layers: compositionLayers }
 }

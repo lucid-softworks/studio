@@ -3,6 +3,7 @@ import { renderComposition, renderNativeLayerPasses, type RenderCompositionOptio
 import type { AssetMap } from '../runtime-assets'
 import type { EditorDocument } from '../types'
 import { RenderResourceRegistry } from './render-resource-registry'
+import { RenderPassCache } from './render-pass-cache'
 import { createTypeGpuLayerCompositor, type TypeGpuLayerCompositor } from './typegpu-compositor'
 
 export type CompositionRendererKind = 'canvas2d' | 'webgpu'
@@ -29,13 +30,14 @@ export const canvas2dCompositionRenderer: CompositionRenderer = {
 export function createTypeGpuCompositionRenderer(root: TgpuRoot): CompositionRenderer {
   const resources = new RenderResourceRegistry()
   const passCanvases: HTMLCanvasElement[] = []
+  const passCache = new RenderPassCache()
   let compositor: TypeGpuLayerCompositor | null = null
   let compositorSize = { width: 0, height: 0 }
 
   return {
     kind: 'webgpu',
     render(canvas, document, assets, options) {
-      const passes = renderNativeLayerPasses(passCanvases, document, assets, resources, options)
+      const passes = renderNativeLayerPasses(passCanvases, document, assets, resources, options, passCache)
       if (!passes) {
         renderComposition(canvas, document, assets, options, resources)
         return
@@ -57,6 +59,7 @@ export function createTypeGpuCompositionRenderer(root: TgpuRoot): CompositionRen
       compositor?.dispose()
       compositor = null
       passCanvases.length = 0
+      passCache.clear()
       resources.dispose()
     },
   }

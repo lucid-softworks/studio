@@ -41,6 +41,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [ ] Add GPU/Canvas pixel-parity snapshots
 - [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching
+  - [x] Cache unchanged native background, image, raster, shape, and clipping passes
+  - [ ] Add dirty rectangles, tile invalidation, mipmaps, and tile-level cache eviction
 - [ ] Move rendering and heavy pixel operations to a Worker with OffscreenCanvas where supported
 - [x] Add GPU device-loss recovery and automatic Canvas2D fallback
 - [x] Add deterministic renderer fixtures for blend modes, masks, effects, and color transforms
