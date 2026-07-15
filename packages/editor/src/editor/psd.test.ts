@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
+import { psdAdjustmentLayer, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
 import type { Layer, Psd } from 'ag-psd'
 
 describe('PSD layer ordering', () => {
@@ -102,6 +102,21 @@ describe('PSD layer ordering', () => {
     expect(psdShapeLayer(ellipse, 400, 200)).toMatchObject({ shape: 'ellipse', fill: '#14b478', width: 50, height: 50 })
     expect(psdImportWarnings({ width: 400, height: 200, children: [rectangle, ellipse] }))
       .not.toEqual(expect.arrayContaining([expect.stringMatching(/vector|mask/i)]))
+  })
+
+  it('preserves supported Photoshop adjustment layers', () => {
+    expect(psdAdjustmentLayer({
+      name: 'Tone',
+      opacity: 0.8,
+      blendMode: 'soft light',
+      adjustment: { type: 'brightness/contrast', brightness: 18, contrast: -12 },
+    }, 0)).toMatchObject({
+      type: 'adjustment', name: 'Tone', opacity: 80, blendMode: 'soft-light', brightness: 118, contrast: 88,
+    })
+    expect(psdAdjustmentLayer({
+      adjustment: { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: 24, saturation: -20, lightness: 6 } },
+    }, 1)).toMatchObject({ hue: 24, saturation: 80, brightness: 106 })
+    expect(psdAdjustmentLayer({ adjustment: { type: 'curves', rgb: [{ input: 0, output: 0 }] } }, 2)).toBeNull()
   })
 
   it('preserves simple single-style text and ignores default blending ranges', () => {

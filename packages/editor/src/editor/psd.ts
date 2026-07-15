@@ -1,9 +1,9 @@
 import { initializeCanvas, readPsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
 import { defaultLayerEffects } from './effects'
 import { loadImageBlob, surfaceToBlob } from './image'
-import { createId, createRasterLayer, initialDocument } from './presets'
+import { createAdjustmentLayer, createId, createRasterLayer, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
-import type { BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, ShapeLayer, TextLayer } from './types'
 
 let initialized = false
 
@@ -248,6 +248,46 @@ function hasUnsupportedEffects(layer: Layer) {
   )
 }
 
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value))
+}
+
+function hasChannelSpecificHueAdjustment(adjustment: Extract<NonNullable<Layer['adjustment']>, { type: 'hue/saturation' }>) {
+  return [adjustment.reds, adjustment.yellows, adjustment.greens, adjustment.cyans, adjustment.blues, adjustment.magentas]
+    .some((channel) => channel && (channel.hue !== 0 || channel.saturation !== 0 || channel.lightness !== 0))
+}
+
+export function canImportPsdAdjustment(layer: Layer) {
+  const source = layer.adjustment
+  return Boolean(
+    source
+    && ((source.type === 'brightness/contrast' && !source.labColorOnly)
+      || (source.type === 'hue/saturation' && !hasChannelSpecificHueAdjustment(source)))
+  )
+}
+
+export function psdAdjustmentLayer(layer: Layer, index: number): AdjustmentLayer | null {
+  const source = layer.adjustment
+  if (!source || !canImportPsdAdjustment(layer)) return null
+  const adjustment = createAdjustmentLayer(index)
+  if (source.type === 'brightness/contrast' && !source.labColorOnly) {
+    adjustment.brightness = clamp(100 + (source.brightness ?? 0), 0, 200)
+    adjustment.contrast = clamp(100 + (source.contrast ?? 0), 0, 200)
+  } else if (source.type === 'hue/saturation' && !hasChannelSpecificHueAdjustment(source)) {
+    adjustment.hue = clamp(source.master?.hue ?? 0, -180, 180)
+    adjustment.saturation = clamp(100 + (source.master?.saturation ?? 0), 0, 200)
+    adjustment.brightness = clamp(100 + (source.master?.lightness ?? 0), 0, 200)
+  } else return null
+
+  adjustment.name = layer.name?.trim() || (source.type === 'hue/saturation' ? 'Hue / Saturation' : 'Brightness / Contrast')
+  adjustment.visible = !layer.hidden
+  adjustment.locked = Boolean(layer.protected?.position || layer.protected?.composite)
+  adjustment.opacity = Math.round((layer.opacity ?? 1) * 100)
+  adjustment.blendMode = psdBlendMode(layer.blendMode)
+  adjustment.clipToBelow = Boolean(layer.clipping)
+  return adjustment
+}
+
 export function canImportPsdText(layer: Layer) {
   const text = layer.text
   if (!text || text.orientation === 'vertical' || (text.warp?.style && text.warp.style !== 'none')) return false
@@ -313,9 +353,10 @@ export function psdImportWarnings(psd: Psd) {
       if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
       const editableShape = canImportPsdShape(layer)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
-      if ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || (layer.vectorMask && !editableShape)) add('mask', 'Unsupported masks were not preserved as editable masks', path)
+      if (!layer.adjustment && ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || (layer.vectorMask && !editableShape))) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
-      if (layer.adjustment) add('adjustment', 'Adjustment layers were not preserved as editable adjustments', path)
+      if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
+      if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
       if (hasCustomBlending(layer)) add('advanced-blending', 'Advanced blending settings were not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
         add(`blend:${layer.blendMode}`, `Unsupported “${layer.blendMode}” blending was changed to normal`, path)
@@ -436,6 +477,13 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
           stackOrder,
         })
         await importChildren(layer.children, id, path)
+        continue
+      }
+      const editableAdjustment = psdAdjustmentLayer(layer, stackOrder)
+      if (editableAdjustment) {
+        editableAdjustment.groupId = parentId
+        editableAdjustment.stackOrder = stackOrder
+        layers.push(editableAdjustment)
         continue
       }
       const editableText = psdTextLayer(layer, psd.width, psd.height)

@@ -62,7 +62,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [ ] Preserve independent/compound vector masks, channels, mask density/feather, and non-default blend-if data
 - [ ] Preserve adjustment layers and layer styles as editable Studio properties
   - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
-  - [ ] Preserve the remaining Photoshop layer styles and editable adjustment-layer types
+  - [x] Import brightness/contrast and global hue/saturation adjustment layers as editable adjustments
+  - [ ] Preserve the remaining Photoshop layer styles and adjustment-layer types
 - [ ] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [ ] Write layered PSD files from Studio documents
