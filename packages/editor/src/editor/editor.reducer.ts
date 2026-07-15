@@ -74,6 +74,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       const next = canonicalizeLayers({ ...state, layers: [...state.layers, layer] })
       return { ...next, selectedLayerId: layer.id, selectedLayerIds: [layer.id], selectedGroupId: null }
     }
+    case 'replace-layer':
+      return { ...state, layers: state.layers.map((layer) => layer.id === action.id ? action.layer : layer) }
     case 'add-group': {
       const ids = new Set(action.layerIds)
       const selected = state.layers.filter((layer) => ids.has(layer.id))

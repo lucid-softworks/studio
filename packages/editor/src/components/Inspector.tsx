@@ -1,4 +1,5 @@
 import { backgroundPresets, canvasPresets } from '../editor/presets'
+import { defaultLayerFilters, normalizeLayerFilters } from '../editor/filters'
 import { getDescendantLayers, getStackChildren } from '../editor/stack'
 import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
 import { ControlSection, RangeControl } from './Control'
@@ -45,7 +46,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const updateLayer = (layer: EditorLayer, patch: LayerPatch, groupKey?: string) => {
     dispatch({ type: 'update-layer', id: layer.id, patch }, groupKey ? { groupKey } : undefined)
   }
-  const filters = selected?.filters ?? { brightness: 100, contrast: 100, saturation: 100, blur: 0 }
+  const filters = normalizeLayerFilters(selected?.filters)
 
   return (
     <aside className="order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:order-1 lg:h-[calc(100vh-48px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 lg:border-r">
@@ -219,11 +220,15 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
           {selected.type !== 'adjustment' && <ControlSection title="Layer filters">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-[10px] leading-relaxed text-zinc-600">Non-destructive layer filters</p>
-              <button type="button" onClick={() => updateLayer(selected, { filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 } })} className="rounded px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">Reset</button>
+              <button type="button" onClick={() => updateLayer(selected, { filters: defaultLayerFilters })} className="rounded px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">Reset</button>
             </div>
             <RangeControl label="Brightness" value={filters.brightness} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, brightness: value } }, `brightness-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Contrast" value={filters.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, contrast: value } }, `contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Saturation" value={filters.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, saturation: value } }, `saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Hue" value={filters.hue} min={-180} max={180} suffix="°" onChange={(value) => updateLayer(selected, { filters: { ...filters, hue: value } }, `hue-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Grayscale" value={filters.grayscale} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, grayscale: value } }, `grayscale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Sepia" value={filters.sepia} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, sepia: value } }, `sepia-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Invert" value={filters.invert} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, invert: value } }, `invert-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
           </ControlSection>}
 

@@ -134,6 +134,76 @@ export function applySelectionAlphaMask(current: SelectionState | null, alpha: U
   return applyTemporaryMask(selection, temporary, mode, width, height)
 }
 
+export function selectAll(width: number, height: number) {
+  return applySelectionShape(null, { kind: 'rectangle', x: 0, y: 0, width, height }, 'replace', width, height)
+}
+
+export function invertSelection(current: SelectionState | null, width: number, height: number) {
+  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
+  const context = selection.mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return selection
+  const image = context.getImageData(0, 0, width, height)
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const offset = pixel * 4
+    image.data[offset] = 255
+    image.data[offset + 1] = 255
+    image.data[offset + 2] = 255
+    image.data[offset + 3] = 255 - image.data[offset + 3]
+  }
+  context.putImageData(image, 0, 0)
+  return { mask: selection.mask, bounds: selectionBounds(selection.mask), revision: selection.revision + 1 }
+}
+
+export function featherSelection(current: SelectionState | null, radius: number) {
+  if (!current?.bounds || radius <= 0) return current
+  const temporary = createMask(current.mask.width, current.mask.height)
+  const temporaryContext = temporary.getContext('2d')
+  const context = current.mask.getContext('2d', { willReadFrequently: true })
+  if (!temporaryContext || !context) return current
+  temporaryContext.filter = `blur(${radius}px)`
+  temporaryContext.drawImage(current.mask, 0, 0)
+  context.clearRect(0, 0, current.mask.width, current.mask.height)
+  context.drawImage(temporary, 0, 0)
+  return { mask: current.mask, bounds: selectionBounds(current.mask), revision: current.revision + 1 }
+}
+
+export function morphSelection(current: SelectionState | null, radius: number, mode: 'expand' | 'contract') {
+  if (!current?.bounds || radius <= 0) return current
+  const context = current.mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return current
+  const { width, height } = current.mask
+  const image = context.getImageData(0, 0, width, height)
+  const source = new Uint8ClampedArray(width * height)
+  for (let pixel = 0; pixel < source.length; pixel += 1) source[pixel] = image.data[pixel * 4 + 3]
+  const horizontal = new Uint8ClampedArray(source.length)
+  const output = new Uint8ClampedArray(source.length)
+  const pick = mode === 'expand' ? Math.max : Math.min
+  const outside = mode === 'expand' ? 0 : 0
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let value = mode === 'expand' ? 0 : 255
+      for (let offset = -radius; offset <= radius; offset += 1) value = pick(value, x + offset < 0 || x + offset >= width ? outside : source[y * width + x + offset])
+      horizontal[y * width + x] = value
+    }
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let value = mode === 'expand' ? 0 : 255
+      for (let offset = -radius; offset <= radius; offset += 1) value = pick(value, y + offset < 0 || y + offset >= height ? outside : horizontal[(y + offset) * width + x])
+      output[y * width + x] = value
+    }
+  }
+  for (let pixel = 0; pixel < output.length; pixel += 1) {
+    image.data[pixel * 4] = 255
+    image.data[pixel * 4 + 1] = 255
+    image.data[pixel * 4 + 2] = 255
+    image.data[pixel * 4 + 3] = output[pixel]
+  }
+  context.putImageData(image, 0, 0)
+  return { mask: current.mask, bounds: selectionBounds(current.mask), revision: current.revision + 1 }
+}
+
 export function selectionAlphaAt(data: ImageData, x: number, y: number) {
   const pixelX = Math.round(x)
   const pixelY = Math.round(y)

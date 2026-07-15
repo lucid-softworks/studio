@@ -10,6 +10,7 @@ export type EditorTool =
   | 'object-select'
   | 'crop'
   | 'eyedropper'
+  | 'measure'
   | 'healing'
   | 'clone-stamp'
   | 'brush'
@@ -36,6 +37,10 @@ function MarqueeToolIcon({ className, ellipse = false }: IconProps & { ellipse?:
 
 function EyedropperToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M14.5 5.5l4-2 2 2-2 4-9.8 9.8-4 .7.7-4 9.1-10.5z" /><path strokeLinecap="round" d="M12.5 7.5l4 4M5.5 16.2l2.3 2.3" /></svg>
+}
+
+function MeasureToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5L16.5 4 20 7.5 7.5 20 4 16.5z" /><path strokeLinecap="round" d="M8 14l2 2m.5-5.5l2 2M13 8l2 2" /></svg>
 }
 
 function LassoToolIcon({ className }: IconProps) {
@@ -99,6 +104,7 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'object-select', label: 'Object Select', shortcut: 'Shift W', icon: <ObjectSelectToolIcon className="size-[19px]" /> },
   { id: 'crop', label: 'Crop', shortcut: 'C', icon: <CropToolIcon className="size-[19px]" /> },
   { id: 'eyedropper', label: 'Eyedropper', shortcut: 'I', icon: <EyedropperToolIcon className="size-[19px]" />, divider: true },
+  { id: 'measure', label: 'Measure / Straighten', shortcut: 'Shift I', icon: <MeasureToolIcon className="size-[19px]" /> },
   { id: 'healing', label: 'Healing Brush', shortcut: 'J', icon: <HealingToolIcon className="size-[19px]" /> },
   { id: 'clone-stamp', label: 'Clone Stamp', shortcut: 'S', icon: <CloneToolIcon className="size-[19px]" /> },
   { id: 'brush', label: 'Brush', shortcut: 'B', icon: <BrushToolIcon className="size-[19px]" /> },

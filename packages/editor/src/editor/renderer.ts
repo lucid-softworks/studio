@@ -1,4 +1,5 @@
 import { getDocumentSize } from './presets'
+import { layerFilterCss } from './filters'
 import { flattenStackLayers, getStackChildren, layerIsLocked, layerIsVisible, type StackItem } from './stack'
 import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
@@ -191,7 +192,7 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   if (!asset) return
   const bounds = rasterBounds(canvas, layer)
   context.globalAlpha = layer.opacity / 100
-  withLayerTransform(context, bounds, false, false, () => {
+  withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
     context.drawImage(asset.surface ?? asset.element, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
   })
   context.globalAlpha = 1
@@ -221,7 +222,7 @@ function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElem
   const bounds = { x: centerX - metrics.width / 2, y: centerY - metrics.height / 2, width: metrics.width, height: metrics.height, rotation: layer.rotation }
 
   context.globalAlpha = layer.opacity / 100
-  withLayerTransform(context, bounds, false, false, () => {
+  withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
     setTextStyle(context, layer)
     context.fillStyle = layer.color
     const x = layer.textAlign === 'left' ? -metrics.width / 2 : layer.textAlign === 'right' ? metrics.width / 2 : 0
@@ -248,7 +249,7 @@ function shapeBounds(canvas: HTMLCanvasElement, layer: ShapeLayer): LayerBounds 
 function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: ShapeLayer) {
   const bounds = shapeBounds(canvas, layer)
   context.globalAlpha = layer.opacity / 100
-  withLayerTransform(context, bounds, false, false, () => {
+  withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
     const x = -bounds.width / 2
     const y = -bounds.height / 2
     context.beginPath()
@@ -395,7 +396,7 @@ function drawDocumentStack(
     }
     context.save()
     context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
-    if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
+    if (layer.filters) context.filter = layerFilterCss(layer.filters)
     const clippingBase = layer.clipToBelow ? clippingBaseFor(items, index) : null
     if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
     else if (!clippingBase) drawMaskedLayer(context, canvas, layer, assets)

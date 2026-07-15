@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction } from 'react'
 import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
 import { layerIsLocked } from '../editor/stack'
 import type { AssetMap, EditorDispatch, EditorDocument, Position, ShapeKind } from '../editor/types'
 import { extractImageData, type RasterEdit } from '../editor/raster'
-import { applySelectionShape, selectionAlphaAt, type SelectionMode, type SelectionState } from '../editor/selection'
+import { applySelectionShape, invertSelection, selectionAlphaAt, type SelectionMode, type SelectionState } from '../editor/selection'
 import { RedoIcon, UndoIcon, UploadIcon } from './Icons'
 import { CanvasActionOverlay } from './CanvasActionOverlay'
 import { CloneStampOverlay } from './CloneStampOverlay'
 import { LassoSelectionOverlay } from './LassoSelectionOverlay'
 import { MagicWandOverlay } from './MagicWandOverlay'
+import { MeasureOverlay, type Measurement } from './MeasureOverlay'
 import { RasterFillOverlay } from './RasterFillOverlay'
 import { RasterPaintOverlay } from './RasterPaintOverlay'
 import { SelectionOverlay } from './SelectionOverlay'
@@ -32,7 +33,10 @@ type CanvasStageProps = {
   onRasterChange: (assetId: string) => void
   onRasterCommit: (edit: RasterEdit) => void
   editingMaskLayerId: string | null
-  selectionResetToken: number
+  selection: SelectionState | null
+  onSelectionChange: Dispatch<SetStateAction<SelectionState | null>>
+  zoom: number
+  onZoomChange: Dispatch<SetStateAction<number>>
   tool: EditorTool
   onToolChange: (tool: EditorTool) => void
   onAddText: (position: Position, color: string) => void
@@ -49,6 +53,7 @@ const toolNames: Record<EditorTool, string> = {
   'object-select': 'Object Select',
   crop: 'Crop',
   eyedropper: 'Eyedropper',
+  measure: 'Measure',
   healing: 'Healing Brush',
   'clone-stamp': 'Clone Stamp',
   brush: 'Brush',
@@ -71,7 +76,7 @@ function toolForShortcut(key: string, shift: boolean): EditorTool | null {
     case 'l': return 'lasso'
     case 'w': return shift ? 'object-select' : 'magic-wand'
     case 'c': return 'crop'
-    case 'i': return 'eyedropper'
+    case 'i': return shift ? 'measure' : 'eyedropper'
     case 'j': return 'healing'
     case 's': return 'clone-stamp'
     case 'b': return 'brush'
@@ -96,6 +101,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'crop': return context.hasCrop ? 'Adjust the crop region or apply it from the options bar' : 'Drag over the canvas to define a crop region'
     case 'move': return 'Click to select · drag to move · Shift-click for multi-select · drag handles to transform'
     case 'eyedropper': return 'Click the canvas to sample a foreground colour'
+    case 'measure': return 'Drag between two points to measure their heading · Shift snaps to 45° · straighten the selected layer from the options bar'
     case 'fill': return 'Click a contiguous area on the selected raster layer to fill it'
     case 'gradient': return 'Drag across the selected raster layer to paint a linear gradient'
     case 'healing':
@@ -115,17 +121,16 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   }
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selectionResetToken, tool, onToolChange, onAddText, onAddShape, onCrop }: CanvasStageProps) {
+export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
-  const [zoom, setZoom] = useState(100)
   const [brushSize, setBrushSize] = useState(48)
   const [brushColor, setBrushColor] = useState('#ff3b81')
   const [secondaryColor, setSecondaryColor] = useState('#5b21b6')
   const [toolStrength, setToolStrength] = useState(45)
   const [tolerance, setTolerance] = useState(32)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('replace')
-  const [selection, setSelection] = useState<SelectionState | null>(null)
   const [cropSelection, setCropSelection] = useState<SelectionState | null>(null)
+  const [measurement, setMeasurement] = useState<Measurement | null>(null)
   const [isPanning, setIsPanning] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
@@ -137,11 +142,12 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'lasso' || tool === 'magic-wand'
   const paintTool = tool === 'brush' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
   const retouchTool = tool === 'healing' || tool === 'clone-stamp'
+  const measurementAngle = measurement ? Math.atan2(measurement.endY - measurement.startY, measurement.endX - measurement.startX) * 180 / Math.PI : 0
+  const measurementLength = measurement ? Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY) : 0
 
-  useEffect(() => setSelection(null), [preset.height, preset.width])
+  useEffect(() => setSelection(null), [preset.height, preset.width, setSelection])
   useEffect(() => setCropSelection(null), [preset.height, preset.width])
   useEffect(() => { if (tool !== 'crop') setCropSelection(null) }, [tool])
-  useEffect(() => setSelection(null), [selectionResetToken])
   useEffect(() => { if (editingMaskLayerId) onToolChange('brush') }, [editingMaskLayerId, onToolChange])
 
   useEffect(() => {
@@ -224,6 +230,10 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         event.preventDefault()
         event.stopImmediatePropagation()
         setSelection(null)
+      } else if (command && event.shiftKey && event.key.toLowerCase() === 'i') {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        setSelection((current) => invertSelection(current, preset.width, preset.height))
       } else if ((event.key === 'Backspace' || event.key === 'Delete') && selection?.bounds && clearSelectedPixels()) {
         event.preventDefault()
         event.stopImmediatePropagation()
@@ -235,10 +245,16 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLocked, selection])
+  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLocked, selection, setSelection])
 
   const changeZoom = (direction: 'in' | 'out') => {
     setZoom((value) => Math.max(25, Math.min(400, value + (direction === 'in' ? 25 : -25))))
+  }
+
+  const straightenSelected = () => {
+    if (!measurement || !selected || selected.type === 'adjustment' || selectedLocked) return
+    dispatch({ type: 'update-layer', id: selected.id, patch: { rotation: selected.rotation - measurementAngle } })
+    setMeasurement(null)
   }
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -309,6 +325,14 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             </div>
           )}
           {tool === 'crop' && <div className="flex items-center gap-1"><button type="button" disabled={!cropSelection?.bounds} onClick={() => { if (cropSelection?.bounds) { onCrop(cropSelection.bounds); setCropSelection(null); onToolChange('move') } }} className="rounded-md bg-violet-500 px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">Apply crop</button><button type="button" onClick={() => { setCropSelection(null); onToolChange('move') }} className="rounded-md px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Cancel</button></div>}
+          {tool === 'measure' && (
+            <div className="flex items-center gap-2">
+              <span className="hidden font-mono text-[9px] text-zinc-500 xl:inline">L {measurementLength.toFixed(1)} px</span>
+              <span className="font-mono text-[9px] text-zinc-400">A {measurementAngle.toFixed(2)}°</span>
+              <button type="button" disabled={!measurement || !selected || selected.type === 'adjustment' || selectedLocked} onClick={straightenSelected} className="rounded-md bg-violet-500 px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">Straighten layer</button>
+              {measurement && <button type="button" onClick={() => setMeasurement(null)} className="rounded-md px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Clear</button>}
+            </div>
+          )}
           {document.selectedLayerIds.length > 1 && (
             <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 md:flex">
               {[
@@ -354,6 +378,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'marquee' || tool === 'ellipse-select'} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
             <LassoSelectionOverlay canvasRef={canvasRef} enabled={tool === 'lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
             <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
+            <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
             {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : 100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={brushColor} secondaryColor={secondaryColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}

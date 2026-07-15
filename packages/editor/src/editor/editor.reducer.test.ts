@@ -60,6 +60,14 @@ describe('documentReducer', () => {
     expect(next.layers.map((layer) => layer.opacity)).toEqual([50, 75])
   })
 
+  it('replaces a layer in place when rasterizing it', () => {
+    const state = { ...initialDocument, layers: [textLayer], selectedLayerId: textLayer.id, selectedLayerIds: [textLayer.id] }
+    const raster = { ...textLayer, type: 'raster' as const, assetId: 'pixels', width: 1600, height: 1000, scale: 100 }
+    const next = documentReducer(state, { type: 'replace-layer', id: textLayer.id, layer: raster })
+    expect(next.layers).toEqual([raster])
+    expect(next.selectedLayerId).toBe(textLayer.id)
+  })
+
   it('adds stack adjustments and preserves clipping relationships', () => {
     const clipped = documentReducer({ ...initialDocument, layers: [textLayer] }, { type: 'update-layer', id: textLayer.id, patch: { clipToBelow: true } })
     const adjustment = createAdjustmentLayer(0)

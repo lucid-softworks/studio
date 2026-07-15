@@ -6,14 +6,15 @@ import { LayersPanel } from './components/LayersPanel'
 import { MenuBar } from './components/MenuBar'
 import { ToolRail, type EditorTool } from './components/ToolRail'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
+import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { calculateImageRect, getLayerBounds, renderComposition } from './editor/renderer'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit } from './editor/raster'
-import type { AssetMap, EditorDispatch, LayerPatch, Position, ShapeKind } from './editor/types'
-import type { SelectionBounds } from './editor/selection'
+import type { AssetMap, EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
+import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
@@ -24,7 +25,7 @@ type AppProps = { onExit?: () => void }
 function App({ onExit }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialHistoryState)
   const [, bumpRasterHistory] = useReducer((value: number) => value + 1, 0)
-  const [selectionResetToken, resetSelection] = useReducer((value: number) => value + 1, 0)
+  const [selection, setSelection] = useState<SelectionState | null>(null)
   const [assets, setAssets] = useState<AssetMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
@@ -33,6 +34,7 @@ function App({ onExit }: AppProps) {
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
   const [tool, setTool] = useState<EditorTool>('move')
+  const [zoom, setZoom] = useState(100)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -51,7 +53,7 @@ function App({ onExit }: AppProps) {
       rasterRedoRef.current = []
       bumpRasterHistory()
     }
-    if (action.type === 'reset-document') resetSelection()
+    if (action.type === 'reset-document') setSelection(null)
     historyDispatch({ type: 'apply', action, record: options?.record, groupKey: options?.groupKey })
   }, [])
   const endHistoryGroup = useCallback(() => historyDispatch({ type: 'end-group' }), [])
@@ -186,6 +188,54 @@ function App({ onExit }: AppProps) {
     if (surface) void surfaceToBlob(surface).then((blob) => setAssets((current) => current[edit.assetId] ? { ...current, [edit.assetId]: { ...current[edit.assetId], blob } } : current))
   }, [history.past.length])
 
+  const duplicateSelection = useCallback(() => {
+    if (selectedLayers.length === 0) return
+    const groupCopies = new Map<string, string>()
+    const sourceGroups = selectedGroup
+      ? [selectedGroup, ...document.groups.filter((group) => getDescendantGroupIds(document, selectedGroup.id).has(group.id))]
+      : []
+    for (const group of sourceGroups) groupCopies.set(group.id, createId())
+    const duplicatedGroupId = selectedGroup ? groupCopies.get(selectedGroup.id) ?? null : null
+    for (const group of sourceGroups) {
+      dispatch({
+        type: 'add-group',
+        group: {
+          ...group,
+          id: groupCopies.get(group.id)!,
+          name: group.id === selectedGroup?.id ? `${group.name} copy` : group.name,
+          parentId: group.id === selectedGroup?.id ? group.parentId ?? null : groupCopies.get(group.parentId ?? '') ?? null,
+          stackOrder: undefined,
+        },
+        layerIds: [],
+      }, { groupKey: 'duplicate-selection' })
+    }
+    const copiedAssets: AssetMap = {}
+    for (const layer of selectedLayers) {
+      const copy = duplicateLayer(layer)
+      if (duplicatedGroupId) copy.groupId = groupCopies.get(layer.groupId ?? '') ?? duplicatedGroupId
+      if (layer.type === 'raster' && copy.type === 'raster') {
+        const source = assetsRef.current[layer.assetId]
+        if (source) {
+          const assetId = createId()
+          copiedAssets[assetId] = cloneRasterSource(source, copy.name)
+          copy.assetId = assetId
+        }
+      }
+      if (layer.maskAssetId) {
+        const mask = assetsRef.current[layer.maskAssetId]
+        if (mask) {
+          const maskAssetId = createId()
+          copiedAssets[maskAssetId] = cloneRasterSource(mask, `${copy.name} mask`)
+          copy.maskAssetId = maskAssetId
+        }
+      }
+      dispatch({ type: 'add-layer', layer: copy }, { groupKey: 'duplicate-selection' })
+    }
+    if (Object.keys(copiedAssets).length) setAssets((current) => ({ ...current, ...copiedAssets }))
+    if (duplicatedGroupId) dispatch({ type: 'select-group', id: duplicatedGroupId }, { record: false })
+    endHistoryGroup()
+  }, [dispatch, document, endHistoryGroup, selectedGroup, selectedLayers])
+
   useEffect(() => {
     const isTyping = (target: EventTarget | null) => {
       const element = target as HTMLElement | null
@@ -202,50 +252,7 @@ function App({ onExit }: AppProps) {
       }
       if (command && event.key.toLowerCase() === 'j' && selectedLayers.length > 0) {
         event.preventDefault()
-        const groupCopies = new Map<string, string>()
-        const sourceGroups = selectedGroup
-          ? [selectedGroup, ...document.groups.filter((group) => getDescendantGroupIds(document, selectedGroup.id).has(group.id))]
-          : []
-        for (const group of sourceGroups) groupCopies.set(group.id, createId())
-        const duplicatedGroupId = selectedGroup ? groupCopies.get(selectedGroup.id) ?? null : null
-        for (const group of sourceGroups) {
-          dispatch({
-            type: 'add-group',
-            group: {
-              ...group,
-              id: groupCopies.get(group.id)!,
-              name: group.id === selectedGroup?.id ? `${group.name} copy` : group.name,
-              parentId: group.id === selectedGroup?.id ? group.parentId ?? null : groupCopies.get(group.parentId ?? '') ?? null,
-              stackOrder: undefined,
-            },
-            layerIds: [],
-          }, { groupKey: 'duplicate-selection' })
-        }
-        const copiedAssets: AssetMap = {}
-        for (const layer of selectedLayers) {
-          const copy = duplicateLayer(layer)
-          if (duplicatedGroupId) copy.groupId = groupCopies.get(layer.groupId ?? '') ?? duplicatedGroupId
-          if (layer.type === 'raster' && copy.type === 'raster') {
-            const source = assetsRef.current[layer.assetId]
-            if (source) {
-              const assetId = createId()
-              copiedAssets[assetId] = cloneRasterSource(source, copy.name)
-              copy.assetId = assetId
-            }
-          }
-          if (layer.maskAssetId) {
-            const mask = assetsRef.current[layer.maskAssetId]
-            if (mask) {
-              const maskAssetId = createId()
-              copiedAssets[maskAssetId] = cloneRasterSource(mask, `${copy.name} mask`)
-              copy.maskAssetId = maskAssetId
-            }
-          }
-          dispatch({ type: 'add-layer', layer: copy }, { groupKey: 'duplicate-selection' })
-        }
-        if (Object.keys(copiedAssets).length) setAssets((current) => ({ ...current, ...copiedAssets }))
-        if (duplicatedGroupId) dispatch({ type: 'select-group', id: duplicatedGroupId }, { record: false })
-        endHistoryGroup()
+        duplicateSelection()
         return
       }
       if (event.key === 'Escape') {
@@ -281,7 +288,7 @@ function App({ onExit }: AppProps) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [dispatch, document, endHistoryGroup, performRedo, performUndo, selectedGroup, selectedLayers])
+  }, [dispatch, document, duplicateSelection, endHistoryGroup, performRedo, performUndo, selectedGroup, selectedLayers])
 
   useEffect(() => () => {
     for (const asset of Object.values(assetsRef.current)) {
@@ -424,7 +431,150 @@ function App({ onExit }: AppProps) {
     dispatch({ type: 'set-canvas-size', width, height }, { groupKey: 'crop-document' })
     dispatch({ type: 'update-layers', changes }, { groupKey: 'crop-document' })
     endHistoryGroup()
-    resetSelection()
+    setSelection(null)
+  }
+
+  const transformCanvas = (kind: 'rotate-cw' | 'rotate-ccw' | 'flip-x' | 'flip-y') => {
+    const canvas = canvasRef.current
+    const canvasContext = canvas?.getContext('2d')
+    const { width: oldWidth, height: oldHeight } = getDocumentSize(document)
+    const rotates = kind === 'rotate-cw' || kind === 'rotate-ccw'
+    const width = rotates ? oldHeight : oldWidth
+    const height = rotates ? oldWidth : oldHeight
+    const nextAssets: AssetMap = {}
+    const normalizeRotation = (value: number) => ((value + 180) % 360 + 360) % 360 - 180
+    const changes = document.layers.map((layer) => {
+      const patch: LayerPatch = {}
+      if (kind === 'rotate-cw') {
+        patch.position = { x: -layer.position.y, y: layer.position.x }
+        patch.rotation = normalizeRotation(layer.rotation + 90)
+      } else if (kind === 'rotate-ccw') {
+        patch.position = { x: layer.position.y, y: -layer.position.x }
+        patch.rotation = normalizeRotation(layer.rotation - 90)
+      } else if (kind === 'flip-x') {
+        patch.position = { x: -layer.position.x, y: layer.position.y }
+        patch.rotation = normalizeRotation(-layer.rotation)
+        patch.flipX = !layer.flipX
+      } else {
+        patch.position = { x: layer.position.x, y: -layer.position.y }
+        patch.rotation = normalizeRotation(-layer.rotation)
+        patch.flipY = !layer.flipY
+      }
+      if (rotates && layer.type === 'shape') {
+        patch.width = layer.width / 100 * oldWidth / width * 100
+        patch.height = layer.height / 100 * oldHeight / height * 100
+      }
+      if (rotates && layer.type === 'image' && canvas && canvasContext) {
+        const source = assets[layer.assetId]
+        const bounds = getLayerBounds(canvasContext, canvas, layer, assets)
+        const imageWidth = source?.element.naturalWidth || source?.surface?.width || 1
+        const imageHeight = source?.element.naturalHeight || source?.surface?.height || 1
+        if (bounds) {
+          const base = calculateImageRect(width, height, imageWidth, imageHeight, { ...layer, position: { x: 0, y: 0 }, scale: 100 })
+          patch.scale = bounds.width / Math.max(1, base.width) * 100
+        }
+      }
+      if (layer.maskAssetId) {
+        const source = assets[layer.maskAssetId]
+        if (source?.surface) {
+          const assetId = createId()
+          const transformed = createEmptyRasterSource(width, height, source.name)
+          const context = transformed.surface?.getContext('2d', { willReadFrequently: true })
+          if (context) {
+            context.save()
+            if (kind === 'rotate-cw') {
+              context.translate(width, 0)
+              context.rotate(Math.PI / 2)
+            } else if (kind === 'rotate-ccw') {
+              context.translate(0, height)
+              context.rotate(-Math.PI / 2)
+            } else if (kind === 'flip-x') {
+              context.translate(width, 0)
+              context.scale(-1, 1)
+            } else {
+              context.translate(0, height)
+              context.scale(1, -1)
+            }
+            context.drawImage(source.surface, 0, 0, oldWidth, oldHeight)
+            context.restore()
+            nextAssets[assetId] = transformed
+            patch.maskAssetId = assetId
+          }
+        }
+      }
+      return { id: layer.id, patch }
+    })
+    if (Object.keys(nextAssets).length) setAssets((current) => ({ ...current, ...nextAssets }))
+    dispatch({ type: 'set-canvas-size', width, height }, { groupKey: 'transform-canvas' })
+    dispatch({ type: 'update-layers', changes }, { groupKey: 'transform-canvas' })
+    const angle = document.background.gradientAngle
+    const gradientAngle = kind === 'rotate-cw' ? angle + 90 : kind === 'rotate-ccw' ? angle - 90 : kind === 'flip-x' ? 180 - angle : -angle
+    dispatch({ type: 'set-background', patch: { gradientAngle: normalizeRotation(gradientAngle) } }, { groupKey: 'transform-canvas' })
+    endHistoryGroup()
+    setSelection(null)
+  }
+
+  const rasterizeSelectedLayer = () => {
+    const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
+    if (!layer || layer.type === 'raster' || layer.type === 'adjustment') return
+    const { width, height } = getDocumentSize(document)
+    const canvas = window.document.createElement('canvas')
+    renderComposition(canvas, {
+      ...document,
+      background: { ...document.background, kind: 'transparent' },
+      pattern: { ...document.pattern, kind: 'none' },
+      groups: [],
+      layers: [{ ...layer, groupId: null, stackOrder: 0, visible: true, locked: false, clipToBelow: false }],
+      selectedLayerId: null,
+      selectedLayerIds: [],
+      selectedGroupId: null,
+    }, assets)
+    const assetId = createId()
+    const source = createEmptyRasterSource(width, height, `${layer.name} pixels`)
+    source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
+    const raster = {
+      ...createRasterLayer(assetId, layer.name, width, height),
+      id: layer.id,
+      visible: layer.visible,
+      locked: layer.locked,
+      groupId: layer.groupId,
+      stackOrder: layer.stackOrder,
+    }
+    setAssets((current) => ({ ...current, [assetId]: source }))
+    dispatch({ type: 'replace-layer', id: layer.id, layer: raster })
+  }
+
+  const applyFilter = (patch: Partial<LayerFilters>) => {
+    const targets = selectedLayers.filter((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))
+    if (!targets.length) return
+    dispatch({
+      type: 'update-layers',
+      changes: targets.map((layer) => ({ id: layer.id, patch: { filters: { ...normalizeLayerFilters(layer.filters), ...patch } } })),
+    })
+  }
+
+  const resetFilters = () => applyFilter(defaultLayerFilters)
+
+  const deleteSelection = () => {
+    if (selectedGroup && !groupIsLocked(document, selectedGroup)) dispatch({ type: 'remove-group', id: selectedGroup.id, deleteLayers: true })
+    else {
+      const ids = selectedLayers.filter((layer) => !layerIsLocked(document, layer)).map((layer) => layer.id)
+      if (ids.length) dispatch({ type: 'remove-layers', ids })
+    }
+  }
+
+  const applySelectAll = () => {
+    const size = getDocumentSize(document)
+    setSelection(selectAll(size.width, size.height))
+  }
+
+  const applySelectionOperation = (operation: 'invert' | 'feather' | 'expand' | 'contract') => {
+    const size = getDocumentSize(document)
+    setSelection((current) => {
+      if (operation === 'invert') return invertSelection(current, size.width, size.height)
+      if (operation === 'feather') return featherSelection(current, 4)
+      return morphSelection(current, 4, operation)
+    })
   }
 
   const exportImage = (format: ExportFormat) => {
@@ -467,7 +617,7 @@ function App({ onExit }: AppProps) {
       rasterRedoRef.current = []
       bumpRasterHistory()
       historyDispatch({ type: 'replace', document: loaded.document })
-      resetSelection()
+      setSelection(null)
       setNotice(`Opened ${file.name} entirely in your browser.`)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The project could not be opened.')
@@ -512,7 +662,7 @@ function App({ onExit }: AppProps) {
       rasterRedoRef.current = []
       bumpRasterHistory()
       historyDispatch({ type: 'replace', document: loaded.document })
-      resetSelection()
+      setSelection(null)
       setNotice(`Opened ${file.name} locally.`)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That file could not be opened.')
@@ -530,7 +680,8 @@ function App({ onExit }: AppProps) {
     historyDispatch({ type: 'replace', document: structuredClone(initialDocument) })
     setEditingMaskLayerId(null)
     setTool('move')
-    resetSelection()
+    setZoom(100)
+    setSelection(null)
     setNotice(null)
   }
 
@@ -555,8 +706,34 @@ function App({ onExit }: AppProps) {
             onExport={exportImage}
             onUndo={performUndo}
             onRedo={performRedo}
+            onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}
+            onFlipCanvas={(axis) => transformCanvas(axis === 'x' ? 'flip-x' : 'flip-y')}
+            onNewLayer={addEmptyLayer}
+            onNewGroup={addLayerGroup}
+            onDuplicateLayer={duplicateSelection}
+            onRasterizeLayer={rasterizeSelectedLayer}
+            onDeleteLayer={deleteSelection}
+            onSelectAll={applySelectAll}
+            onDeselect={() => setSelection(null)}
+            onInvertSelection={() => applySelectionOperation('invert')}
+            onFeatherSelection={() => applySelectionOperation('feather')}
+            onExpandSelection={() => applySelectionOperation('expand')}
+            onContractSelection={() => applySelectionOperation('contract')}
+            onFilter={(preset) => {
+              if (preset === 'blur') applyFilter({ blur: 8 })
+              else if (preset === 'sharpen') applyFilter({ contrast: 115, saturation: 108 })
+              else if (preset === 'grayscale') applyFilter({ grayscale: 100 })
+              else if (preset === 'sepia') applyFilter({ sepia: 100 })
+              else if (preset === 'invert') applyFilter({ invert: 100 })
+              else resetFilters()
+            }}
+            onZoom={(command) => setZoom((current) => command === 'actual' ? 100 : Math.max(25, Math.min(250, current + (command === 'in' ? 25 : -25))))}
             canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
+            hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
+            canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
+            hasPixelSelection={Boolean(selection?.bounds)}
+            hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
             saving={isProjectSaving}
             exporting={isExporting}
           />
@@ -568,7 +745,7 @@ function App({ onExit }: AppProps) {
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} />
-        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} />
+        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
       </main>
 

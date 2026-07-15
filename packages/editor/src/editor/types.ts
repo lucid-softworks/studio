@@ -3,7 +3,7 @@ export type BackgroundKind = 'gradient' | 'solid' | 'image' | 'transparent'
 export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
 export type ShapeKind = 'rectangle' | 'ellipse'
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity'
-export type LayerFilters = { brightness: number; contrast: number; saturation: number; blur: number }
+export type LayerFilters = { brightness: number; contrast: number; saturation: number; hue: number; grayscale: number; sepia: number; invert: number; blur: number }
 
 export type SourceImage = {
   element: HTMLImageElement
@@ -25,6 +25,8 @@ export type BaseLayer = {
   opacity: number
   position: Position
   rotation: number
+  flipX?: boolean
+  flipY?: boolean
   blendMode?: BlendMode
   filters?: LayerFilters
   maskAssetId?: string | null
@@ -173,6 +175,7 @@ export type DocumentAction =
   | { type: 'set-background'; patch: Partial<BackgroundSettings> }
   | { type: 'set-pattern'; patch: Partial<PatternSettings> }
   | { type: 'add-layer'; layer: EditorLayer }
+  | { type: 'replace-layer'; id: string; layer: EditorLayer }
   | { type: 'add-group'; group: LayerGroup; layerIds: string[] }
   | { type: 'update-layer'; id: string; patch: LayerPatch }
   | { type: 'update-layers'; changes: Array<{ id: string; patch: LayerPatch }> }
