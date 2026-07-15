@@ -14,9 +14,12 @@ type LayersPanelProps = {
   onAddMask: (layerId: string) => void
   onEditMask: (layerId: string) => void
   onRemoveMask: (layerId: string) => void
+  dockSide: 'left' | 'right'
+  onSwapPanels: () => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
+type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -29,9 +32,9 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
 
@@ -50,6 +53,20 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
     setDropTarget(null)
   }
 
+  const edgeTarget = (parentId: string | null, targetId: string, above: boolean): DropTarget => {
+    const siblings = getStackChildren(document, parentId).filter((item) => item.id !== dragging?.id)
+    const index = siblings.findIndex((item) => item.id === targetId)
+    return {
+      key: `${above ? 'above' : 'below'}:${targetId}`,
+      parentId,
+      beforeId: above ? siblings[index + 1]?.id ?? null : targetId,
+    }
+  }
+
+  const dropAtTarget = (event: DragEvent) => {
+    if (dropTarget) drop(event, dropTarget.parentId, dropTarget.beforeId)
+  }
+
   const layerRow = (layer: EditorLayer, depth: number) => {
     const selected = document.selectedLayerIds.includes(layer.id) && !document.selectedGroupId
     const active = layer.id === document.selectedLayerId
@@ -60,10 +77,10 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
         draggable
         onDragStart={(event) => startDrag(event, { type: 'layer', id: layer.id })}
         onDragEnd={() => { setDragging(null); setDropTarget(null) }}
-        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDropTarget(`layer:${layer.id}`) }}
-        onDrop={(event) => drop(event, layer.groupId ?? null, layer.id)}
+        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setDropTarget(edgeTarget(layer.groupId ?? null, layer.id, event.clientY < rect.top + rect.height / 2)) }}
+        onDrop={dropAtTarget}
         style={{ marginLeft: depth * 14 }}
-        className={`group flex w-[calc(100%-var(--indent,0px))] items-center rounded-lg border p-1 transition ${dropTarget === `layer:${layer.id}` ? 'border-violet-300/60 bg-violet-400/10' : selected ? 'border-violet-400/25 bg-violet-400/10 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}`}
+        className={`group flex w-[calc(100%-var(--indent,0px))] items-center rounded-lg border p-1 transition ${dropTarget?.key.endsWith(`:${layer.id}`) ? `${dropTarget.key.startsWith('above') ? 'border-t-violet-300' : 'border-b-violet-300'} bg-violet-400/10` : selected ? 'border-violet-400/25 bg-violet-400/10 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}`}
       >
         <button type="button" onClick={(event) => dispatch({ type: 'select-layer', id: layer.id, mode: event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace' }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-violet-400">
           <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${active ? 'bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/30' : selected ? 'bg-violet-400/10 text-violet-400' : 'bg-white/[0.04]'}`}><LayerTypeIcon layer={layer} /></span>
@@ -87,14 +104,14 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
     const descendantCount = getDescendantLayers(document, group.id).length
     const inheritedLock = groupIsLocked(document, group) && !group.locked
     return (
-      <div key={group.id} style={{ marginLeft: depth * 14 }} className={`rounded-lg border transition ${dropTarget === `group:${group.id}` ? 'border-cyan-200/60 bg-cyan-300/10' : selected ? 'border-cyan-300/20 bg-cyan-300/[0.06]' : 'border-white/[0.04] bg-black/10'}`}>
+      <div key={group.id} style={{ marginLeft: depth * 14 }} className={`rounded-lg border transition ${dropTarget?.key === `inside:${group.id}` ? 'border-cyan-200/60 bg-cyan-300/10' : dropTarget?.key.endsWith(`:${group.id}`) ? `${dropTarget.key.startsWith('above') ? 'border-t-violet-300' : 'border-b-violet-300'} bg-violet-400/5` : selected ? 'border-cyan-300/20 bg-cyan-300/[0.06]' : 'border-white/[0.04] bg-black/10'}`}>
         <div
           className="group flex items-center p-1"
           draggable
           onDragStart={(event) => startDrag(event, { type: 'group', id: group.id })}
           onDragEnd={() => { setDragging(null); setDropTarget(null) }}
-          onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setDropTarget(`group:${group.id}`) }}
-          onDrop={(event) => drop(event, group.id)}
+          onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const ratio = (event.clientY - rect.top) / rect.height; setDropTarget(ratio < 0.3 ? edgeTarget(group.parentId ?? null, group.id, true) : ratio > 0.7 ? edgeTarget(group.parentId ?? null, group.id, false) : { key: `inside:${group.id}`, parentId: group.id }) }}
+          onDrop={dropAtTarget}
         >
           <button type="button" aria-label={group.collapsed ? 'Expand group' : 'Collapse group'} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { collapsed: !group.collapsed } }, { record: false })} className="flex size-6 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">{group.collapsed ? '›' : '⌄'}</button>
           <button type="button" onClick={() => dispatch({ type: 'select-group', id: group.id }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-cyan-300">
@@ -115,14 +132,14 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const rootItems = getStackChildren(document, null)
 
   return (
-    <aside className="order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[258px] lg:border-t-0 lg:border-l">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-        <div><h2 className="text-sm font-semibold text-zinc-100">Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
+    <aside onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[258px] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      <div draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-4 active:cursor-grabbing">
+        <div><h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
         <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button></div>
       </div>
 
-      <div className={`min-h-0 flex-1 space-y-1 overflow-y-auto p-2 ${dragging ? 'ring-1 ring-inset ring-violet-400/20' : ''}`} onDragOver={(event) => { event.preventDefault(); setDropTarget('root') }} onDrop={(event) => drop(event, null)}>
-        {dragging && <div className={`rounded-md border border-dashed px-2 py-1.5 text-center text-[9px] ${dropTarget === 'root' ? 'border-violet-300/60 text-violet-200' : 'border-white/[0.08] text-zinc-700'}`}>Drop here to move to the document root</div>}
+      <div className={`min-h-0 flex-1 space-y-1 overflow-y-auto p-2 ${dragging ? 'ring-1 ring-inset ring-violet-400/20' : ''}`} onDragOver={(event) => { event.preventDefault(); setDropTarget({ key: 'root', parentId: null }) }} onDrop={dropAtTarget}>
+        {dragging && <div className={`rounded-md border border-dashed px-2 py-1.5 text-center text-[9px] ${dropTarget?.key === 'root' ? 'border-violet-300/60 text-violet-200' : 'border-white/[0.08] text-zinc-700'}`}>Drop here to move to the document root</div>}
         {[...rootItems].reverse().map((item) => item.type === 'group' ? groupRow(item.group, 0) : layerRow(item.layer, 0))}
         {rootItems.length === 0 && <div className="flex min-h-40 flex-col items-center justify-center px-6 text-center"><span className="mb-3 flex size-10 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-700"><ImageIcon /></span><p className="text-xs font-medium text-zinc-500">Blank document</p><p className="mt-1 text-[10px] leading-relaxed text-zinc-700">Press + to create an empty raster layer.</p></div>}
       </div>

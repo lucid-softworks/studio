@@ -114,6 +114,23 @@ describe('documentReducer', () => {
     expect(movedToRoot.layers[0]).toMatchObject({ id: nestedLayer.id, groupId: null })
   })
 
+  it('reorders mixed stack drop targets before a sibling', () => {
+    const bottom = { ...textLayer, id: 'bottom', stackOrder: 0 }
+    const middle = { ...textLayer, id: 'middle', stackOrder: 1 }
+    const top = { ...textLayer, id: 'top', stackOrder: 2 }
+    const state = { ...initialDocument, layers: [bottom, middle, top] }
+
+    const moved = documentReducer(state, {
+      type: 'move-stack-item',
+      itemType: 'layer',
+      id: bottom.id,
+      parentId: null,
+      beforeId: top.id,
+    })
+
+    expect(moved.layers.map((layer) => layer.id)).toEqual(['middle', 'bottom', 'top'])
+  })
+
   it('ungroups a nested folder into its parent and preserves child order', () => {
     const parent = { ...createLayerGroup(0), id: 'parent', stackOrder: 0 }
     const child = { ...createLayerGroup(1), id: 'child', parentId: parent.id, stackOrder: 0 }

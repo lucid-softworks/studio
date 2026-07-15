@@ -6,6 +6,7 @@ import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
 import type { CustomFontResource } from '../editor/resources'
+import type { DragEvent } from 'react'
 
 type InspectorProps = {
   document: EditorDocument
@@ -15,6 +16,8 @@ type InspectorProps = {
   backgroundImageName?: string
   customFonts: CustomFontResource[]
   onLoadFont: () => void
+  dockSide: 'left' | 'right'
+  onSwapPanels: () => void
 }
 
 const tabClass = (active: boolean) =>
@@ -43,7 +46,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -53,10 +56,10 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const filters = normalizeLayerFilters(selected?.filters)
 
   return (
-    <aside className="order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:order-1 lg:h-[calc(100vh-48px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 lg:border-r">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
+    <aside onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      <div draggable onDragStart={(event: DragEvent) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'properties') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-5 active:cursor-grabbing">
         <div>
-          <h1 className="text-sm font-semibold text-zinc-100">Properties</h1>
+          <h1 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Properties</h1>
           <p className="mt-0.5 max-w-44 truncate text-[11px] text-zinc-600">{selectedGroup?.name ?? (document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Document settings')}</p>
         </div>
         <button

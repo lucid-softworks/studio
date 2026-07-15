@@ -44,6 +44,9 @@ function App({ onExit }: AppProps) {
   const [customBrushes, setCustomBrushes] = useState<BrushPreset[]>([])
   const [brushId, setBrushId] = useState(roundBrush.id)
   const [resourceRevision, bumpResourceRevision] = useReducer((value: number) => value + 1, 0)
+  const [propertiesOnLeft, setPropertiesOnLeft] = useState(() => {
+    try { return localStorage.getItem('studio.panel-layout') !== 'layers-left' } catch { return true }
+  })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -59,6 +62,10 @@ function App({ onExit }: AppProps) {
 
   assetsRef.current = assets
   useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
+
+  useEffect(() => {
+    try { localStorage.setItem('studio.panel-layout', propertiesOnLeft ? 'properties-left' : 'layers-left') } catch { /* local storage is optional */ }
+  }, [propertiesOnLeft])
 
   useEffect(() => {
     let cancelled = false
@@ -804,9 +811,9 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />

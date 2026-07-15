@@ -1,0 +1,74 @@
+import { useLayoutEffect, useMemo, useState, type RefObject } from 'react'
+import { rulerStep, rulerValues } from './canvas-ruler-scale'
+
+type Metrics = { width: number; height: number; canvasLeft: number; canvasTop: number; scaleX: number; scaleY: number; scrollLeft: number; scrollTop: number }
+
+export function CanvasRulers({ stageRef, canvasRef, zoom }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number }) {
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current
+    const canvas = canvasRef.current
+    if (!stage || !canvas) return
+    const update = () => {
+      const stageRect = stage.getBoundingClientRect()
+      const canvasRect = canvas.getBoundingClientRect()
+      setMetrics({
+        width: stage.clientWidth,
+        height: stage.clientHeight,
+        canvasLeft: canvasRect.left - stageRect.left,
+        canvasTop: canvasRect.top - stageRect.top,
+        scaleX: canvasRect.width / Math.max(1, canvas.width),
+        scaleY: canvasRect.height / Math.max(1, canvas.height),
+        scrollLeft: stage.scrollLeft,
+        scrollTop: stage.scrollTop,
+      })
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(stage)
+    observer.observe(canvas)
+    stage.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    update()
+    const settleTimer = window.setTimeout(update, 180)
+    return () => {
+      window.clearTimeout(settleTimer)
+      observer.disconnect()
+      stage.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [canvasRef, stageRef, zoom])
+
+  const ticks = useMemo(() => {
+    if (!metrics) return null
+    const xStep = rulerStep(metrics.scaleX)
+    const yStep = rulerStep(metrics.scaleY)
+    return {
+      xStep,
+      yStep,
+      x: rulerValues(-metrics.canvasLeft / metrics.scaleX, (metrics.width - metrics.canvasLeft) / metrics.scaleX, xStep / 5),
+      y: rulerValues(-metrics.canvasTop / metrics.scaleY, (metrics.height - metrics.canvasTop) / metrics.scaleY, yStep / 5),
+    }
+  }, [metrics])
+
+  if (!metrics || !ticks) return null
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30" style={{ transform: `translate(${metrics.scrollLeft}px, ${metrics.scrollTop}px)` }} aria-hidden="true">
+      <svg width={metrics.width} height="22" className="absolute top-0 left-0 bg-[#151518]/95 text-zinc-500 shadow-[0_1px_rgba(255,255,255,0.06)]">
+        {ticks.x.map((value, index) => {
+          const x = metrics.canvasLeft + value * metrics.scaleX
+          const major = Math.abs(value / ticks.xStep - Math.round(value / ticks.xStep)) < 0.001
+          return <g key={index}><line x1={x} x2={x} y1={major ? 9 : 15} y2="22" stroke="currentColor" strokeWidth="0.7" />{major && <text x={x + 3} y="8" fill="currentColor" fontSize="7" fontFamily="monospace">{Math.round(value)}</text>}</g>
+        })}
+      </svg>
+      <svg width="22" height={metrics.height} className="absolute top-0 left-0 bg-[#151518]/95 text-zinc-500 shadow-[1px_0_rgba(255,255,255,0.06)]">
+        {ticks.y.map((value, index) => {
+          const y = metrics.canvasTop + value * metrics.scaleY
+          const major = Math.abs(value / ticks.yStep - Math.round(value / ticks.yStep)) < 0.001
+          return <g key={index}><line x1={major ? 9 : 15} x2="22" y1={y} y2={y} stroke="currentColor" strokeWidth="0.7" />{major && <text x="7" y={y + 3} fill="currentColor" fontSize="7" fontFamily="monospace" textAnchor="middle" transform={`rotate(-90 7 ${y + 3})`}>{Math.round(value)}</text>}</g>
+        })}
+      </svg>
+      <div className="absolute top-0 left-0 size-[22px] border-r border-b border-white/[0.08] bg-[#1a1a1e]" />
+    </div>
+  )
+}

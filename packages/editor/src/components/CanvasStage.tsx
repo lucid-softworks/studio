@@ -19,6 +19,7 @@ import type { EditorTool } from './ToolRail'
 import { TransformOverlay } from './TransformOverlay'
 import type { BrushPreset } from '../editor/resources'
 import { BrushSettingsPopover } from './BrushSettingsPopover'
+import { CanvasRulers } from './CanvasRulers'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -305,10 +306,11 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   return (
     <section
       className="order-1 flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden bg-[#0b0b0c] lg:order-2 lg:h-[calc(100vh-48px)] lg:min-h-0"
-      onDragEnter={(event) => { event.preventDefault(); setIsDraggingFile(true) }}
-      onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }}
+      onDragEnter={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setIsDraggingFile(true) } }}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setIsDraggingFile(false) }}
       onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         setIsDraggingFile(false)
         const file = event.dataTransfer.files[0]
@@ -386,6 +388,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
+        <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(79,70,229,0.08),transparent_42%)]" />
         <div
           className="relative z-10 flex w-full max-w-full shrink-0 items-center justify-center transition-transform duration-150"

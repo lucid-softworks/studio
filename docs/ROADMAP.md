@@ -22,7 +22,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Move, transform, crop, straighten, selection, paint, erase, fill, gradient, retouch, text, and shape tools
 - [x] Pressure-sensitive brush dynamics and local custom brush tips
 - [x] Locally loaded fonts
-- [x] Rulers, guides, snapping, measurement, alignment, history, and keyboard shortcuts
+- [x] Canvas-edge rulers, guides, snapping, measurement, alignment, history, and keyboard shortcuts
+- [x] Layer and folder drag-and-drop reordering with nested drop targets
 - [x] Local recovery storage
 
 ## M0 — editor and rendering foundation
