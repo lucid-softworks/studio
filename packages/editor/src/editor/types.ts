@@ -11,6 +11,32 @@ export type LayerEffects = {
   colorOverlay: { enabled: boolean; color: string; opacity: number }
 }
 
+export type VectorPath = {
+  closed: boolean
+  operation: 'exclude' | 'combine' | 'subtract' | 'intersect'
+  fillRule: 'even-odd' | 'non-zero'
+  knots: Array<{ linked: boolean; in: Position; anchor: Position; out: Position }>
+}
+
+export type LayerMaskSettings = {
+  density: number
+  feather: number
+  linked: boolean
+}
+
+export type VectorMask = LayerMaskSettings & {
+  paths: VectorPath[]
+  inverted: boolean
+  disabled: boolean
+  fillStartsWithAllPixels: boolean
+}
+
+export type BlendIfSettings = {
+  source: number[]
+  destination: number[]
+  channels: Array<{ source: number[]; destination: number[] }>
+}
+
 export type BaseLayer = {
   id: string
   name: string
@@ -25,6 +51,9 @@ export type BaseLayer = {
   filters?: LayerFilters
   effects?: LayerEffects | null
   maskAssetId?: string | null
+  maskSettings?: LayerMaskSettings
+  vectorMask?: VectorMask
+  blendIf?: BlendIfSettings
   clipToBelow?: boolean
   groupId?: string | null
   stackOrder?: number
@@ -125,12 +154,7 @@ export type ShapeLayer = BaseLayer & {
   stroke: string
   strokeWidth: number
   cornerRadius: number
-  vectorPaths?: Array<{
-    closed: boolean
-    operation: 'exclude' | 'combine' | 'subtract' | 'intersect'
-    fillRule: 'even-odd' | 'non-zero'
-    knots: Array<{ linked: boolean; in: Position; anchor: Position; out: Position }>
-  }>
+  vectorPaths?: VectorPath[]
   fillStyle?:
     | { type: 'color'; color: string }
     | { type: 'gradient'; name: string; style: 'linear' | 'radial' | 'angle' | 'reflected' | 'diamond'; angle: number; scale: number; colorStops: Array<{ color: string; position: number }>; opacityStops: Array<{ opacity: number; position: number }> }
@@ -175,6 +199,11 @@ export type PatternSettings = {
   size: number
 }
 
+export type DocumentChannel = {
+  id?: number
+  name: string
+}
+
 export type EditorDocument = {
   schemaVersion: typeof EDITOR_DOCUMENT_SCHEMA_VERSION
   canvasPreset: string
@@ -186,6 +215,7 @@ export type EditorDocument = {
   selectedLayerId: string | null
   selectedLayerIds: string[]
   selectedGroupId: string | null
+  channels?: DocumentChannel[]
 }
 
 export type LayerPatch = Partial<{
@@ -199,6 +229,9 @@ export type LayerPatch = Partial<{
   filters: LayerFilters
   effects: LayerEffects | null
   maskAssetId: string | null
+  maskSettings: LayerMaskSettings
+  vectorMask: VectorMask | null
+  blendIf: BlendIfSettings | null
   clipToBelow: boolean
   groupId: string | null
   stackOrder: number

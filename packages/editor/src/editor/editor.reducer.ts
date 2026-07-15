@@ -215,6 +215,7 @@ const documentFields = [
   'selectedLayerId',
   'selectedLayerIds',
   'selectedGroupId',
+  'channels',
 ] as const satisfies readonly (keyof EditorDocument)[]
 
 function documentPatch(from: EditorDocument, to: EditorDocument): DocumentStatePatch {

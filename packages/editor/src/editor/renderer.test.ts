@@ -1,6 +1,13 @@
+import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { calculateImageRect, findResizeHandle, getResizeHandles, selectMipmapLevel } from './renderer'
+import { createShapeLayer, initialDocument } from './presets'
+import { calculateImageRect, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel } from './renderer'
 import type { ImageLayer } from './types'
+
+Object.assign(globalThis, {
+  ImageData,
+  document: { createElement: () => createCanvas(1, 1) },
+})
 
 const imageLayer: ImageLayer = {
   id: 'image-1',
@@ -25,6 +32,42 @@ describe('mipmap selection', () => {
     expect(selectMipmapLevel(4096, 2048, 512, 256)).toBe(3)
     expect(selectMipmapLevel(4096, 2048, 4096, 256)).toBe(0)
     expect(selectMipmapLevel(65_536, 65_536, 1, 1)).toBe(8)
+  })
+})
+
+describe('advanced masks', () => {
+  it('renders compound vector masks with density and Blend If thresholds', () => {
+    const path = (left: number, right: number) => ({
+      closed: true,
+      operation: 'combine' as const,
+      fillRule: 'non-zero' as const,
+      knots: [
+        { linked: true, in: { x: left, y: 0 }, anchor: { x: left, y: 0 }, out: { x: left, y: 0 } },
+        { linked: true, in: { x: right, y: 0 }, anchor: { x: right, y: 0 }, out: { x: right, y: 0 } },
+        { linked: true, in: { x: right, y: 1 }, anchor: { x: right, y: 1 }, out: { x: right, y: 1 } },
+        { linked: true, in: { x: left, y: 1 }, anchor: { x: left, y: 1 }, out: { x: left, y: 1 } },
+      ],
+    })
+    const layer = {
+      ...createShapeLayer('rectangle', 0),
+      width: 100,
+      height: 100,
+      fill: '#ff0000',
+      vectorMask: { paths: [path(0, 0.5)], density: 50, feather: 0, inverted: false, disabled: false, linked: true, fillStartsWithAllPixels: false },
+    }
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 100, height: 100 }, layers: [layer] }, {})
+    const pixels = canvas.getContext('2d')!.getImageData(0, 0, 100, 100)
+    expect(pixels.data[(50 * 100 + 25) * 4 + 3]).toBe(255)
+    expect(pixels.data[(50 * 100 + 75) * 4 + 3]).toBeCloseTo(128, 0)
+
+    renderComposition(canvas, {
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 100, height: 100 },
+      layers: [{ ...layer, vectorMask: undefined, blendIf: { source: [100, 100, 255, 255], destination: [0, 0, 255, 255], channels: [] } }],
+    }, {})
+    expect(canvas.getContext('2d')!.getImageData(50, 50, 1, 1).data[3]).toBe(0)
   })
 })
 

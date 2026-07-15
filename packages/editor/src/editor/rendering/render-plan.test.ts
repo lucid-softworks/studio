@@ -201,6 +201,16 @@ describe('composition render plan', () => {
       .toMatchObject({ layerId: 'masked', maskAssetId: 'mask' })
   })
 
+  it('uses Canvas2D for advanced masks and Blend If until native shaders have parity', () => {
+    const path = { ...createShapeLayer('rectangle', 0), id: 'path', vectorMask: { paths: [], density: 100, feather: 0, inverted: false, disabled: false, linked: true, fillStartsWithAllPixels: false } }
+    const feathered = { ...createShapeLayer('rectangle', 1), id: 'feathered', maskAssetId: 'mask', maskSettings: { density: 75, feather: 2, linked: true } }
+    const blendIf = { ...createShapeLayer('rectangle', 2), id: 'blend-if', blendIf: { source: [20, 40, 220, 240], destination: [0, 0, 255, 255], channels: [] } }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [path] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [feathered] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [blendIf] })).toBeNull()
+  })
+
   it('keeps clipping layers in the native composition plan', () => {
     const base = { ...createShapeLayer('rectangle', 0), id: 'base', stackOrder: 0 }
     const clipped = { ...createShapeLayer('ellipse', 1), id: 'clipped', clipToBelow: true, stackOrder: 1 }

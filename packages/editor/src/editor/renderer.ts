@@ -513,10 +513,134 @@ function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
 }
 
 let maskCompositionCanvas: HTMLCanvasElement | null = null
+let processedMaskCanvas: HTMLCanvasElement | null = null
+let vectorMaskCanvas: HTMLCanvasElement | null = null
+
+function traceVectorMaskPath(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, path: NonNullable<EditorLayer['vectorMask']>['paths'][number]) {
+  const first = path.knots[0]
+  if (!first) return
+  const point = (position: Position) => ({ x: position.x * canvas.width, y: position.y * canvas.height })
+  const firstAnchor = point(first.anchor)
+  context.beginPath()
+  context.moveTo(firstAnchor.x, firstAnchor.y)
+  for (let index = 1; index < path.knots.length; index += 1) {
+    const previous = path.knots[index - 1]
+    const current = path.knots[index]
+    const controlA = point(previous.out)
+    const controlB = point(current.in)
+    const anchor = point(current.anchor)
+    context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, anchor.x, anchor.y)
+  }
+  if (path.closed) {
+    const previous = path.knots.at(-1)!
+    const controlA = point(previous.out)
+    const controlB = point(first.in)
+    context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, firstAnchor.x, firstAnchor.y)
+    context.closePath()
+  }
+}
+
+function applyMaskDensity(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, density: number) {
+  const amount = Math.max(0, Math.min(1, density / 100))
+  if (amount >= 1) return
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+  for (let index = 3; index < pixels.data.length; index += 4) {
+    pixels.data[index] = Math.round((1 - amount) * 255 + amount * pixels.data[index])
+  }
+  context.putImageData(pixels, 0, 0)
+}
+
+function preparedRasterMask(canvas: HTMLCanvasElement, source: CanvasImageSource, layer: EditorLayer) {
+  const mask = prepareScratchCanvas(processedMaskCanvas, canvas)
+  processedMaskCanvas = mask
+  const context = mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+  context.clearRect(0, 0, mask.width, mask.height)
+  context.save()
+  const feather = Math.max(0, layer.maskSettings?.feather ?? 0)
+  if (feather) context.filter = `blur(${feather}px)`
+  context.drawImage(source, 0, 0, mask.width, mask.height)
+  context.restore()
+  applyMaskDensity(context, mask, layer.maskSettings?.density ?? 100)
+  return mask
+}
+
+function preparedVectorMask(canvas: HTMLCanvasElement, layer: EditorLayer) {
+  const settings = layer.vectorMask
+  if (!settings || settings.disabled || settings.paths.length === 0) return null
+  const mask = prepareScratchCanvas(vectorMaskCanvas, canvas)
+  vectorMaskCanvas = mask
+  const context = mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+  context.clearRect(0, 0, mask.width, mask.height)
+  if (settings.fillStartsWithAllPixels) {
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, mask.width, mask.height)
+  }
+  context.fillStyle = '#fff'
+  for (const path of settings.paths) {
+    traceVectorMaskPath(context, mask, path)
+    context.globalCompositeOperation = path.operation === 'subtract'
+      ? 'destination-out'
+      : path.operation === 'intersect'
+        ? 'destination-in'
+        : path.operation === 'exclude'
+          ? 'xor'
+          : 'source-over'
+    context.fill(path.fillRule === 'even-odd' ? 'evenodd' : 'nonzero')
+  }
+  context.globalCompositeOperation = 'source-over'
+  if (settings.inverted) {
+    const inverted = context.getImageData(0, 0, mask.width, mask.height)
+    for (let index = 3; index < inverted.data.length; index += 4) inverted.data[index] = 255 - inverted.data[index]
+    context.putImageData(inverted, 0, 0)
+  }
+  if (settings.feather > 0) {
+    const snapshot = document.createElement('canvas')
+    snapshot.width = mask.width
+    snapshot.height = mask.height
+    snapshot.getContext('2d')?.drawImage(mask, 0, 0)
+    context.clearRect(0, 0, mask.width, mask.height)
+    context.filter = `blur(${settings.feather}px)`
+    context.drawImage(snapshot, 0, 0)
+    context.filter = 'none'
+  }
+  applyMaskDensity(context, mask, settings.density)
+  return mask
+}
+
+function blendIfOpacity(value: number, range: number[]) {
+  if (range.length < 4) return 1
+  const [black0, black1, white0, white1] = range
+  if (value < black0 || value > white1) return 0
+  if (black1 > black0 && value <= black0) return 0
+  if (black1 > black0 && value < black1) return (value - black0) / (black1 - black0)
+  if (white1 > white0 && value >= white1) return 0
+  if (white1 > white0 && value > white0) return (white1 - value) / (white1 - white0)
+  return 1
+}
+
+function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer) {
+  const settings = layer.blendIf
+  if (!settings) return
+  const source = layerContext.getImageData(0, 0, canvas.width, canvas.height)
+  const destination = destinationContext.getImageData(0, 0, canvas.width, canvas.height)
+  for (let index = 0; index < source.data.length; index += 4) {
+    const sourceGray = Math.round(source.data[index] * 0.299 + source.data[index + 1] * 0.587 + source.data[index + 2] * 0.114)
+    const destinationGray = Math.round(destination.data[index] * 0.299 + destination.data[index + 1] * 0.587 + destination.data[index + 2] * 0.114)
+    let opacity = blendIfOpacity(sourceGray, settings.source) * blendIfOpacity(destinationGray, settings.destination)
+    for (let channel = 0; channel < Math.min(3, settings.channels.length); channel += 1) {
+      opacity *= blendIfOpacity(source.data[index + channel], settings.channels[channel].source)
+      opacity *= blendIfOpacity(destination.data[index + channel], settings.channels[channel].destination)
+    }
+    source.data[index + 3] = Math.round(source.data[index + 3] * opacity)
+  }
+  layerContext.putImageData(source, 0, 0)
+}
 
 function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap, resources: RenderResourceRegistry) {
   const maskSource = maskAssetId ? canvasImageResource(resources, assets, maskAssetId)?.source : null
-  if (!maskSource) {
+  if (!maskSource && !layer.vectorMask && !layer.blendIf) {
     drawEditorLayer(context, canvas, layer, assets, resources)
     return
   }
@@ -529,11 +653,18 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   if (!compositionContext) return
   compositionContext.clearRect(0, 0, composition.width, composition.height)
   drawEditorLayer(compositionContext, composition, layer, assets, resources)
-  compositionContext.save()
-  compositionContext.globalAlpha = 1
-  compositionContext.globalCompositeOperation = 'destination-in'
-  compositionContext.drawImage(maskSource, 0, 0, composition.width, composition.height)
-  compositionContext.restore()
+  for (const mask of [
+    maskSource ? preparedRasterMask(canvas, maskSource, layer) : null,
+    preparedVectorMask(canvas, layer),
+  ]) {
+    if (!mask) continue
+    compositionContext.save()
+    compositionContext.globalAlpha = 1
+    compositionContext.globalCompositeOperation = 'destination-in'
+    compositionContext.drawImage(mask, 0, 0, composition.width, composition.height)
+    compositionContext.restore()
+  }
+  applyBlendIf(compositionContext, context, canvas, layer)
   context.drawImage(composition, 0, 0)
 }
 

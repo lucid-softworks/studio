@@ -143,6 +143,11 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
 }
 
 export function buildNativeLayerCompositionPlan(document: EditorDocument): NativeLayerCompositionPlan | null {
+  if (document.layers.some((layer) => (
+    layer.vectorMask
+    || layer.blendIf
+    || (layer.maskSettings && (layer.maskSettings.density !== 100 || layer.maskSettings.feather > 0))
+  ))) return null
   const plan = buildCompositionRenderPlan(document)
   const layers: Array<LayerRenderNode | AdjustmentRenderNode | GroupRenderNode> = []
   if (!collectNativeLayers(plan.nodes, layers)) return null

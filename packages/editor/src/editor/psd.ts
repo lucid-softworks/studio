@@ -5,7 +5,7 @@ import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, in
 import { renderComposition, getLayerBounds } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
-import type { AdjustmentLayer, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, Position, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, ShapeLayer, TextLayer, VectorMask } from './types'
 
 let initialized = false
 
@@ -124,19 +124,73 @@ function colorHex(color: Color | undefined) {
     : '#ffffff'
 }
 
-function hasCustomBlending(layer: Layer) {
-  if (layer.knockout) return true
+function isDefaultBlendingRange(range: number[]) {
+  return range.length === 4 && range[0] === 0 && range[1] === 0 && range[2] === 255 && range[3] === 255
+}
+
+export function psdBlendIf(layer: Layer): BlendIfSettings | undefined {
   const ranges = layer.blendingRanges
-  if (!ranges) return false
-  const isDefault = (range: number[]) => range.length === 4 && range[0] === 0 && range[1] === 0 && range[2] === 255 && range[3] === 255
-  return !isDefault(ranges.compositeGrayBlendSource)
-    || !isDefault(ranges.compositeGraphBlendDestinationRange)
-    || ranges.ranges.some((range) => !isDefault(range.sourceRange) || !isDefault(range.destRange))
+  if (!ranges) return undefined
+  if (isDefaultBlendingRange(ranges.compositeGrayBlendSource)
+    && isDefaultBlendingRange(ranges.compositeGraphBlendDestinationRange)
+    && ranges.ranges.every((range) => isDefaultBlendingRange(range.sourceRange) && isDefaultBlendingRange(range.destRange))) return undefined
+  return {
+    source: [...ranges.compositeGrayBlendSource],
+    destination: [...ranges.compositeGraphBlendDestinationRange],
+    channels: ranges.ranges.map((range) => ({ source: [...range.sourceRange], destination: [...range.destRange] })),
+  }
+}
+
+function hasUnsupportedAdvancedBlending(layer: Layer) {
+  return Boolean(layer.knockout)
 }
 
 function importableRasterMask(layer: Layer) {
   const mask = layer.realMask ?? layer.mask
   return Boolean(mask && !mask.disabled && (mask.imageData || mask.canvas))
+}
+
+export function psdMaskSettings(layer: Layer): LayerMaskSettings | undefined {
+  const mask = layer.realMask ?? layer.mask
+  if (!mask || (!mask.imageData && !mask.canvas && mask.userMaskDensity === undefined && mask.userMaskFeather === undefined)) return undefined
+  return {
+    density: Math.round((mask.userMaskDensity ?? 1) * 100),
+    feather: mask.userMaskFeather ?? 0,
+    linked: mask.positionRelativeToLayer !== false,
+  }
+}
+
+export function psdVectorMask(layer: Layer, documentWidth: number, documentHeight: number): VectorMask | undefined {
+  const vector = layer.vectorMask
+  if (!vector) return undefined
+  const mask = layer.realMask ?? layer.mask
+  const coordinate = (value: number, size: number) => Math.abs(value) <= 2 && size > 2 ? value : value / size
+  return {
+    paths: vector.paths.map((path) => ({
+      closed: !path.open,
+      operation: path.operation ?? 'combine',
+      fillRule: path.fillRule,
+      knots: path.knots.map((knot) => ({
+        linked: knot.linked,
+        in: { x: coordinate(knot.points[0], documentWidth), y: coordinate(knot.points[1], documentHeight) },
+        anchor: { x: coordinate(knot.points[2], documentWidth), y: coordinate(knot.points[3], documentHeight) },
+        out: { x: coordinate(knot.points[4], documentWidth), y: coordinate(knot.points[5], documentHeight) },
+      })),
+    })),
+    density: Math.round((mask?.vectorMaskDensity ?? 1) * 100),
+    feather: mask?.vectorMaskFeather ?? 0,
+    inverted: Boolean(vector.invert),
+    disabled: Boolean(vector.disable),
+    linked: !vector.notLink,
+    fillStartsWithAllPixels: Boolean(vector.fillStartsWithAllPixels),
+  }
+}
+
+function applyPsdLayerMetadata(target: EditorLayer, source: Layer, documentWidth: number, documentHeight: number, includeVectorMask = true) {
+  const settings = psdMaskSettings(source)
+  if (settings) target.maskSettings = settings
+  if (includeVectorMask) target.vectorMask = psdVectorMask(source, documentWidth, documentHeight)
+  target.blendIf = psdBlendIf(source)
 }
 
 function effectEnabled(effect: { enabled?: boolean; present?: boolean } | undefined) {
@@ -454,11 +508,11 @@ export function psdImportWarnings(psd: Psd) {
       if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
       const editableShape = canImportPsdShape(layer, psd.width, psd.height)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
-      if (!layer.adjustment && ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || (layer.vectorMask && !editableShape))) add('mask', 'Unsupported masks were not preserved as editable masks', path)
+      if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
-      if (hasCustomBlending(layer)) add('advanced-blending', 'Advanced blending settings were not preserved', path)
+      if (hasUnsupportedAdvancedBlending(layer)) add('advanced-blending', 'Knockout blending was not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
         add(`blend:${layer.blendMode}`, `Unsupported “${layer.blendMode}” blending was changed to normal`, path)
       }
@@ -592,6 +646,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
         editableText.effects = psdLayerEffects(layer)
         editableText.groupId = parentId
         editableText.stackOrder = stackOrder
+        applyPsdLayerMetadata(editableText, layer, psd.width, psd.height)
         const mask = layer.realMask ?? layer.mask
         if (mask && !mask.disabled) {
           const maskAssetId = createId()
@@ -608,6 +663,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       if (editableShape) {
         editableShape.groupId = parentId
         editableShape.stackOrder = stackOrder
+        applyPsdLayerMetadata(editableShape, layer, psd.width, psd.height, false)
         const mask = layer.realMask ?? layer.mask
         if (mask && !mask.disabled) {
           const maskAssetId = createId()
@@ -640,6 +696,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       raster.groupId = parentId
       raster.stackOrder = stackOrder
       raster.effects = psdLayerEffects(layer)
+      applyPsdLayerMetadata(raster, layer, psd.width, psd.height)
       const mask = layer.realMask ?? layer.mask
       if (mask && !mask.disabled) {
         const maskAssetId = createId()
@@ -676,6 +733,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       layers,
       selectedLayerId,
       selectedLayerIds: selectedLayerId ? [selectedLayerId] : [],
+      channels: (psd.imageResources?.alphaChannelNames ?? []).map((name, index) => ({ id: psd.imageResources?.alphaIdentifiers?.[index], name })),
     },
   }
 }
@@ -708,16 +766,53 @@ function exportedEffects(effects: LayerEffects | null | undefined): Layer['effec
   return Object.keys(result).length ? result : undefined
 }
 
-function exportedMask(assetId: string | null | undefined, assets: AssetMap, width: number, height: number): Layer['mask'] {
-  if (!assetId) return undefined
-  const source = assets[assetId]
-  if (!source) return undefined
+function exportedMask(layer: EditorLayer, assets: AssetMap, width: number, height: number): Layer['mask'] {
+  const assetId = layer.maskAssetId
+  const source = assetId ? assets[assetId] : undefined
+  if (!source && !layer.vectorMask) return undefined
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  canvas.getContext('2d')?.drawImage(source.surface ?? source.element, 0, 0, width, height)
-  const imageData = canvasPixels(canvas)
-  return imageData ? { left: 0, top: 0, right: width, bottom: height, defaultColor: 255, imageData } : undefined
+  if (source) canvas.getContext('2d')?.drawImage(source.surface ?? source.element, 0, 0, width, height)
+  const imageData = source ? canvasPixels(canvas) : undefined
+  return {
+    left: 0, top: 0, right: source ? width : 0, bottom: source ? height : 0, defaultColor: 255, imageData,
+    userMaskDensity: source ? (layer.maskSettings?.density ?? 100) / 100 : undefined,
+    userMaskFeather: source ? layer.maskSettings?.feather ?? 0 : undefined,
+    positionRelativeToLayer: source ? layer.maskSettings?.linked ?? true : undefined,
+    vectorMaskDensity: layer.vectorMask ? layer.vectorMask.density / 100 : undefined,
+    vectorMaskFeather: layer.vectorMask?.feather,
+    fromVectorData: !source && Boolean(layer.vectorMask),
+  }
+}
+
+function exportedVectorMask(layer: EditorLayer, width: number, height: number): Layer['vectorMask'] {
+  const vector = layer.vectorMask
+  if (!vector) return undefined
+  return {
+    invert: vector.inverted,
+    disable: vector.disabled,
+    notLink: !vector.linked,
+    fillStartsWithAllPixels: vector.fillStartsWithAllPixels,
+    paths: vector.paths.map((path) => ({
+      open: !path.closed,
+      operation: path.operation,
+      fillRule: path.fillRule,
+      knots: path.knots.map((knot) => {
+        const point = (position: Position) => [position.x * width, position.y * height]
+        return { linked: knot.linked, points: [...point(knot.in), ...point(knot.anchor), ...point(knot.out)] }
+      }),
+    })),
+  }
+}
+
+function exportedBlendingRanges(layer: EditorLayer): Layer['blendingRanges'] {
+  if (!layer.blendIf) return undefined
+  return {
+    compositeGrayBlendSource: [...layer.blendIf.source],
+    compositeGraphBlendDestinationRange: [...layer.blendIf.destination],
+    ranges: layer.blendIf.channels.map((channel) => ({ sourceRange: [...channel.source], destRange: [...channel.destination] })),
+  }
 }
 
 function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds>): Layer['text'] {
@@ -825,7 +920,8 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       name: layer.name, hidden: !layer.visible, opacity: layer.opacity / 100,
       blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
       protected: layer.locked ? { position: true, composite: true } : undefined,
-      mask: exportedMask(layer.maskAssetId, assets, width, height), effects: exportedEffects(layer.effects),
+      mask: exportedMask(layer, assets, width, height), vectorMask: exportedVectorMask(layer, width, height),
+      blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects),
     }
     if (layer.type === 'adjustment') return { ...base, adjustment: exportedAdjustment(layer) }
     const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, groupId: null, stackOrder: 0 }])
@@ -858,6 +954,9 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     children.push({ name: 'Studio Background', left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(backgroundCanvas) })
   }
   resources.dispose()
-  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children }, { psb, noBackground: true })
+  const channelNames = documentState.channels?.map((channel) => channel.name)
+  const channelIds = documentState.channels?.flatMap((channel) => channel.id === undefined ? [] : [channel.id])
+  const imageResources = channelNames?.length ? { alphaChannelNames: channelNames, alphaIdentifiers: channelIds?.length === channelNames.length ? channelIds : undefined } : undefined
+  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources }, { psb, noBackground: true })
   return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
 }

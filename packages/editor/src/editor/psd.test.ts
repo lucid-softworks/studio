@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { readPsd, type Layer, type Psd } from 'ag-psd'
-import { createLayerGroup, createShapeLayer, initialDocument } from './presets'
-import { exportPsdDocument, psdAdjustmentLayer, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
+import { createLayerGroup, createShapeLayer, createTextLayer, initialDocument } from './presets'
+import { exportPsdDocument, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdTextLayer, psdVectorMask } from './psd'
 
 Object.assign(globalThis, {
   ImageData,
@@ -288,5 +288,58 @@ describe('PSD layer ordering', () => {
       styleRuns: [{ length: 5 }, { length: 6 }],
       paragraphStyleRuns: [{ length: 6 }, { length: 5 }],
     })
+  })
+
+  it('round-trips compound vector masks, mask parameters, Blend If, and channel metadata', async () => {
+    const square = (left: number, top: number, right: number, bottom: number, operation: 'combine' | 'subtract') => ({
+      closed: true,
+      operation,
+      fillRule: 'non-zero' as const,
+      knots: [
+        { linked: true, in: { x: left, y: top }, anchor: { x: left, y: top }, out: { x: left, y: top } },
+        { linked: true, in: { x: right, y: top }, anchor: { x: right, y: top }, out: { x: right, y: top } },
+        { linked: true, in: { x: right, y: bottom }, anchor: { x: right, y: bottom }, out: { x: right, y: bottom } },
+        { linked: true, in: { x: left, y: bottom }, anchor: { x: left, y: bottom }, out: { x: left, y: bottom } },
+      ],
+    })
+    const text = {
+      ...createTextLayer(0),
+      vectorMask: {
+        paths: [square(0.1, 0.1, 0.9, 0.9, 'combine'), square(0.4, 0.4, 0.6, 0.6, 'subtract')],
+        density: 72,
+        feather: 3.5,
+        inverted: true,
+        disabled: false,
+        linked: false,
+        fillStartsWithAllPixels: false,
+      },
+      blendIf: {
+        source: [12, 28, 220, 244],
+        destination: [4, 16, 232, 250],
+        channels: [{ source: [8, 24, 210, 240], destination: [2, 12, 230, 248] }],
+      },
+    }
+    const blob = await exportPsdDocument({
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 200, height: 100 },
+      layers: [text],
+      channels: [{ id: 41, name: 'Saved selection' }],
+    }, {})
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    const layer = decoded.children?.[0]
+    expect(layer).toBeDefined()
+    expect(psdVectorMask(layer!, 200, 100)).toMatchObject({
+      paths: [{ operation: 'combine' }, { operation: 'subtract' }],
+      density: 72,
+      feather: 3.5,
+      inverted: true,
+      linked: false,
+    })
+    expect(psdMaskSettings(layer!)).toBeUndefined()
+    expect(psdBlendIf(layer!)).toEqual(text.blendIf)
+    expect(decoded.imageResources).toMatchObject({ alphaChannelNames: ['Saved selection'], alphaIdentifiers: [41] })
+    expect(psdImportWarnings({ width: 200, height: 100, children: [layer!] }))
+      .not.toEqual(expect.arrayContaining([expect.stringMatching(/mask|advanced blending/i)]))
   })
 })
