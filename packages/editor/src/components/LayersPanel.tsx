@@ -1,6 +1,6 @@
-import { useState, type CSSProperties, type DragEvent, type RefObject } from 'react'
+import { useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
-import type { UtilityPanelId } from '../editor/panel-layout'
+import { clampFloatingPanelPosition, type FloatingPanelPosition, type UtilityPanelId } from '../editor/panel-layout'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
@@ -39,6 +39,12 @@ type LayersPanelProps = {
   rasterUndoDepth: number
   onJumpHistory: (index: number) => void
   renderRevision: number
+  panelOrder: UtilityPanelId[]
+  onPanelOrderChange: (moved: UtilityPanelId, before: UtilityPanelId) => void
+  floating: boolean
+  floatingPosition: FloatingPanelPosition
+  onFloatingPositionChange: (position: FloatingPanelPosition) => void
+  onToggleFloating: () => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
@@ -56,11 +62,31 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
+  const visibleFloatingPosition = typeof window === 'undefined' ? floatingPosition : clampFloatingPanelPosition(floatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
+
+  const startFloatingDrag = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const handle = event.currentTarget
+    const startX = event.clientX
+    const startY = event.clientY
+    const startPosition = visibleFloatingPosition
+    handle.setPointerCapture(event.pointerId)
+    const move = (moveEvent: globalThis.PointerEvent) => onFloatingPositionChange(clampFloatingPanelPosition({ x: startPosition.x + moveEvent.clientX - startX, y: startPosition.y + moveEvent.clientY - startY }, width, { width: window.innerWidth, height: window.innerHeight }))
+    const finish = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
+  }
 
   const startDrag = (event: DragEvent, item: DraggedItem) => {
     event.stopPropagation()
@@ -154,16 +180,23 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   }
 
   const rootItems = getStackChildren(document, null)
+  const panelCollapsed = collapsed && !floating
+  const panelStyle = {
+    '--panel-width': `${width}px`,
+    ...(floating ? { left: `${visibleFloatingPosition.x}px`, top: `${visibleFloatingPosition.y}px` } : {}),
+  } as CSSProperties
 
   return (
-    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:border-t-0 ${collapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
-      {collapsed ? <CollapsedPanelRail dockSide={dockSide} label={utilityTabs.find((tab) => tab.id === activePanel)?.label ?? 'Panels'} onClick={onToggleCollapsed} /> : <>
-      <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Layers panel" />
-      <div draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-10 shrink-0 cursor-grab items-center border-b border-white/[0.07] px-1.5 active:cursor-grabbing">
+    <aside aria-label="Utility panel stack" style={panelStyle} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={floating ? 'fixed z-[65] flex h-[min(72vh,680px)] w-[var(--panel-width)] shrink-0 flex-col overflow-hidden rounded-xl border border-white/[0.12] bg-[#111113] shadow-[0_24px_80px_rgba(0,0,0,0.7)]' : `relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:border-t-0 ${panelCollapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      {panelCollapsed ? <CollapsedPanelRail dockSide={dockSide} label={utilityTabs.find((tab) => tab.id === activePanel)?.label ?? 'Panels'} onClick={onToggleCollapsed} /> : <>
+      <PanelResizeHandle dockSide={floating ? 'left' : dockSide} width={width} onChange={onWidthChange} label="Utility panel stack" />
+      <div draggable={!floating} onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-10 shrink-0 cursor-grab items-center border-b border-white/[0.07] px-1.5 active:cursor-grabbing">
+        {floating && <button type="button" aria-label="Move floating panels" title="Drag floating panels" onPointerDown={startFloatingDrag} className="mr-1 flex size-7 shrink-0 touch-none items-center justify-center rounded text-[10px] tracking-[-2px] text-zinc-700 hover:bg-white/[0.05] hover:text-zinc-300">⠿</button>}
         <div role="tablist" aria-label="Utility panels" className="flex min-w-0 flex-1 items-center">
-          {utilityTabs.map((tab) => <button key={tab.id} type="button" role="tab" aria-selected={activePanel === tab.id} onClick={() => onActivePanelChange(tab.id)} className={`min-w-0 flex-1 rounded-md px-1.5 py-2 text-[9px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 ${activePanel === tab.id ? 'bg-white/[0.07] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab.label}</button>)}
+          {panelOrder.map((panelId) => utilityTabs.find((tab) => tab.id === panelId)).filter((tab) => tab !== undefined).map((tab) => <button key={tab.id} type="button" role="tab" draggable aria-selected={activePanel === tab.id} onClick={() => onActivePanelChange(tab.id)} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-utility-tab', tab.id) }} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-utility-tab')) { event.preventDefault(); event.stopPropagation() } }} onDrop={(event) => { const moved = event.dataTransfer.getData('application/x-studio-utility-tab') as UtilityPanelId; if (moved) onPanelOrderChange(moved, tab.id); event.preventDefault(); event.stopPropagation() }} className={`min-w-0 flex-1 cursor-grab rounded-md px-1 py-2 text-[9px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 active:cursor-grabbing ${activePanel === tab.id ? 'bg-white/[0.07] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab.label}</button>)}
         </div>
-        <PanelCollapseButton dockSide={dockSide} label="Panels" onClick={onToggleCollapsed} />
+        <button type="button" aria-label={floating ? 'Dock utility panels' : 'Float utility panels'} title={floating ? 'Dock panels' : 'Float panels'} onClick={onToggleFloating} className="flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">{floating ? '⊣' : '↗'}</button>
+        {!floating && <PanelCollapseButton dockSide={dockSide} label="Panels" onClick={onToggleCollapsed} />}
       </div>
 
       {activePanel === 'layers' && <>

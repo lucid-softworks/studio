@@ -153,7 +153,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Swap the Properties and Layers docks, resize both side panels, and persist the layout and widths locally
   - [x] Add collapsible docks and built-in or user-named workspace presets
   - [x] Add a persisted tabbed utility-panel stack
-  - [ ] Add rearrangeable multi-stack layouts and floating panels
+  - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
+  - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
   - [x] Add functional Properties, Layers, History, Navigator, and Info panels
   - [ ] Add Actions, Histogram, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels

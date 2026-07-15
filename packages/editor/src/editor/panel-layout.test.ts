@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampPanelWidth, defaultWorkspaceLayout, normalizeWorkspaceLayout } from './panel-layout'
+import { clampFloatingPanelPosition, clampPanelWidth, defaultWorkspaceLayout, normalizeWorkspaceLayout, reorderUtilityPanels } from './panel-layout'
 
 describe('panel resizing', () => {
   it('rounds valid widths and clamps workspace extremes', () => {
@@ -18,7 +18,15 @@ describe('panel resizing', () => {
       panelWidths: { properties: 220, layers: 258 },
       collapsedPanels: { properties: true, layers: false },
       activeUtilityPanel: 'layers',
+      utilityPanelOrder: ['layers', 'history', 'navigator', 'info'],
+      utilityPanelFloating: false,
+      floatingPanelPosition: { x: 960, y: 84 },
     })
     expect(normalizeWorkspaceLayout(null)).toEqual(defaultWorkspaceLayout)
+  })
+
+  it('reorders utility tabs and keeps floating headers recoverable', () => {
+    expect(reorderUtilityPanels(['layers', 'history', 'navigator', 'info'], 'info', 'history')).toEqual(['layers', 'info', 'history', 'navigator'])
+    expect(clampFloatingPanelPosition({ x: 2000, y: -20 }, 320, { width: 1440, height: 900 })).toEqual({ x: 1392, y: 48 })
   })
 })
