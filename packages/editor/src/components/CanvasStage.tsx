@@ -7,6 +7,10 @@ import { extractImageData, type RasterEdit } from '../editor/raster'
 import { applySelectionShape, selectionAlphaAt, type SelectionMode, type SelectionState } from '../editor/selection'
 import { RedoIcon, UndoIcon, UploadIcon } from './Icons'
 import { CanvasActionOverlay } from './CanvasActionOverlay'
+import { CloneStampOverlay } from './CloneStampOverlay'
+import { LassoSelectionOverlay } from './LassoSelectionOverlay'
+import { MagicWandOverlay } from './MagicWandOverlay'
+import { RasterFillOverlay } from './RasterFillOverlay'
 import { RasterPaintOverlay } from './RasterPaintOverlay'
 import { SelectionOverlay } from './SelectionOverlay'
 import type { EditorTool } from './ToolRail'
@@ -33,15 +37,26 @@ type CanvasStageProps = {
   onToolChange: (tool: EditorTool) => void
   onAddText: (position: Position, color: string) => void
   onAddShape: (shape: ShapeKind, position: Position, fill: string) => void
+  onCrop: (bounds: NonNullable<SelectionState['bounds']>) => void
 }
 
 const toolNames: Record<EditorTool, string> = {
   move: 'Move',
   marquee: 'Rectangular Marquee',
   'ellipse-select': 'Elliptical Marquee',
+  lasso: 'Lasso',
+  'magic-wand': 'Magic Wand',
+  'object-select': 'Object Select',
+  crop: 'Crop',
   eyedropper: 'Eyedropper',
+  healing: 'Healing Brush',
+  'clone-stamp': 'Clone Stamp',
   brush: 'Brush',
   eraser: 'Eraser',
+  fill: 'Paint Bucket',
+  gradient: 'Gradient',
+  dodge: 'Dodge',
+  burn: 'Burn',
   text: 'Type',
   rectangle: 'Rectangle',
   ellipse: 'Ellipse',
@@ -49,13 +64,68 @@ const toolNames: Record<EditorTool, string> = {
   zoom: 'Zoom',
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selectionResetToken, tool, onToolChange, onAddText, onAddShape }: CanvasStageProps) {
+function toolForShortcut(key: string, shift: boolean): EditorTool | null {
+  switch (key) {
+    case 'v': return 'move'
+    case 'm': return shift ? 'ellipse-select' : 'marquee'
+    case 'l': return 'lasso'
+    case 'w': return shift ? 'object-select' : 'magic-wand'
+    case 'c': return 'crop'
+    case 'i': return 'eyedropper'
+    case 'j': return 'healing'
+    case 's': return 'clone-stamp'
+    case 'b': return 'brush'
+    case 'e': return 'eraser'
+    case 'g': return shift ? 'gradient' : 'fill'
+    case 'o': return shift ? 'burn' : 'dodge'
+    case 't': return 'text'
+    case 'u': return shift ? 'ellipse' : 'rectangle'
+    case 'h': return 'hand'
+    case 'z': return 'zoom'
+    default: return null
+  }
+}
+
+function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection: boolean; editingMaskName?: string; rasterSelected: boolean }) {
+  switch (tool) {
+    case 'marquee': return 'Drag to make a rectangular selection · Shift constrains · Alt draws from centre'
+    case 'ellipse-select': return 'Drag to make an elliptical selection · Shift constrains · Alt draws from centre'
+    case 'lasso': return 'Draw a freehand boundary to select an irregular area'
+    case 'magic-wand': return 'Click a contiguous colour region to select it'
+    case 'object-select': return 'Click visible pixels to select an object · drag to reposition it'
+    case 'crop': return context.hasCrop ? 'Adjust the crop region or apply it from the options bar' : 'Drag over the canvas to define a crop region'
+    case 'move': return 'Click to select · drag to move · Shift-click for multi-select · drag handles to transform'
+    case 'eyedropper': return 'Click the canvas to sample a foreground colour'
+    case 'fill': return 'Click a contiguous area on the selected raster layer to fill it'
+    case 'gradient': return 'Drag across the selected raster layer to paint a linear gradient'
+    case 'healing':
+    case 'clone-stamp': return 'Alt-click to choose a source · drag to paint from it'
+    case 'dodge': return 'Drag to lighten pixels on the selected raster layer'
+    case 'burn': return 'Drag to darken pixels on the selected raster layer'
+    case 'text': return 'Click the canvas to add a text layer'
+    case 'rectangle': return 'Click the canvas to add a rectangle layer'
+    case 'ellipse': return 'Click the canvas to add an ellipse layer'
+    case 'hand': return 'Drag the workspace to pan around the document'
+    case 'zoom': return 'Click to zoom in · Alt-click to zoom out'
+    case 'brush':
+    case 'eraser':
+      if (context.editingMaskName) return `${tool === 'brush' ? 'Reveal' : 'Hide'} pixels on ${context.editingMaskName}’s mask${context.hasSelection ? ' inside the current selection' : ''} · undo with ⌘Z`
+      if (context.rasterSelected) return `${tool === 'brush' ? 'Paint' : 'Erase'} ${context.hasSelection ? 'inside the current selection' : 'directly on the selected raster layer'} · undo with ⌘Z`
+      return 'Select a raster layer to paint'
+  }
+}
+
+export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selectionResetToken, tool, onToolChange, onAddText, onAddShape, onCrop }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [zoom, setZoom] = useState(100)
   const [brushSize, setBrushSize] = useState(48)
   const [brushColor, setBrushColor] = useState('#ff3b81')
+  const [secondaryColor, setSecondaryColor] = useState('#5b21b6')
+  const [toolStrength, setToolStrength] = useState(45)
+  const [tolerance, setTolerance] = useState(32)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('replace')
   const [selection, setSelection] = useState<SelectionState | null>(null)
+  const [cropSelection, setCropSelection] = useState<SelectionState | null>(null)
   const [isPanning, setIsPanning] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
@@ -64,9 +134,13 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
   const selectedLocked = selected ? layerIsLocked(document, selected) : false
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
-  const selectionTool = tool === 'marquee' || tool === 'ellipse-select'
+  const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'lasso' || tool === 'magic-wand'
+  const paintTool = tool === 'brush' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
+  const retouchTool = tool === 'healing' || tool === 'clone-stamp'
 
   useEffect(() => setSelection(null), [preset.height, preset.width])
+  useEffect(() => setCropSelection(null), [preset.height, preset.width])
+  useEffect(() => { if (tool !== 'crop') setCropSelection(null) }, [tool])
   useEffect(() => setSelection(null), [selectionResetToken])
   useEffect(() => { if (editingMaskLayerId) onToolChange('brush') }, [editingMaskLayerId, onToolChange])
 
@@ -74,17 +148,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target?.matches('input, textarea, select, [contenteditable="true"]') || event.metaKey || event.ctrlKey || event.altKey) return
-      const key = event.key.toLowerCase()
-      const next = key === 'v' ? 'move'
-        : key === 'm' ? (event.shiftKey ? 'ellipse-select' : 'marquee')
-          : key === 'i' ? 'eyedropper'
-            : key === 'b' ? 'brush'
-              : key === 'e' ? 'eraser'
-                : key === 't' ? 'text'
-                  : key === 'u' ? (event.shiftKey ? 'ellipse' : 'rectangle')
-                    : key === 'h' ? 'hand'
-                      : key === 'z' ? 'zoom'
-                        : null
+      const next = toolForShortcut(event.key.toLowerCase(), event.shiftKey)
       if (!next) return
       event.preventDefault()
       onToolChange(next)
@@ -197,25 +261,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     setIsPanning(false)
   }
 
-  const toolHint = selectionTool
-    ? `Drag to make a ${tool === 'marquee' ? 'rectangular' : 'elliptical'} selection · Shift constrains · Alt draws from centre`
-    : tool === 'move'
-      ? 'Click to select · drag to move · Shift-click for multi-select · drag handles to transform'
-      : tool === 'eyedropper'
-        ? 'Click the canvas to sample a foreground colour'
-        : tool === 'text'
-          ? 'Click the canvas to add a text layer'
-          : tool === 'rectangle' || tool === 'ellipse'
-            ? `Click the canvas to add ${tool === 'ellipse' ? 'an ellipse' : 'a rectangle'} layer`
-            : tool === 'hand'
-              ? 'Drag the workspace to pan around the document'
-              : tool === 'zoom'
-                ? 'Click to zoom in · Alt-click to zoom out'
-                : editingMaskLayer
-                  ? `${tool === 'brush' ? 'Reveal' : 'Hide'} pixels on ${editingMaskLayer.name}’s mask${selection ? ' inside the current selection' : ''} · undo with ⌘Z`
-                  : selected?.type === 'raster'
-                    ? `${tool === 'brush' ? 'Paint' : 'Erase'} ${selection ? 'inside the current selection' : 'directly on the selected raster layer'} · undo with ⌘Z`
-                    : 'Select a raster layer to paint'
+  const toolHint = hintForTool(tool, { hasCrop: Boolean(cropSelection?.bounds), hasSelection: Boolean(selection?.bounds), editingMaskName: editingMaskLayer?.name, rasterSelected: selected?.type === 'raster' })
 
   return (
     <section
@@ -239,26 +285,30 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
           {selected?.locked && <span className="rounded bg-amber-400/10 px-1.5 py-0.5 text-[9px] text-amber-300/70">Locked</span>}
         </div>
         <div className="flex items-center gap-3">
-          {(tool === 'brush' || tool === 'eraser') && (
+          {(paintTool || retouchTool) && (
             <div className="hidden items-center gap-2 md:flex">
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
               {tool === 'brush' && <input aria-label="Brush color" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
+              {(retouchTool || tool === 'dodge' || tool === 'burn') && <><span className="text-[9px] text-zinc-600">Strength</span><input aria-label="Tool strength" type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
             </div>
           )}
-          {(tool === 'eyedropper' || tool === 'text' || tool === 'rectangle' || tool === 'ellipse') && (
+          {(tool === 'eyedropper' || tool === 'text' || tool === 'rectangle' || tool === 'ellipse' || tool === 'fill' || tool === 'gradient') && (
             <label className="hidden items-center gap-2 text-[9px] text-zinc-600 md:flex">
               <span>{tool === 'text' ? 'Colour' : tool === 'eyedropper' ? 'Sample' : 'Fill'}</span>
               <input aria-label="Foreground color" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />
-              <span className="font-mono uppercase">{brushColor}</span>
+              {tool === 'gradient' && <><span>to</span><input aria-label="Background color" type="color" value={secondaryColor} onChange={(event) => setSecondaryColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" /></>}
+              <span className="hidden font-mono uppercase xl:inline">{brushColor}</span>
             </label>
           )}
+          {(tool === 'magic-wand' || tool === 'fill') && <label className="hidden items-center gap-2 text-[9px] text-zinc-600 xl:flex"><span>Tolerance</span><input aria-label="Tolerance" type="range" min="0" max="128" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} className="studio-range w-16" /><span className="w-5 font-mono">{tolerance}</span></label>}
           {selectionTool && (
             <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 lg:flex">
               {(['replace', 'add', 'subtract', 'intersect'] as SelectionMode[]).map((value) => <button key={value} type="button" aria-label={`${value} selection`} aria-pressed={selectionMode === value} onClick={() => setSelectionMode(value)} className={`rounded px-1.5 py-1 text-[9px] capitalize ${selectionMode === value ? 'bg-violet-400/15 text-violet-200' : 'text-zinc-600 hover:text-zinc-300'}`}>{value}</button>)}
               {selection && <button type="button" aria-label="Clear selection" onClick={() => setSelection(null)} className="rounded px-1.5 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Clear</button>}
             </div>
           )}
+          {tool === 'crop' && <div className="flex items-center gap-1"><button type="button" disabled={!cropSelection?.bounds} onClick={() => { if (cropSelection?.bounds) { onCrop(cropSelection.bounds); setCropSelection(null); onToolChange('move') } }} className="rounded-md bg-violet-500 px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">Apply crop</button><button type="button" onClick={() => { setCropSelection(null); onToolChange('move') }} className="rounded-md px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Cancel</button></div>}
           {document.selectedLayerIds.length > 1 && (
             <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 md:flex">
               {[
@@ -301,9 +351,14 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               aria-label="Composition canvas"
               className={`block h-auto w-auto max-h-[calc(100vh-205px)] max-w-full rounded-sm shadow-[0_28px_80px_rgba(0,0,0,0.5)] transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}
             />
-            <SelectionOverlay canvasRef={canvasRef} enabled={selectionTool} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
-            {(tool === 'brush' || tool === 'eraser') && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
-            <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
+            <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'marquee' || tool === 'ellipse-select'} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
+            <LassoSelectionOverlay canvasRef={canvasRef} enabled={tool === 'lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
+            <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
+            <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
+            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : 100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={brushColor} secondaryColor={secondaryColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move' || tool === 'object-select'} />
             <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={setBrushColor} onAddText={(position) => onAddText(position, brushColor)} onAddShape={(shape, position) => onAddShape(shape, position, brushColor)} onZoom={changeZoom} />
           </div>
         </div>

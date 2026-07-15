@@ -5,9 +5,19 @@ export type EditorTool =
   | 'move'
   | 'marquee'
   | 'ellipse-select'
+  | 'lasso'
+  | 'magic-wand'
+  | 'object-select'
+  | 'crop'
   | 'eyedropper'
+  | 'healing'
+  | 'clone-stamp'
   | 'brush'
   | 'eraser'
+  | 'fill'
+  | 'gradient'
+  | 'dodge'
+  | 'burn'
   | 'text'
   | 'rectangle'
   | 'ellipse'
@@ -26,6 +36,42 @@ function MarqueeToolIcon({ className, ellipse = false }: IconProps & { ellipse?:
 
 function EyedropperToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M14.5 5.5l4-2 2 2-2 4-9.8 9.8-4 .7.7-4 9.1-10.5z" /><path strokeLinecap="round" d="M12.5 7.5l4 4M5.5 16.2l2.3 2.3" /></svg>
+}
+
+function LassoToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M20 10.5c0 3.6-3.8 6.5-8.5 6.5S3 14.1 3 10.5 6.8 4 11.5 4 20 6.9 20 10.5z" /><path strokeLinecap="round" d="M11.5 17c1.1 1.8.4 3.3-2.2 3.3-2 0-3.3-.8-3.8-1.8" /></svg>
+}
+
+function WandToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" d="M5 19L16.5 7.5M4 4v3M2.5 5.5h3M18.5 14v4M16.5 16h4M15.5 2.5v3M14 4h3" /><path strokeLinecap="round" strokeLinejoin="round" d="M14.7 6.7l2.6 2.6" /></svg>
+}
+
+function ObjectSelectToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path strokeDasharray="2.5 2.5" d="M4 5h16v14H4z" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 8l8 5-4 1-2 3-2-9z" /></svg>
+}
+
+function CropToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" d="M7 3v14h14M3 7h14v14" /></svg>
+}
+
+function HealingToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 8.5l3.5-3.5a4.2 4.2 0 016 0l4.5 4.5a4.2 4.2 0 010 6L15.5 19a4.2 4.2 0 01-6 0L5 14.5a4.2 4.2 0 010-6z" /><path strokeLinecap="round" d="M8 8l8 8M8.5 12h3M10 10.5v3M13 15h3M14.5 13.5v3" /></svg>
+}
+
+function CloneToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M8 4h8l1 5-2.5 2v3H20v5H4v-5h5.5v-3L7 9l1-5z" /><path strokeLinecap="round" d="M6 16h12" /></svg>
+}
+
+function FillToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l7-7 7 7-7 7-7-7zM9 5l2-2 2 2" /><path strokeLinecap="round" d="M3 21h18M18.5 17.5c0-1 1.5-3 1.5-3s1.5 2 1.5 3a1.5 1.5 0 01-3 0z" /></svg>
+}
+
+function GradientToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1.5" /><path d="M4 6h8v12H4z" fill="currentColor" stroke="none" opacity=".85" /><path d="M12 6h4v12h-4z" fill="currentColor" stroke="none" opacity=".45" /></svg>
+}
+
+function ToneToolIcon({ className, burn = false }: IconProps & { burn?: boolean }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill={burn ? 'currentColor' : 'none'} /><path strokeLinecap="round" d={burn ? 'M9 12h6' : 'M9 12h6M12 9v6'} stroke={burn ? '#111113' : 'currentColor'} /></svg>
 }
 
 function BrushToolIcon({ className }: IconProps) {
@@ -48,9 +94,19 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'move', label: 'Move', shortcut: 'V', icon: <MoveToolIcon className="size-[19px]" /> },
   { id: 'marquee', label: 'Rectangular Marquee', shortcut: 'M', icon: <MarqueeToolIcon className="size-[19px]" />, divider: true },
   { id: 'ellipse-select', label: 'Elliptical Marquee', shortcut: 'Shift M', icon: <MarqueeToolIcon className="size-[19px]" ellipse /> },
+  { id: 'lasso', label: 'Lasso', shortcut: 'L', icon: <LassoToolIcon className="size-[19px]" /> },
+  { id: 'magic-wand', label: 'Magic Wand', shortcut: 'W', icon: <WandToolIcon className="size-[19px]" /> },
+  { id: 'object-select', label: 'Object Select', shortcut: 'Shift W', icon: <ObjectSelectToolIcon className="size-[19px]" /> },
+  { id: 'crop', label: 'Crop', shortcut: 'C', icon: <CropToolIcon className="size-[19px]" /> },
   { id: 'eyedropper', label: 'Eyedropper', shortcut: 'I', icon: <EyedropperToolIcon className="size-[19px]" />, divider: true },
+  { id: 'healing', label: 'Healing Brush', shortcut: 'J', icon: <HealingToolIcon className="size-[19px]" /> },
+  { id: 'clone-stamp', label: 'Clone Stamp', shortcut: 'S', icon: <CloneToolIcon className="size-[19px]" /> },
   { id: 'brush', label: 'Brush', shortcut: 'B', icon: <BrushToolIcon className="size-[19px]" /> },
   { id: 'eraser', label: 'Eraser', shortcut: 'E', icon: <EraserToolIcon className="size-[19px]" /> },
+  { id: 'fill', label: 'Paint Bucket', shortcut: 'G', icon: <FillToolIcon className="size-[19px]" /> },
+  { id: 'gradient', label: 'Gradient', shortcut: 'Shift G', icon: <GradientToolIcon className="size-[19px]" /> },
+  { id: 'dodge', label: 'Dodge', shortcut: 'O', icon: <ToneToolIcon className="size-[19px]" /> },
+  { id: 'burn', label: 'Burn', shortcut: 'Shift O', icon: <ToneToolIcon className="size-[19px]" burn /> },
   { id: 'text', label: 'Type', shortcut: 'T', icon: <TextIcon className="size-[19px]" />, divider: true },
   { id: 'rectangle', label: 'Rectangle', shortcut: 'U', icon: <RectangleIcon className="size-[19px]" /> },
   { id: 'ellipse', label: 'Ellipse', shortcut: 'Shift U', icon: <CircleIcon className="size-[19px]" /> },

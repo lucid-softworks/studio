@@ -8,7 +8,7 @@ type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
   assets: AssetMap
-  tool: 'brush' | 'eraser'
+  tool: 'brush' | 'eraser' | 'dodge' | 'burn'
   size: number
   color: string
   opacity: number
@@ -89,10 +89,11 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, co
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     context.save()
-    context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over'
+    context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : tool === 'dodge' || tool === 'burn' ? 'soft-light' : 'source-over'
     context.globalAlpha = opacity / 100
-    context.strokeStyle = maskAssetId ? '#ffffff' : color
-    context.fillStyle = maskAssetId ? '#ffffff' : color
+    const strokeColor = tool === 'dodge' ? '#ffffff' : tool === 'burn' ? '#000000' : maskAssetId ? '#ffffff' : color
+    context.strokeStyle = strokeColor
+    context.fillStyle = strokeColor
     context.lineWidth = radius * 2
     context.lineCap = 'round'
     context.lineJoin = 'round'
@@ -185,7 +186,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, co
   return (
     <svg
       ref={svgRef}
-      aria-label={maskAssetId ? `Mask ${tool === 'brush' ? 'brush' : 'eraser'} surface` : `${tool === 'brush' ? 'Brush' : 'Eraser'} surface`}
+      aria-label={maskAssetId ? `Mask ${tool} surface` : `${tool === 'brush' ? 'Brush' : tool === 'eraser' ? 'Eraser' : tool === 'dodge' ? 'Dodge' : 'Burn'} surface`}
       viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
       preserveAspectRatio="none"
       className={`absolute inset-0 size-full touch-none ${layer && !layer.locked && !locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}

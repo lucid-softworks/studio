@@ -9,10 +9,11 @@ import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
-import { getLayerBounds, renderComposition } from './editor/renderer'
+import { calculateImageRect, getLayerBounds, renderComposition } from './editor/renderer'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit } from './editor/raster'
-import type { AssetMap, EditorDispatch, Position, ShapeKind } from './editor/types'
+import type { AssetMap, EditorDispatch, LayerPatch, Position, ShapeKind } from './editor/types'
+import type { SelectionBounds } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
@@ -370,6 +371,62 @@ function App({ onExit }: AppProps) {
     })
   }
 
+  const cropDocument = (requested: SelectionBounds) => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    const left = Math.max(0, Math.floor(requested.x))
+    const top = Math.max(0, Math.floor(requested.y))
+    const right = Math.min(canvas.width, Math.ceil(requested.x + requested.width))
+    const bottom = Math.min(canvas.height, Math.ceil(requested.y + requested.height))
+    const width = right - left
+    const height = bottom - top
+    if (width < 2 || height < 2 || (width === canvas.width && height === canvas.height)) return
+
+    const nextAssets: AssetMap = {}
+    const changes = document.layers.map((layer) => {
+      const bounds = getLayerBounds(context, canvas, layer, assets)
+      const patch: LayerPatch = {}
+      if (bounds) {
+        patch.position = {
+          x: (bounds.x + bounds.width / 2 - left - width / 2) / width,
+          y: (bounds.y + bounds.height / 2 - top - height / 2) / height,
+        }
+        if (layer.type === 'shape') {
+          patch.width = bounds.width / width * 100
+          patch.height = bounds.height / height * 100
+        } else if (layer.type === 'image') {
+          const asset = assets[layer.assetId]
+          const imageWidth = asset?.element.naturalWidth || asset?.surface?.width || 1
+          const imageHeight = asset?.element.naturalHeight || asset?.surface?.height || 1
+          const base = calculateImageRect(width, height, imageWidth, imageHeight, { ...layer, position: { x: 0, y: 0 }, scale: 100 })
+          patch.scale = bounds.width / Math.max(1, base.width) * 100
+        }
+      }
+      if (layer.maskAssetId) {
+        const oldMask = assets[layer.maskAssetId]
+        const oldSurface = oldMask?.surface
+        if (oldSurface) {
+          const maskAssetId = createId()
+          const cropped = createEmptyRasterSource(width, height, oldMask.name)
+          const croppedContext = cropped.surface?.getContext('2d', { willReadFrequently: true })
+          if (croppedContext) {
+            croppedContext.drawImage(oldSurface, left / canvas.width * oldSurface.width, top / canvas.height * oldSurface.height, width / canvas.width * oldSurface.width, height / canvas.height * oldSurface.height, 0, 0, width, height)
+            nextAssets[maskAssetId] = cropped
+            patch.maskAssetId = maskAssetId
+          }
+        }
+      }
+      return { id: layer.id, patch }
+    })
+
+    if (Object.keys(nextAssets).length) setAssets((current) => ({ ...current, ...nextAssets }))
+    dispatch({ type: 'set-canvas-size', width, height }, { groupKey: 'crop-document' })
+    dispatch({ type: 'update-layers', changes }, { groupKey: 'crop-document' })
+    endHistoryGroup()
+    resetSelection()
+  }
+
   const exportImage = (format: ExportFormat) => {
     setIsExporting(true)
     const exportCanvas = window.document.createElement('canvas')
@@ -472,6 +529,7 @@ function App({ onExit }: AppProps) {
     bumpRasterHistory()
     historyDispatch({ type: 'replace', document: structuredClone(initialDocument) })
     setEditingMaskLayerId(null)
+    setTool('move')
     resetSelection()
     setNotice(null)
   }
@@ -510,7 +568,7 @@ function App({ onExit }: AppProps) {
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} />
-        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} />
+        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
       </main>
 

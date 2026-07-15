@@ -41,18 +41,9 @@ function drawShape(context: CanvasRenderingContext2D, shape: SelectionShape) {
   context.fill()
 }
 
-export function applySelectionShape(current: SelectionState | null, shape: SelectionShape, mode: SelectionMode, width: number, height: number): SelectionState {
-  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
-  const mask = selection.mask
-  const context = mask.getContext('2d', { willReadFrequently: true })
+function applyTemporaryMask(selection: SelectionState, temporary: HTMLCanvasElement, mode: SelectionMode, width: number, height: number) {
+  const context = selection.mask.getContext('2d', { willReadFrequently: true })
   if (!context) return selection
-
-  const temporary = createMask(width, height)
-  const temporaryContext = temporary.getContext('2d')
-  if (!temporaryContext) return selection
-  temporaryContext.fillStyle = '#ffffff'
-  drawShape(temporaryContext, shape)
-
   if (mode === 'replace') {
     context.clearRect(0, 0, width, height)
     context.drawImage(temporary, 0, 0)
@@ -62,8 +53,85 @@ export function applySelectionShape(current: SelectionState | null, shape: Selec
     context.drawImage(temporary, 0, 0)
     context.restore()
   }
+  return { mask: selection.mask, bounds: selectionBounds(selection.mask), revision: selection.revision + 1 }
+}
 
-  return { mask, bounds: selectionBounds(mask), revision: selection.revision + 1 }
+export function applySelectionShape(current: SelectionState | null, shape: SelectionShape, mode: SelectionMode, width: number, height: number): SelectionState {
+  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
+  const temporary = createMask(width, height)
+  const temporaryContext = temporary.getContext('2d')
+  if (!temporaryContext) return selection
+  temporaryContext.fillStyle = '#ffffff'
+  drawShape(temporaryContext, shape)
+
+  return applyTemporaryMask(selection, temporary, mode, width, height)
+}
+
+export function applySelectionPolygon(current: SelectionState | null, points: Array<{ x: number; y: number }>, mode: SelectionMode, width: number, height: number): SelectionState {
+  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
+  if (points.length < 3) return selection
+  const temporary = createMask(width, height)
+  const context = temporary.getContext('2d')
+  if (!context) return selection
+  context.fillStyle = '#ffffff'
+  context.beginPath()
+  context.moveTo(points[0].x, points[0].y)
+  for (const point of points.slice(1)) context.lineTo(point.x, point.y)
+  context.closePath()
+  context.fill()
+  return applyTemporaryMask(selection, temporary, mode, width, height)
+}
+
+export function contiguousColorMask(image: ImageData, startX: number, startY: number, tolerance: number) {
+  const width = image.width
+  const height = image.height
+  const x = Math.max(0, Math.min(width - 1, Math.floor(startX)))
+  const y = Math.max(0, Math.min(height - 1, Math.floor(startY)))
+  const startOffset = (y * width + x) * 4
+  const target = [image.data[startOffset], image.data[startOffset + 1], image.data[startOffset + 2], image.data[startOffset + 3]]
+  const mask = new Uint8ClampedArray(width * height)
+  const visited = new Uint8Array(width * height)
+  const stack = [y * width + x]
+  const threshold = Math.max(0, Math.min(255, tolerance))
+
+  while (stack.length) {
+    const pixel = stack.pop()!
+    if (visited[pixel]) continue
+    visited[pixel] = 1
+    const offset = pixel * 4
+    const distance = Math.max(
+      Math.abs(image.data[offset] - target[0]),
+      Math.abs(image.data[offset + 1] - target[1]),
+      Math.abs(image.data[offset + 2] - target[2]),
+      Math.abs(image.data[offset + 3] - target[3]),
+    )
+    if (distance > threshold) continue
+    mask[pixel] = 255
+    const pixelX = pixel % width
+    const pixelY = Math.floor(pixel / width)
+    if (pixelX > 0) stack.push(pixel - 1)
+    if (pixelX + 1 < width) stack.push(pixel + 1)
+    if (pixelY > 0) stack.push(pixel - width)
+    if (pixelY + 1 < height) stack.push(pixel + width)
+  }
+  return mask
+}
+
+export function applySelectionAlphaMask(current: SelectionState | null, alpha: Uint8ClampedArray, mode: SelectionMode, width: number, height: number): SelectionState {
+  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
+  if (alpha.length !== width * height) return selection
+  const temporary = createMask(width, height)
+  const context = temporary.getContext('2d')
+  if (!context) return selection
+  const image = context.createImageData(width, height)
+  for (let pixel = 0; pixel < alpha.length; pixel += 1) {
+    image.data[pixel * 4] = 255
+    image.data[pixel * 4 + 1] = 255
+    image.data[pixel * 4 + 2] = 255
+    image.data[pixel * 4 + 3] = alpha[pixel]
+  }
+  context.putImageData(image, 0, 0)
+  return applyTemporaryMask(selection, temporary, mode, width, height)
 }
 
 export function selectionAlphaAt(data: ImageData, x: number, y: number) {
