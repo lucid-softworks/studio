@@ -1,8 +1,9 @@
-import { initializeCanvas, readPsd, type Layer, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
+import { defaultLayerEffects } from './effects'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createId, createRasterLayer, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
-import type { BlendMode, EditorDocument, LayerGroup, RasterLayer } from './types'
+import type { BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, TextLayer } from './types'
 
 let initialized = false
 
@@ -32,7 +33,47 @@ async function sourceFromCanvas(canvas: HTMLCanvasElement, name: string) {
   return { ...source, surface: canvas, revision: 0 }
 }
 
-function layerCanvas(layer: Layer | Psd) {
+async function sourceFromMask(mask: LayerMaskData, width: number, height: number, name: string) {
+  const source = layerCanvas(mask)
+  if (!source) return null
+  const sourceContext = source.getContext('2d', { willReadFrequently: true })
+  if (!sourceContext) return null
+  const sourcePixels = sourceContext.getImageData(0, 0, source.width, source.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const defaultAlpha = mask.defaultColor ?? 255
+  const pixels = new ImageData(width, height)
+  for (let index = 0; index < pixels.data.length; index += 4) {
+    pixels.data[index] = 255
+    pixels.data[index + 1] = 255
+    pixels.data[index + 2] = 255
+    pixels.data[index + 3] = defaultAlpha
+  }
+  const left = mask.left ?? 0
+  const top = mask.top ?? 0
+  for (let y = 0; y < source.height; y += 1) {
+    const targetY = top + y
+    if (targetY < 0 || targetY >= height) continue
+    for (let x = 0; x < source.width; x += 1) {
+      const targetX = left + x
+      if (targetX < 0 || targetX >= width) continue
+      const sourceIndex = (y * source.width + x) * 4
+      const targetIndex = (targetY * width + targetX) * 4
+      const alpha = sourcePixels.data[sourceIndex]
+      pixels.data[targetIndex] = 255
+      pixels.data[targetIndex + 1] = 255
+      pixels.data[targetIndex + 2] = 255
+      pixels.data[targetIndex + 3] = alpha
+    }
+  }
+  context.putImageData(pixels, 0, 0)
+  return sourceFromCanvas(canvas, name)
+}
+
+function layerCanvas(layer: Pick<Layer | Psd | LayerMaskData, 'imageData' | 'canvas'>) {
   if (layer.imageData) {
     const canvas = document.createElement('canvas')
     canvas.width = layer.imageData.width
@@ -69,6 +110,134 @@ export function psdBlendMode(value: Layer['blendMode']): BlendMode {
   return value ? psdBlendModes[value] ?? 'normal' : 'normal'
 }
 
+function colorHex(color: Color | undefined) {
+  if (!color) return '#ffffff'
+  const channels = 'r' in color
+    ? [color.r, color.g, color.b]
+    : 'fr' in color
+      ? [color.fr * 255, color.fg * 255, color.fb * 255]
+      : null
+  return channels
+    ? `#${channels.map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`
+    : '#ffffff'
+}
+
+function hasCustomBlending(layer: Layer) {
+  if (layer.knockout) return true
+  const ranges = layer.blendingRanges
+  if (!ranges) return false
+  const isDefault = (range: number[]) => range.length === 4 && range[0] === 0 && range[1] === 0 && range[2] === 255 && range[3] === 255
+  return !isDefault(ranges.compositeGrayBlendSource)
+    || !isDefault(ranges.compositeGraphBlendDestinationRange)
+    || ranges.ranges.some((range) => !isDefault(range.sourceRange) || !isDefault(range.destRange))
+}
+
+function importableRasterMask(layer: Layer) {
+  const mask = layer.realMask ?? layer.mask
+  return Boolean(mask && !mask.disabled && (mask.imageData || mask.canvas))
+}
+
+function effectEnabled(effect: { enabled?: boolean; present?: boolean } | undefined) {
+  return Boolean(effect && effect.enabled !== false && effect.present !== false)
+}
+
+export function psdLayerEffects(layer: Layer): LayerEffects | null {
+  const effects = layer.effects
+  if (!effects || effects.disabled) return null
+  const dropShadow = effects.dropShadow?.find(effectEnabled)
+  const outerGlow = effectEnabled(effects.outerGlow) ? effects.outerGlow : undefined
+  const colorOverlay = effects.solidFill?.find(effectEnabled)
+  if (!dropShadow && !outerGlow && !colorOverlay) return null
+  return {
+    ...defaultLayerEffects,
+    dropShadow: {
+      enabled: Boolean(dropShadow),
+      color: colorHex(dropShadow?.color),
+      opacity: Math.round((dropShadow?.opacity ?? 1) * 100),
+      angle: dropShadow?.angle ?? defaultLayerEffects.dropShadow.angle,
+      distance: dropShadow?.distance?.value ?? defaultLayerEffects.dropShadow.distance,
+      blur: dropShadow?.size?.value ?? defaultLayerEffects.dropShadow.blur,
+    },
+    outerGlow: {
+      enabled: Boolean(outerGlow),
+      color: colorHex(outerGlow?.color),
+      opacity: Math.round((outerGlow?.opacity ?? 1) * 100),
+      size: outerGlow?.size?.value ?? defaultLayerEffects.outerGlow.size,
+    },
+    colorOverlay: {
+      enabled: Boolean(colorOverlay),
+      color: colorHex(colorOverlay?.color),
+      opacity: Math.round((colorOverlay?.opacity ?? 1) * 100),
+    },
+  }
+}
+
+function hasUnsupportedEffects(layer: Layer) {
+  const effects = layer.effects
+  if (!effects || effects.disabled) return false
+  return Boolean(
+    effects.innerShadow?.some(effectEnabled)
+    || effectEnabled(effects.innerGlow)
+    || effectEnabled(effects.bevel)
+    || effectEnabled(effects.satin)
+    || effects.stroke?.some(effectEnabled)
+    || effects.gradientOverlay?.some(effectEnabled)
+    || effectEnabled(effects.patternOverlay)
+    || (effects.dropShadow?.filter(effectEnabled).length ?? 0) > 1
+    || (effects.solidFill?.filter(effectEnabled).length ?? 0) > 1
+  )
+}
+
+export function canImportPsdText(layer: Layer) {
+  const text = layer.text
+  if (!text || text.orientation === 'vertical' || (text.warp?.style && text.warp.style !== 'none')) return false
+  if ((text.styleRuns?.length ?? 0) > 1 || (text.paragraphStyleRuns?.length ?? 0) > 1) return false
+  return Boolean(text.styleRuns?.[0]?.style ?? text.style)
+}
+
+export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight: number): TextLayer | null {
+  if (!canImportPsdText(layer)) return null
+  const text = layer.text!
+  const style = text.styleRuns?.[0]?.style ?? text.style
+  if (!style) return null
+  const paragraph = text.paragraphStyleRuns?.[0]?.style ?? text.paragraphStyle
+  const transform = text.transform ?? [1, 0, 0, 1, 0, 0]
+  const scale = Math.hypot(transform[0] ?? 1, transform[1] ?? 0) || 1
+  const fontSize = Math.max(1, (style.fontSize ?? 24) * scale)
+  const left = layer.left ?? text.left ?? 0
+  const top = layer.top ?? text.top ?? 0
+  const right = layer.right ?? text.right ?? left + fontSize
+  const bottom = layer.bottom ?? text.bottom ?? top + fontSize
+  const fontName = style.font?.name ?? 'Inter'
+  const justification = paragraph?.justification
+  const textAlign = justification?.startsWith('right') ? 'right' : justification?.startsWith('center') ? 'center' : 'left'
+  const semibold = /semibold|demibold|medium/i.test(fontName)
+  const bold = Boolean(style.fauxBold || (!semibold && /bold|black|heavy/i.test(fontName)))
+
+  return {
+    id: createId(),
+    type: 'text',
+    name: layer.name?.trim() || 'Text',
+    text: text.text.replace(/\r\n?/g, '\n').split('\u0000').join(''),
+    visible: !layer.hidden,
+    locked: Boolean(layer.protected?.position || layer.protected?.composite),
+    opacity: Math.round((layer.opacity ?? 1) * 100),
+    position: {
+      x: ((left + right) / 2 - documentWidth / 2) / documentWidth,
+      y: ((top + bottom) / 2 - documentHeight / 2) / documentHeight,
+    },
+    rotation: Math.atan2(transform[1] ?? 0, transform[0] ?? 1) * 180 / Math.PI,
+    blendMode: psdBlendMode(layer.blendMode),
+    clipToBelow: Boolean(layer.clipping),
+    color: colorHex(style.fillColor),
+    fontFamily: fontName,
+    fontSize,
+    fontWeight: bold ? 700 : semibold ? 600 : 400,
+    textAlign,
+    letterSpacing: (style.tracking ?? 0) * fontSize / 1000,
+  }
+}
+
 export function psdImportWarnings(psd: Psd) {
   const warnings = new Map<string, { message: string; paths: Set<string> }>()
   const add = (code: string, message: string, path?: string) => {
@@ -80,13 +249,13 @@ export function psdImportWarnings(psd: Psd) {
     layers.forEach((layer, index) => {
       const name = layer.name?.trim() || `Layer ${index + 1}`
       const path = parentPath ? `${parentPath} / ${name}` : name
-      if (layer.text) add('text', 'Editable text was rasterized', path)
+      if (layer.text && !canImportPsdText(layer)) add('text', 'Complex text was rasterized', path)
       if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
       if (layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) add('vector', 'Vector shapes were rasterized', path)
-      if (layer.mask || layer.realMask || layer.vectorMask) add('mask', 'Layer masks were not preserved as editable masks', path)
-      if (layer.effects) add('effects', 'Layer effects were not preserved as editable effects', path)
+      if ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
+      if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment) add('adjustment', 'Adjustment layers were not preserved as editable adjustments', path)
-      if (layer.blendingRanges || layer.knockout) add('advanced-blending', 'Advanced blending settings were not preserved', path)
+      if (hasCustomBlending(layer)) add('advanced-blending', 'Advanced blending settings were not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
         add(`blend:${layer.blendMode}`, `Unsupported “${layer.blendMode}” blending was changed to normal`, path)
       }
@@ -182,7 +351,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
   }
 
   const assets: AssetMap = {}
-  const layers: RasterLayer[] = []
+  const layers: EditorLayer[] = []
   const groups: LayerGroup[] = []
   const sourceIsTopToBottom = detectSourceTopToBottom(psd)
 
@@ -208,6 +377,23 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
         await importChildren(layer.children, id, path)
         continue
       }
+      const editableText = psdTextLayer(layer, psd.width, psd.height)
+      if (editableText) {
+        editableText.effects = psdLayerEffects(layer)
+        editableText.groupId = parentId
+        editableText.stackOrder = stackOrder
+        const mask = layer.realMask ?? layer.mask
+        if (mask && !mask.disabled) {
+          const maskAssetId = createId()
+          const maskSource = await sourceFromMask(mask, psd.width, psd.height, `${path} mask`)
+          if (maskSource) {
+            assets[maskAssetId] = maskSource
+            editableText.maskAssetId = maskAssetId
+          }
+        }
+        layers.push(editableText)
+        continue
+      }
       const canvas = layerCanvas(layer)
       if (!canvas || canvas.width === 0 || canvas.height === 0) continue
       const assetId = createId()
@@ -227,6 +413,16 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       raster.clipToBelow = Boolean(layer.clipping)
       raster.groupId = parentId
       raster.stackOrder = stackOrder
+      raster.effects = psdLayerEffects(layer)
+      const mask = layer.realMask ?? layer.mask
+      if (mask && !mask.disabled) {
+        const maskAssetId = createId()
+        const maskSource = await sourceFromMask(mask, psd.width, psd.height, `${path} mask`)
+        if (maskSource) {
+          assets[maskAssetId] = maskSource
+          raster.maskAssetId = maskAssetId
+        }
+      }
       layers.push(raster)
     }
   }

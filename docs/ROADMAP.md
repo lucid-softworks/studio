@@ -51,9 +51,15 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 - [ ] Build a corpus of legal PSD/PSB fixtures and visual golden tests
 - [ ] Preserve editable text layers, font metadata, and text bounds on import
+  - [x] Preserve single-style horizontal text, font, color, alignment, tracking, rotation, and bounds
+  - [ ] Preserve mixed style runs, paragraph boxes, vertical text, warps, and missing-font metadata
 - [ ] Preserve vector shape layers and paths on import
 - [ ] Preserve raster and vector masks, clipping groups, channels, and blend-if data
+  - [x] Import PSD raster masks as editable Studio masks
+  - [ ] Preserve vector masks, channels, mask density/feather, and non-default blend-if data
 - [ ] Preserve adjustment layers and layer styles as editable Studio properties
+  - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
+  - [ ] Preserve the remaining Photoshop layer styles and editable adjustment-layer types
 - [ ] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [ ] Write layered PSD files from Studio documents
