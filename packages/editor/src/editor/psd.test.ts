@@ -118,6 +118,14 @@ describe('PSD layer ordering', () => {
     expect(asset.precision?.bitDepth).toBe(bitDepth)
     expect(Array.from(asset.precision?.data ?? [])).toEqual(precision)
     expect(Array.from(asset.surface!.getContext('2d')!.getImageData(0, 0, 1, 1).data).slice(0, 3)).toEqual(preview)
+
+    const exported = await exportPsdDocument(imported.document, imported.assets, psb)
+    const decoded = readPsd(await exported.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    expect(decoded.bitsPerChannel).toBe(bitDepth)
+    expect(decoded.children?.[0]?.imageData?.data).toBeInstanceOf(bitDepth === 16 ? Uint16Array : Float32Array)
+    expect(Array.from(decoded.children?.[0]?.imageData?.data ?? [])).toEqual(precision)
+    const reopened = await importPsdBuffer(await exported.arrayBuffer(), psb ? 'roundtrip.psb' : 'roundtrip.psd')
+    expect(reopened.document.bitDepth).toBe(bitDepth)
   })
 
   it('maps common Photoshop effects onto editable Studio effects', () => {

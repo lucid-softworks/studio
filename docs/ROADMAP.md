@@ -81,7 +81,9 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [ ] Preview `.look` and ICC-profile Color Lookup encodings
   - [ ] Preview gradient and pattern layer-effect strokes
 - [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
-- [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
+- [x] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
+  - [x] Preserve exact unedited high-depth raster and alpha samples with deterministic 8-bit canvas previews
+  - [x] Write layered 16/32-bit PSD/PSB files with promoted edited pixels, masks, and composite channels
 - [x] Write layered PSD files from Studio documents
 - [x] Add import → export → import structural and pixel-diff tests
 - [x] Warn precisely when an unsupported PSD feature must be flattened

@@ -1,5 +1,6 @@
 import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
+import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
@@ -126,23 +127,88 @@ function channelPlaneToCanvas(plane: Uint8Array, width: number, height: number, 
   return canvas
 }
 
-function appendCompositeChannels(buffer: ArrayBuffer, width: number, height: number, surfaces: HTMLCanvasElement[]) {
-  if (!surfaces.length) return buffer
+function precisionFromChannelPlane(plane: Uint8Array, width: number, height: number, bitDepth: number): SourceImage['precision'] {
+  if (bitDepth !== 16 && bitDepth !== 32) return undefined
+  const view = new DataView(plane.buffer, plane.byteOffset, plane.byteLength)
+  const data = bitDepth === 16 ? new Uint16Array(width * height * 4) : new Float32Array(width * height * 4)
+  const maximum = bitDepth === 16 ? 0xffff : 1
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const value = bitDepth === 16 ? view.getUint16(pixel * 2) : view.getFloat32(pixel * 4)
+    data[pixel * 4] = value
+    data[pixel * 4 + 1] = value
+    data[pixel * 4 + 2] = value
+    data[pixel * 4 + 3] = maximum
+  }
+  return { bitDepth, width, height, data, revision: 0 } as NonNullable<SourceImage['precision']>
+}
+
+function encodeCanvasPlane(pixels: ImageData, channel: number, bitDepth: 8 | 16 | 32, linear = false) {
+  const bytesPerSample = bitDepth / 8
+  const plane = new Uint8Array(pixels.width * pixels.height * bytesPerSample)
+  const view = new DataView(plane.buffer)
+  for (let pixel = 0; pixel < pixels.width * pixels.height; pixel += 1) {
+    const byte = pixels.data[pixel * 4 + channel]
+    if (bitDepth === 8) plane[pixel] = byte
+    else if (bitDepth === 16) view.setUint16(pixel * 2, byte * 257)
+    else view.setFloat32(pixel * 4, linear ? byte / 255 : Math.pow(byte / 255, 2.2))
+  }
+  return plane
+}
+
+function encodePrecisionPlane(precision: NonNullable<SourceImage['precision']>, channel: number) {
+  const bytesPerSample = precision.bitDepth / 8
+  const plane = new Uint8Array(precision.width * precision.height * bytesPerSample)
+  const view = new DataView(plane.buffer)
+  for (let pixel = 0; pixel < precision.width * precision.height; pixel += 1) {
+    const value = precision.data[pixel * 4 + channel]
+    if (precision.bitDepth === 16) view.setUint16(pixel * 2, value)
+    else view.setFloat32(pixel * 4, value)
+  }
+  return plane
+}
+
+function rawChannel(id: number, data: Uint8Array): NonNullable<Layer['rawData']>['channels'][number] {
+  return { id: id as NonNullable<Layer['rawData']>['channels'][number]['id'], compression: 0 as NonNullable<Layer['rawData']>['channels'][number]['compression'], data }
+}
+
+function rawLayerData(bitDepth: 16 | 32, psb: boolean, pixels?: ImageData, precision?: NonNullable<SourceImage['precision']>, mask?: LayerMaskData): NonNullable<Layer['rawData']> {
+  const channels = precision
+    ? [rawChannel(0, encodePrecisionPlane(precision, 0)), rawChannel(1, encodePrecisionPlane(precision, 1)), rawChannel(2, encodePrecisionPlane(precision, 2)), rawChannel(-1, encodePrecisionPlane(precision, 3))]
+    : pixels
+      ? [rawChannel(0, encodeCanvasPlane(pixels, 0, bitDepth)), rawChannel(1, encodeCanvasPlane(pixels, 1, bitDepth)), rawChannel(2, encodeCanvasPlane(pixels, 2, bitDepth)), rawChannel(-1, encodeCanvasPlane(pixels, 3, bitDepth, true))]
+      : []
+  if (mask?.imageData) {
+    const maskPixels = new ImageData(new Uint8ClampedArray(mask.imageData.data), mask.imageData.width, mask.imageData.height)
+    channels.push(rawChannel(-2, encodeCanvasPlane(maskPixels, 0, bitDepth, true)))
+  }
+  return { colorMode: 3, bitsPerChannel: bitDepth, channels, large: psb }
+}
+
+function replaceCompositeChannels(buffer: ArrayBuffer, width: number, height: number, pixels: ImageData, channelSources: SourceImage[], bitDepth: 8 | 16 | 32) {
   const view = new DataView(buffer)
   const originalChannelCount = view.getUint16(12)
-  const planes = decodeCompositePlanes(buffer, width, height, originalChannelCount, 8)
-  if (planes.length !== originalChannelCount) return buffer
-  for (const surface of surfaces) {
-    const pixels = surface.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, width, height)
-    if (!pixels) continue
-    const plane = new Uint8Array(width * height)
-    for (let pixel = 0; pixel < plane.length; pixel += 1) plane[pixel] = pixels.data[pixel * 4]
-    planes.push(plane)
+  const planes = [
+    encodeCanvasPlane(pixels, 0, bitDepth),
+    encodeCanvasPlane(pixels, 1, bitDepth),
+    encodeCanvasPlane(pixels, 2, bitDepth),
+    ...(originalChannelCount === 4 ? [encodeCanvasPlane(pixels, 3, bitDepth, true)] : []),
+  ]
+  for (const source of channelSources) {
+    const precision = source.precision
+    if (precision?.bitDepth === bitDepth && precision.revision === (source.revision ?? 0) && precision.width === width && precision.height === height) {
+      planes.push(encodePrecisionPlane(precision, 0))
+      continue
+    }
+    const surface = source.surface
+    if (!surface) continue
+    const channelPixels = surface.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, width, height)
+    if (channelPixels) planes.push(encodeCanvasPlane(channelPixels, 0, bitDepth, true))
   }
   const { offset } = psdCompositeOffset(buffer)
   const output = new Uint8Array(offset + 2 + planes.reduce((total, plane) => total + plane.length, 0))
   output.set(new Uint8Array(buffer, 0, offset))
   new DataView(output.buffer).setUint16(12, planes.length)
+  new DataView(output.buffer).setUint16(22, bitDepth)
   new DataView(output.buffer).setUint16(offset, 0)
   let cursor = offset + 2
   for (const plane of planes) {
@@ -977,7 +1043,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
     const canvas = channelPlaneToCanvas(plane, psd.width, psd.height, psd.bitsPerChannel ?? 8)
     if (!canvas) return []
     const assetId = createId()
-    assets[assetId] = { element: canvas as unknown as HTMLImageElement, name: `${channelName} channel`, surface: canvas, revision: 0 }
+    assets[assetId] = { element: canvas as unknown as HTMLImageElement, name: `${channelName} channel`, surface: canvas, revision: 0, precision: precisionFromChannelPlane(plane, psd.width, psd.height, psd.bitsPerChannel ?? 8) }
     return [{ id: psd.imageResources?.alphaIdentifiers?.[index], name: channelName, assetId }]
   })
 
@@ -1259,6 +1325,7 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   geometryCanvas.height = height
   const geometryContext = geometryCanvas.getContext('2d')
   if (!geometryContext) throw new Error('PSD geometry could not be measured.')
+  const bitDepth = documentState.bitDepth === 16 || documentState.bitDepth === 32 ? documentState.bitDepth : 8
 
   const exportLayer = (layer: EditorLayer): Layer => {
     const base: Layer = {
@@ -1269,10 +1336,34 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects, layer.psdEffectsMetadata, layer.additionalEffects), id: layer.psdLayerId,
       placedLayer: layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined,
     }
-    if (layer.type === 'adjustment') return { ...base, adjustment: exportedAdjustment(layer) }
+    if (layer.type === 'adjustment') {
+      if (bitDepth !== 8) base.rawData = rawLayerData(bitDepth, psb, undefined, undefined, base.mask)
+      return { ...base, adjustment: exportedAdjustment(layer) }
+    }
     const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, additionalEffects: [], groupId: null, stackOrder: 0 }])
-    Object.assign(base, { left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(rendered) })
     const bounds = getLayerBounds(geometryContext, geometryCanvas, layer, assets)
+    const rasterLayer = layer.type === 'raster' ? layer : undefined
+    const rasterAsset = rasterLayer ? assets[rasterLayer.assetId] : undefined
+    const exactPrecision = rasterAsset?.precision
+    const normalizedFilters = normalizeLayerFilters(rasterLayer?.filters)
+    const useExactPrecision = rasterLayer && exactPrecision
+      && exactPrecision.bitDepth === bitDepth
+      && exactPrecision.revision === (rasterAsset?.revision ?? 0)
+      && exactPrecision.width === rasterLayer.width
+      && exactPrecision.height === rasterLayer.height
+      && rasterLayer.scale === 100
+      && rasterLayer.rotation === 0
+      && !rasterLayer.flipX
+      && !rasterLayer.flipY
+      && Object.entries(defaultLayerFilters).every(([key, value]) => normalizedFilters[key as keyof typeof normalizedFilters] === value)
+      && bounds
+    if (bitDepth !== 8) {
+      if (useExactPrecision) {
+        Object.assign(base, { left: Math.round(bounds.x), top: Math.round(bounds.y), right: Math.round(bounds.x + bounds.width), bottom: Math.round(bounds.y + bounds.height), rawData: rawLayerData(bitDepth, psb, undefined, exactPrecision, base.mask) })
+      } else {
+        Object.assign(base, { left: 0, top: 0, right: width, bottom: height, rawData: rawLayerData(bitDepth, psb, canvasPixels(rendered), undefined, base.mask) })
+      }
+    } else Object.assign(base, { left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(rendered) })
     if (layer.type === 'text') base.text = exportedText(layer, bounds)
     if (layer.type === 'shape') Object.assign(base, exportedShape(layer, bounds))
     return base
@@ -1297,7 +1388,10 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   const children = exportChildren(null)
   if (documentState.background.kind !== 'transparent' || documentState.pattern.kind !== 'none') {
     const backgroundCanvas = renderCanvas([], true)
-    children.push({ name: 'Studio Background', left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(backgroundCanvas) })
+    const backgroundPixels = canvasPixels(backgroundCanvas)
+    children.push(bitDepth === 8
+      ? { name: 'Studio Background', left: 0, top: 0, right: width, bottom: height, imageData: backgroundPixels }
+      : { name: 'Studio Background', left: 0, top: 0, right: width, bottom: height, rawData: rawLayerData(bitDepth, psb, backgroundPixels) })
   }
   resources.dispose()
   const channelNames = documentState.channels?.map((channel) => channel.name)
@@ -1314,10 +1408,10 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
   let buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
-  const channelSurfaces = (documentState.channels ?? []).flatMap((channel) => {
-    const surface = channel.assetId ? assets[channel.assetId]?.surface : undefined
-    return surface ? [surface] : []
+  const channelSources = (documentState.channels ?? []).flatMap((channel) => {
+    const source = channel.assetId ? assets[channel.assetId] : undefined
+    return source?.surface ? [source] : []
   })
-  buffer = appendCompositeChannels(buffer, width, height, channelSurfaces)
+  buffer = replaceCompositeChannels(buffer, width, height, imageData, channelSources, bitDepth)
   return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
 }
