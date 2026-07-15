@@ -1,0 +1,171 @@
+# Studio parity roadmap
+
+This is the working TODO for turning Studio into a serious local-first image editor. The order is intentional: later editing features depend on a stable document model, renderer, history system, and file round-tripping.
+
+## Product boundaries
+
+- Everything runs in the browser or the future Electron desktop shell.
+- No server runtime, account system, cloud dependency, telemetry requirement, or AI features.
+- Large local data belongs in IndexedDB / OPFS in browsers and the local filesystem in Electron.
+- Expensive work can use Web Workers, OffscreenCanvas, WebAssembly, and WebGPU.
+- All WebGPU code uses [TypeGPU](https://github.com/software-mansion/TypeGPU), with Canvas2D as a supported fallback.
+- Browser and desktop share the document model, editor UI, renderer, codecs, and test fixtures.
+
+## Already usable
+
+- [x] Blank transparent document on launch and configurable new documents
+- [x] PNG, JPEG, WebP, GIF, BMP, SVG, TIFF, PSD, and Studio project import
+- [x] PNG, JPEG, and WebP image export plus Studio project save/load
+- [x] Raster, image, text, shape, adjustment, and grouped layers
+- [x] Layer ordering, clipping, opacity, visibility, locking, and common blend modes
+- [x] Raster masks and non-destructive layer effects
+- [x] Move, transform, crop, straighten, selection, paint, erase, fill, gradient, retouch, text, and shape tools
+- [x] Pressure-sensitive brush dynamics and local custom brush tips
+- [x] Locally loaded fonts
+- [x] Rulers, guides, snapping, measurement, alignment, history, and keyboard shortcuts
+- [x] Local recovery storage
+
+## M0 — editor and rendering foundation
+
+- [ ] Version the Studio document schema and add explicit migrations
+- [ ] Separate serializable document data from runtime image/GPU resources
+- [ ] Replace full-document history snapshots with typed commands and transaction groups
+- [x] Put composition rendering behind a backend interface
+- [x] Keep a Canvas2D compatibility renderer
+- [x] Add lazy TypeGPU capability detection and runtime lifecycle management
+- [ ] Implement the TypeGPU compositor with parity snapshots against Canvas2D
+- [ ] Move layer surfaces to a shared texture/resource registry
+- [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching
+- [ ] Move rendering and heavy pixel operations to a Worker with OffscreenCanvas where supported
+- [ ] Add GPU device-loss recovery and automatic Canvas2D fallback
+- [ ] Add deterministic renderer fixtures for blend modes, masks, effects, and color transforms
+
+## M1 — PSD fidelity and round-tripping
+
+- [ ] Build a corpus of legal PSD/PSB fixtures and visual golden tests
+- [ ] Preserve editable text layers, font metadata, and text bounds on import
+- [ ] Preserve vector shape layers and paths on import
+- [ ] Preserve raster and vector masks, clipping groups, channels, and blend-if data
+- [ ] Preserve adjustment layers and layer styles as editable Studio properties
+- [ ] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
+- [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
+- [ ] Write layered PSD files from Studio documents
+- [ ] Add import → export → import structural and pixel-diff tests
+- [ ] Warn precisely when an unsupported PSD feature must be flattened
+
+## M2 — smart objects and non-destructive filters
+
+- [ ] Add embedded and linked smart-object layer types
+- [ ] Open smart-object contents as nested documents and propagate saved edits
+- [ ] Add replace/relink/export-contents actions
+- [ ] Add non-destructive transform matrices independent of source pixels
+- [ ] Add ordered smart-filter stacks with visibility, masks, opacity, and blend modes
+- [ ] Cache smart-object and smart-filter results by content hash
+
+## M3 — selections, masks, and channels
+
+- [ ] Make selections tile-based pixel masks rather than rectangle-only state
+- [ ] Add elliptical marquee, single-row/column marquee, polygonal lasso, magnetic lasso, and object/contiguous selection tools
+- [ ] Add add/subtract/intersect selection modes to every selection tool
+- [ ] Add color range, luminosity range, subject-free edge selection, grow, and similar
+- [ ] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination
+- [ ] Add quick mask mode
+- [ ] Add vector masks and editable mask density/feather
+- [ ] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
+- [ ] Save, load, combine, and transform alpha-channel selections
+
+## M4 — paths, vectors, and shapes
+
+- [ ] Add a Pen tool with Bézier handles, path continuation, and point conversion
+- [ ] Add direct/path selection tools and keyboard editing
+- [ ] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
+- [ ] Support compound paths and boolean shape operations
+- [ ] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
+- [ ] Add custom shape import/export and a reusable local shape library
+- [ ] Preserve vector data through SVG and PSD round-trips
+
+## M5 — transforms, layout, and documents
+
+- [ ] Add skew, perspective, distort, and multi-point warp transforms
+- [ ] Add perspective crop and perspective warp
+- [ ] Add puppet warp with editable mesh pins
+- [ ] Add content-aware scale without server or AI dependencies
+- [ ] Add transform-again, numeric reference points, and precise interpolation controls
+- [ ] Add artboards, artboard export, and per-artboard backgrounds
+- [ ] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
+- [ ] Add linked views, split views, navigator, rotate view, and scrubby zoom
+- [ ] Add configurable grids, guide layouts, smart guides, and reusable workspace layouts
+
+## M6 — adjustments, filters, and color
+
+- [ ] Add Curves with per-channel points, eyedroppers, histogram, and presets
+- [ ] Add Levels, Exposure, Vibrance, Selective Color, Channel Mixer, Color Lookup, Gradient Map, and Black & White
+- [ ] Add Camera Raw-style local controls implemented entirely on-device
+- [ ] Build a TypeGPU filter graph for blur, sharpen, noise, distort, stylize, render, and pixelate families
+- [ ] Add filter masks, live previews, cancelable jobs, and reusable presets
+- [ ] Add editable 8/16/32-bit document precision
+- [ ] Add ICC profile parsing, conversion, assign/convert profile, proof colors, and gamut warnings
+- [ ] Add RGB, grayscale, indexed, and CMYK document modes where browser color APIs permit accurate output
+- [ ] Add histogram, info, and scopes panels backed by worker/GPU reductions
+
+## M7 — typography
+
+- [ ] Add point text and paragraph text boxes with resize/reflow behavior
+- [ ] Add full character and paragraph panels
+- [ ] Add kerning, tracking, leading, baseline shift, horizontal/vertical scale, faux styles, underline, and strikethrough
+- [ ] Add OpenType feature controls, variable-font axes, and font fallback runs
+- [ ] Add text-on-path, vertical text, warp text, and editable text transforms
+- [ ] Preserve advanced text metadata through Studio and PSD documents
+- [ ] Add a persistent local font library with missing-font substitution controls
+
+## M8 — painting and retouching
+
+- [ ] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
+- [ ] Support ABR brush import and preserve compatible dynamics
+- [ ] Add pencil, color replacement, mixer brush, and history brush tools
+- [ ] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
+- [ ] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
+- [ ] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
+- [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
+- [ ] Add tablet tilt, twist, barrel button, and per-device pressure calibration
+
+## M9 — workflow and extensibility
+
+- [ ] Add editable keyboard shortcuts and menus
+- [ ] Add dockable/resizable panels and saved workspaces
+- [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
+- [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
+- [ ] Add a sandboxed local scripting API with explicit filesystem permissions
+- [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server
+- [ ] Add searchable commands, contextual help, crash recovery, and diagnostic export
+
+## M10 — formats and output
+
+- [ ] Add robust TIFF, OpenEXR, HDR, HEIF/AVIF, ICO, PDF, and RAW import where client-side codecs exist
+- [ ] Add layered TIFF, PDF, SVG, GIF/APNG, AVIF, and PSD/PSB export
+- [ ] Add frame animation and timeline animation with onion skinning
+- [ ] Add slices, asset generation, export presets, metadata controls, and batch export
+- [ ] Add print sizing, bleed, crop marks, and local print/PDF workflows
+- [ ] Preserve resolution, EXIF, XMP, ICC, and orientation metadata intentionally
+
+## M11 — Electron desktop shell
+
+- [ ] Keep Electron a thin shell around the shared web editor
+- [ ] Add native open/save dialogs, recent files, drag/drop, and OS file associations
+- [ ] Add safe atomic filesystem writes and external-change detection
+- [ ] Add native menus, shortcuts, clipboard integration, and color picker
+- [ ] Add optional local scratch-disk/cache management for documents larger than memory
+- [ ] Package signed macOS, Windows, and Linux builds with automatic updates
+
+## Long-tail parity
+
+- [ ] Layer comps and states
+- [ ] Notes and annotations
+- [ ] Count, sampler, and advanced measurement records
+- [ ] Variables and data-driven graphics
+- [ ] Vanishing Point and advanced lens correction
+- [ ] 3D/imported model features only if they still serve the product direction
+
+## Definition of parity
+
+A feature is not complete merely because a control exists. It needs undo/redo, save/load fidelity, keyboard access, useful error handling, acceptable large-document performance, browser and Electron behavior, and automated tests. PSD-related work also needs a documented round-trip result or a clear flattening warning.
