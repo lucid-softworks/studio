@@ -1,6 +1,5 @@
 import { initializeCanvas, readPsd, writePsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
-import { loadImageBlob, surfaceToBlob } from './image'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
@@ -30,9 +29,7 @@ export function psdLayerNamesInEditorOrder(layers: Layer[], parent = '', sourceI
 }
 
 async function sourceFromCanvas(canvas: HTMLCanvasElement, name: string) {
-  const blob = await surfaceToBlob(canvas)
-  const source = await loadImageBlob(blob, name)
-  return { ...source, surface: canvas, revision: 0 }
+  return { element: canvas as unknown as HTMLImageElement, name, surface: canvas, revision: 0 }
 }
 
 async function sourceFromMask(mask: LayerMaskData, width: number, height: number, name: string) {
@@ -665,11 +662,11 @@ function detectSourceTopToBottom(psd: Psd) {
   return imageDifference(topToBottom, reference) <= imageDifference(bottomToTop, reference)
 }
 
-export async function importPsdFile(file: File): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
+export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
   initializeBrowserCanvas()
   let psd
   try {
-    psd = readPsd(await file.arrayBuffer(), { skipThumbnail: true, useImageData: true })
+    psd = readPsd(buffer, { skipThumbnail: true, useImageData: true })
   } catch (error) {
     throw new Error(error instanceof Error ? `PSD import failed: ${error.message}` : 'That PSD file could not be decoded.')
   }
@@ -782,8 +779,8 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
   const composite = layerCanvas(psd)
   if (layers.length === 0 && composite) {
     const assetId = createId()
-    assets[assetId] = await sourceFromCanvas(composite, file.name)
-    layers.push(createRasterLayer(assetId, file.name.replace(/\.psd$/i, ''), psd.width, psd.height))
+    assets[assetId] = await sourceFromCanvas(composite, name)
+    layers.push(createRasterLayer(assetId, name.replace(/\.psb?$/i, ''), psd.width, psd.height))
   }
   if (layers.length === 0) throw new Error('The PSD did not contain any rasterizable layer data.')
 
@@ -803,6 +800,10 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       channels: (psd.imageResources?.alphaChannelNames ?? []).map((name, index) => ({ id: psd.imageResources?.alphaIdentifiers?.[index], name })),
     },
   }
+}
+
+export async function importPsdFile(file: File) {
+  return importPsdBuffer(await file.arrayBuffer(), file.name)
 }
 
 const studioPsdBlendModes: Record<BlendMode, NonNullable<Layer['blendMode']>> = {
