@@ -1,7 +1,9 @@
-import { initializeCanvas, readPsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
 import { defaultLayerEffects } from './effects'
 import { loadImageBlob, surfaceToBlob } from './image'
-import { createAdjustmentLayer, createId, createRasterLayer, initialDocument } from './presets'
+import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
+import { renderComposition, getLayerBounds } from './renderer'
+import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
 import type { AdjustmentLayer, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, ShapeLayer, TextLayer } from './types'
 
@@ -577,4 +579,135 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       selectedLayerIds: selectedLayerId ? [selectedLayerId] : [],
     },
   }
+}
+
+const studioPsdBlendModes: Record<BlendMode, NonNullable<Layer['blendMode']>> = {
+  normal: 'normal', multiply: 'multiply', screen: 'screen', overlay: 'overlay', darken: 'darken', lighten: 'lighten',
+  'color-dodge': 'color dodge', 'color-burn': 'color burn', 'hard-light': 'hard light', 'soft-light': 'soft light',
+  difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
+}
+
+function psdColor(value: string): Color {
+  const normalized = value.replace('#', '')
+  const expanded = normalized.length === 3 ? normalized.split('').map((channel) => `${channel}${channel}`).join('') : normalized
+  const parsed = Number.parseInt(expanded, 16)
+  return Number.isFinite(parsed) && expanded.length === 6
+    ? { r: (parsed >> 16) & 255, g: (parsed >> 8) & 255, b: parsed & 255 }
+    : { r: 0, g: 0, b: 0 }
+}
+
+function canvasPixels(canvas: HTMLCanvasElement) {
+  return canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function exportedEffects(effects: LayerEffects | null | undefined): Layer['effects'] {
+  if (!effects) return undefined
+  const result: NonNullable<Layer['effects']> = {}
+  if (effects.dropShadow.enabled) result.dropShadow = [{ enabled: true, color: psdColor(effects.dropShadow.color), opacity: effects.dropShadow.opacity / 100, angle: effects.dropShadow.angle, distance: { units: 'Pixels', value: effects.dropShadow.distance }, size: { units: 'Pixels', value: effects.dropShadow.blur } }]
+  if (effects.outerGlow.enabled) result.outerGlow = { enabled: true, color: psdColor(effects.outerGlow.color), opacity: effects.outerGlow.opacity / 100, size: { units: 'Pixels', value: effects.outerGlow.size } }
+  if (effects.colorOverlay.enabled) result.solidFill = [{ enabled: true, color: psdColor(effects.colorOverlay.color), opacity: effects.colorOverlay.opacity / 100 }]
+  return Object.keys(result).length ? result : undefined
+}
+
+function exportedMask(assetId: string | null | undefined, assets: AssetMap, width: number, height: number): Layer['mask'] {
+  if (!assetId) return undefined
+  const source = assets[assetId]
+  if (!source) return undefined
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  canvas.getContext('2d')?.drawImage(source.surface ?? source.element, 0, 0, width, height)
+  const imageData = canvasPixels(canvas)
+  return imageData ? { left: 0, top: 0, right: width, bottom: height, defaultColor: 255, imageData } : undefined
+}
+
+function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds>): Layer['text'] {
+  if (!bounds) return undefined
+  const angle = layer.rotation * Math.PI / 180
+  return {
+    text: layer.text.replace(/\n/g, '\r'), orientation: 'horizontal',
+    transform: [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0],
+    left: bounds.x, top: bounds.y, right: bounds.x + bounds.width, bottom: bounds.y + bounds.height, shapeType: 'point',
+    style: { font: { name: layer.fontFamily || 'Inter' }, fontSize: layer.fontSize, fauxBold: layer.fontWeight === 700, tracking: layer.fontSize ? layer.letterSpacing / layer.fontSize * 1000 : 0, fillColor: psdColor(layer.color) },
+    paragraphStyle: { justification: layer.textAlign },
+  }
+}
+
+function exportedShape(layer: ShapeLayer, bounds: ReturnType<typeof getLayerBounds>): Pick<Layer, 'vectorFill' | 'vectorOrigination' | 'vectorStroke'> {
+  if (!bounds) return {}
+  return {
+    vectorFill: { type: 'color', color: psdColor(layer.fill) },
+    vectorOrigination: { keyDescriptorList: [{
+      keyOriginShapeBoundingBox: { left: { units: 'Pixels', value: bounds.x }, top: { units: 'Pixels', value: bounds.y }, right: { units: 'Pixels', value: bounds.x + bounds.width }, bottom: { units: 'Pixels', value: bounds.y + bounds.height } },
+      keyOriginRRectRadii: { topLeft: { units: 'Pixels', value: layer.cornerRadius }, topRight: { units: 'Pixels', value: layer.cornerRadius }, bottomLeft: { units: 'Pixels', value: layer.cornerRadius }, bottomRight: { units: 'Pixels', value: layer.cornerRadius } },
+    }] },
+    vectorStroke: layer.strokeWidth > 0 ? { strokeEnabled: true, fillEnabled: true, lineWidth: { units: 'Pixels', value: layer.strokeWidth }, lineAlignment: 'center', lineCapType: 'butt', lineJoinType: 'miter', miterLimit: 10, content: { type: 'color', color: psdColor(layer.stroke) }, opacity: 1 } : undefined,
+  }
+}
+
+function exportedAdjustment(layer: AdjustmentLayer): Layer['adjustment'] {
+  if (layer.hue !== 0 || layer.saturation !== 100) return { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: layer.hue, saturation: layer.saturation - 100, lightness: layer.brightness - 100 } }
+  return { type: 'brightness/contrast', brightness: layer.brightness - 100, contrast: layer.contrast - 100 }
+}
+
+export async function exportPsdDocument(documentState: EditorDocument, assets: AssetMap, psb = false) {
+  initializeBrowserCanvas()
+  const { width, height } = getDocumentSize(documentState)
+  const resources = new RenderResourceRegistry()
+  const renderCanvas = (layers: EditorLayer[], includeBackground = false, renderGroups: LayerGroup[] = []) => {
+    const canvas = document.createElement('canvas')
+    renderComposition(canvas, {
+      ...documentState,
+      background: includeBackground ? documentState.background : { ...documentState.background, kind: 'transparent' },
+      pattern: includeBackground ? documentState.pattern : { ...documentState.pattern, kind: 'none' },
+      groups: renderGroups, layers, selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null,
+    }, assets, {}, resources)
+    return canvas
+  }
+  const geometryCanvas = document.createElement('canvas')
+  geometryCanvas.width = width
+  geometryCanvas.height = height
+  const geometryContext = geometryCanvas.getContext('2d')
+  if (!geometryContext) throw new Error('PSD geometry could not be measured.')
+
+  const exportLayer = (layer: EditorLayer): Layer => {
+    const base: Layer = {
+      name: layer.name, hidden: !layer.visible, opacity: layer.opacity / 100,
+      blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
+      protected: layer.locked ? { position: true, composite: true } : undefined,
+      mask: exportedMask(layer.maskAssetId, assets, width, height), effects: exportedEffects(layer.effects),
+    }
+    if (layer.type === 'adjustment') return { ...base, adjustment: exportedAdjustment(layer) }
+    const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, groupId: null, stackOrder: 0 }])
+    Object.assign(base, { left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(rendered) })
+    const bounds = getLayerBounds(geometryContext, geometryCanvas, layer, assets)
+    if (layer.type === 'text') base.text = exportedText(layer, bounds)
+    if (layer.type === 'shape') Object.assign(base, exportedShape(layer, bounds))
+    return base
+  }
+
+  const groups = new Map(documentState.groups.map((group) => [group.id, group]))
+  const exportChildren = (parentId: string | null): Layer[] => {
+    const items: Array<{ stackOrder: number; layer?: EditorLayer; group?: LayerGroup }> = [
+      ...documentState.layers.filter((layer) => (layer.groupId ?? null) === parentId).map((layer) => ({ stackOrder: layer.stackOrder ?? 0, layer })),
+      ...documentState.groups.filter((group) => (group.parentId ?? null) === parentId).map((group) => ({ stackOrder: group.stackOrder ?? 0, group })),
+    ]
+    return items.sort((left, right) => right.stackOrder - left.stackOrder).map((item) => {
+      if (item.layer) return exportLayer(item.layer)
+      const group = groups.get(item.group!.id)!
+      return { name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: exportChildren(group.id) }
+    })
+  }
+
+  const compositeCanvas = renderCanvas(documentState.layers, true, documentState.groups)
+  const imageData = canvasPixels(compositeCanvas)
+  if (!imageData) throw new Error('The PSD composite could not be created.')
+  const children = exportChildren(null)
+  if (documentState.background.kind !== 'transparent' || documentState.pattern.kind !== 'none') {
+    const backgroundCanvas = renderCanvas([], true)
+    children.push({ name: 'Studio Background', left: 0, top: 0, right: width, bottom: height, imageData: canvasPixels(backgroundCanvas) })
+  }
+  resources.dispose()
+  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children }, { psb, noBackground: true })
+  return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
 }

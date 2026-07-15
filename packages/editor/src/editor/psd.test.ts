@@ -1,8 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { psdAdjustmentLayer, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
-import type { Layer, Psd } from 'ag-psd'
+import { createCanvas, ImageData } from '@napi-rs/canvas'
+import { readPsd, type Layer, type Psd } from 'ag-psd'
+import { createLayerGroup, createShapeLayer, initialDocument } from './presets'
+import { exportPsdDocument, psdAdjustmentLayer, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
+
+Object.assign(globalThis, {
+  ImageData,
+  document: { createElement: () => createCanvas(1, 1) },
+})
 
 describe('PSD layer ordering', () => {
+  it('writes layered PSD files with groups, vector metadata, and composite pixels', async () => {
+    const group = { ...createLayerGroup(0), id: 'group', name: 'Artwork' }
+    const shape = { ...createShapeLayer('rectangle', 0), id: 'shape', name: 'Label', groupId: group.id, fill: '#7850f0', cornerRadius: 12 }
+    const blob = await exportPsdDocument({
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 120, height: 80 },
+      groups: [group],
+      layers: [shape],
+    }, {})
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+
+    expect(psdLayerNamesInEditorOrder(decoded.children ?? [])).toEqual(['Artwork / Label'])
+    expect(decoded.children?.[0]?.children?.[0]).toMatchObject({ name: 'Label', vectorFill: { type: 'color', color: { r: 120, g: 80, b: 240 } } })
+    expect(decoded.imageData?.data.some((channel) => channel !== 0)).toBe(true)
+  })
+
   it('converts ag-psd top-to-bottom children to the editor bottom-to-top stack', () => {
     const children: Layer[] = [
       { name: 'Top' },

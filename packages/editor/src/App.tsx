@@ -27,7 +27,7 @@ import { normalizeCustomSwatches, normalizeHexColor } from './editor/swatches'
 import { normalizeCustomGradients, type GradientPreset } from './editor/gradients'
 import { normalizeCustomPatterns, type PatternPreset } from './editor/patterns'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp'
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
 type AppProps = { onExit?: () => void }
@@ -720,8 +720,20 @@ function App({ onExit }: AppProps) {
     })
   }
 
-  const exportImage = (format: ExportFormat) => {
+  const exportImage = async (format: ExportFormat) => {
     setIsExporting(true)
+    if (format === 'psd') {
+      try {
+        const { exportPsdDocument } = await import('./editor/psd')
+        const blob = await exportPsdDocument(document, assets)
+        downloadBlob(blob, 'studio-composition.psd')
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : 'The layered PSD could not be created.')
+      } finally {
+        setIsExporting(false)
+      }
+      return
+    }
     const exportCanvas = window.document.createElement('canvas')
     canvas2dCompositionRenderer.render(exportCanvas, { ...document, selectedLayerId: null }, assets)
     const mime = `image/${format}`
@@ -878,7 +890,7 @@ function App({ onExit }: AppProps) {
             onAddImage={() => imageInputRef.current?.click()}
             onLoadFont={() => fontInputRef.current?.click()}
             onLoadBrush={() => brushInputRef.current?.click()}
-            onExport={exportImage}
+            onExport={(format) => void exportImage(format)}
             onUndo={performUndo}
             onRedo={performRedo}
             onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}

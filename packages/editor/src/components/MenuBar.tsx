@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspacePreset } from '../editor/panel-layout'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp'
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'psd'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view'
 
 type MenuBarProps = {
@@ -134,6 +134,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('png'))}>PNG image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('jpeg'))}>JPEG image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
       </>, 'w-60')}
 
       {menu('edit', 'Edit', <>
