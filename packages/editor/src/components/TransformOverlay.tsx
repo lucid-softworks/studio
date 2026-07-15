@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { findLayerAtPoint, getLayerBounds, type LayerBounds, type ResizeHandle } from '../editor/renderer'
 import { layerIsLocked, layerIsVisible } from '../editor/stack'
 import { calculateLayerResize, calculateRotation, type TransformResizeSnapshot } from '../editor/transform'
-import type { AssetMap, EditorDispatch, EditorDocument, Position } from '../editor/types'
+import type { AssetMap } from '../editor/runtime-assets'
+import type { EditorDispatch, EditorDocument, Position } from '../editor/types'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>

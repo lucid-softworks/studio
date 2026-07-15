@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { canvas2dCompositionRenderer } from './rendering/composition-renderer'
-import type { AssetMap, EditorDocument } from './types'
+import type { AssetMap } from './runtime-assets'
+import type { EditorDocument } from './types'
 
 export function useCanvasRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,

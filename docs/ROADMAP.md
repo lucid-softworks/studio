@@ -27,9 +27,9 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M0 — editor and rendering foundation
 
-- [ ] Version the Studio document schema and add explicit migrations
-- [ ] Separate serializable document data from runtime image/GPU resources
-- [ ] Replace full-document history snapshots with typed commands and transaction groups
+- [x] Version the Studio document schema and add explicit migrations
+- [x] Separate serializable document data from runtime image/GPU resources
+- [x] Replace full-document history snapshots with typed commands and transaction groups
 - [x] Put composition rendering behind a backend interface
 - [x] Keep a Canvas2D compatibility renderer
 - [x] Add lazy TypeGPU capability detection and runtime lifecycle management

@@ -1,19 +1,75 @@
 import { createRasterSurface, loadImageBlob, surfaceToBlob } from './image'
-import { getCanvasPreset } from './presets'
+import { getCanvasPreset, initialDocument } from './presets'
+import type { AssetMap } from './runtime-assets'
 import { flattenStackLayers, getStackChildren } from './stack'
-import type { AssetMap, EditorDocument } from './types'
+import { EDITOR_DOCUMENT_SCHEMA_VERSION, type EditorDocument } from './types'
 
-const PROJECT_VERSION = 1
+export const STUDIO_PROJECT_VERSION = 2 as const
 const DATABASE_NAME = 'studio-client-projects'
 const STORE_NAME = 'recovery'
 const RECOVERY_KEY = 'current-document'
 
 type StoredAsset = { id: string; name: string; blob: Blob }
-type StoredProject = { version: number; savedAt: string; document: EditorDocument; assets: StoredAsset[] }
+type StoredProject = { version: number; savedAt: string; document: unknown; assets: StoredAsset[] }
 type PortableAsset = { id: string; name: string; data: string }
-type PortableProject = { app: 'studio'; version: number; savedAt: string; document: EditorDocument; assets: PortableAsset[] }
+type PortableProject = { app: 'studio'; version: number; savedAt: string; document: unknown; assets: PortableAsset[] }
 
 export type LoadedProject = { document: EditorDocument; assets: AssetMap; savedAt?: string }
+
+type UnknownRecord = Record<string, unknown>
+type DocumentMigration = (document: UnknownRecord) => UnknownRecord
+
+const documentMigrations = new Map<number, DocumentMigration>([
+  [1, (document) => ({
+    ...document,
+    schemaVersion: 2,
+    canvasSize: document.canvasSize ?? initialDocument.canvasSize,
+    groups: document.groups ?? [],
+    selectedLayerIds: document.selectedLayerIds ?? (typeof document.selectedLayerId === 'string' ? [document.selectedLayerId] : []),
+    selectedGroupId: document.selectedGroupId ?? null,
+  })],
+])
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function documentVersion(value: UnknownRecord, projectVersion: number) {
+  if (typeof value.schemaVersion === 'number' && Number.isInteger(value.schemaVersion)) return value.schemaVersion
+  return projectVersion === 1 ? 1 : null
+}
+
+function assertDocumentShape(value: UnknownRecord): asserts value is UnknownRecord & EditorDocument {
+  if (
+    value.schemaVersion !== EDITOR_DOCUMENT_SCHEMA_VERSION
+    || typeof value.canvasPreset !== 'string'
+    || !isRecord(value.background)
+    || !isRecord(value.pattern)
+    || !Array.isArray(value.layers)
+    || !Array.isArray(value.groups)
+  ) {
+    throw new Error('The Studio document data is incomplete or damaged.')
+  }
+}
+
+export function migrateDocument(value: unknown, projectVersion: number): EditorDocument {
+  if (!isRecord(value)) throw new Error('The Studio document data is incomplete or damaged.')
+  let migrated = value
+  let version = documentVersion(migrated, projectVersion)
+  if (version === null || version < 1 || version > EDITOR_DOCUMENT_SCHEMA_VERSION) {
+    throw new Error('That Studio document schema version is not supported.')
+  }
+
+  while (version < EDITOR_DOCUMENT_SCHEMA_VERSION) {
+    const migrate = documentMigrations.get(version)
+    if (!migrate) throw new Error(`Studio cannot migrate document schema version ${version}.`)
+    migrated = migrate(migrated)
+    version += 1
+  }
+
+  assertDocumentShape(migrated)
+  return normalizeDocument(migrated)
+}
 
 function normalizeDocument(value: EditorDocument): EditorDocument {
   const selectedLayerId = value.selectedLayerId && value.layers.some((layer) => layer.id === value.selectedLayerId) ? value.selectedLayerId : null
@@ -55,7 +111,7 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     }
   }
   layers = flattenStackLayers(normalized)
-  return { ...normalized, layers }
+  return { ...normalized, schemaVersion: EDITOR_DOCUMENT_SCHEMA_VERSION, layers }
 }
 
 function openDatabase() {
@@ -107,14 +163,14 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
 }
 
 export async function saveRecoveryProject(document: EditorDocument, assets: AssetMap) {
-  const project: StoredProject = { version: PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: await storedAssets(document, assets) }
+  const project: StoredProject = { version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: await storedAssets(document, assets) }
   await transactionRequest('readwrite', (store) => store.put(project, RECOVERY_KEY))
 }
 
 export async function loadRecoveryProject(): Promise<LoadedProject | null> {
   const project = await transactionRequest<StoredProject | undefined>('readonly', (store) => store.get(RECOVERY_KEY))
-  if (!project || project.version !== PROJECT_VERSION) return null
-  const document = normalizeDocument(project.document)
+  if (!project || project.version < 1 || project.version > STUDIO_PROJECT_VERSION || !Array.isArray(project.assets)) return null
+  const document = migrateDocument(project.document, project.version)
   return { document, assets: await hydrateAssets(project.assets, document), savedAt: project.savedAt }
 }
 
@@ -129,24 +185,31 @@ function blobToDataUrl(blob: Blob) {
 
 export async function serializeProject(document: EditorDocument, assets: AssetMap) {
   const portableAssets = await Promise.all((await storedAssets(document, assets)).map(async (asset): Promise<PortableAsset> => ({ id: asset.id, name: asset.name, data: await blobToDataUrl(asset.blob) })))
-  const project: PortableProject = { app: 'studio', version: PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: portableAssets }
+  const project: PortableProject = { app: 'studio', version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: portableAssets }
   return JSON.stringify(project)
 }
 
 export async function parseProjectFile(file: File): Promise<LoadedProject> {
-  let parsed: PortableProject
+  let parsed: unknown
   try {
-    parsed = JSON.parse(await file.text()) as PortableProject
+    parsed = JSON.parse(await file.text()) as unknown
   } catch {
     throw new Error('That is not a valid Studio project file.')
   }
-  if (parsed.app !== 'studio' || parsed.version !== PROJECT_VERSION || !parsed.document || !Array.isArray(parsed.assets)) {
+  if (!isRecord(parsed) || parsed.app !== 'studio' || typeof parsed.version !== 'number' || !Number.isInteger(parsed.version)) {
+    throw new Error('That is not a valid Studio project file.')
+  }
+  if (parsed.version < 1 || parsed.version > STUDIO_PROJECT_VERSION || !Array.isArray(parsed.assets)) {
     throw new Error('That Studio project version is not supported.')
   }
-  const stored = await Promise.all(parsed.assets.map(async (asset): Promise<StoredAsset> => {
+  const portableAssets = parsed.assets.every((asset) => isRecord(asset) && typeof asset.id === 'string' && typeof asset.name === 'string' && typeof asset.data === 'string')
+    ? parsed.assets as PortableAsset[]
+    : null
+  if (!portableAssets) throw new Error('The Studio project contains invalid asset data.')
+  const stored = await Promise.all(portableAssets.map(async (asset): Promise<StoredAsset> => {
     const response = await fetch(asset.data)
     return { id: asset.id, name: asset.name, blob: await response.blob() }
   }))
-  const document = normalizeDocument(parsed.document)
-  return { document, assets: await hydrateAssets(stored, document), savedAt: parsed.savedAt }
+  const document = migrateDocument(parsed.document, parsed.version)
+  return { document, assets: await hydrateAssets(stored, document), savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : undefined }
 }

@@ -1,4 +1,4 @@
-import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, LayerGroup, RasterLayer, ShapeKind, ShapeLayer, TextLayer } from './types'
+import { EDITOR_DOCUMENT_SCHEMA_VERSION, type AdjustmentLayer, type EditorDocument, type EditorLayer, type ImageLayer, type LayerGroup, type RasterLayer, type ShapeKind, type ShapeLayer, type TextLayer } from './types'
 
 export const canvasPresets = [
   { id: 'landscape', label: 'Landscape', shortLabel: '16:10', width: 1600, height: 1000 },
@@ -17,6 +17,7 @@ export const backgroundPresets = [
 ] as const
 
 export const initialDocument: EditorDocument = {
+  schemaVersion: EDITOR_DOCUMENT_SCHEMA_VERSION,
   canvasPreset: 'landscape',
   canvasSize: { width: 1600, height: 1000 },
   background: {

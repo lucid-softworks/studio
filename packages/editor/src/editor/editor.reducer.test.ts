@@ -144,4 +144,26 @@ describe('historyReducer', () => {
     const redone = historyReducer(undone, { type: 'redo' })
     expect(redone.present.canvasPreset).toBe('square')
   })
+
+  it('stores typed field patches instead of full document snapshots', () => {
+    const changed = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'set-background', patch: { imageBlur: 24 } } })
+    const command = changed.past[0]
+
+    expect(command).toMatchObject({ type: 'document-change', actionType: 'set-background' })
+    expect(command.undo).toEqual({ background: initialDocument.background })
+    expect(command.redo).toEqual({ background: changed.present.background })
+    expect(command.undo).not.toHaveProperty('layers')
+    expect(command.undo).not.toHaveProperty('canvasSize')
+  })
+
+  it('updates a transaction command while retaining its original undo state', () => {
+    const first = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'set-background', patch: { imageBlur: 12 } }, groupKey: 'background-blur' })
+    const second = historyReducer(first, { type: 'apply', action: { type: 'set-background', patch: { imageBlur: 32 } }, groupKey: 'background-blur' })
+    const undone = historyReducer(second, { type: 'undo' })
+    const redone = historyReducer(undone, { type: 'redo' })
+
+    expect(second.past).toHaveLength(1)
+    expect(undone.present.background.imageBlur).toBe(initialDocument.background.imageBlur)
+    expect(redone.present.background.imageBlur).toBe(32)
+  })
 })

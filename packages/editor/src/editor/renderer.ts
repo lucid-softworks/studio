@@ -1,8 +1,9 @@
 import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
 import { hasEnabledLayerEffects, normalizeLayerEffects } from './effects'
+import type { AssetMap } from './runtime-assets'
 import { flattenStackLayers, getStackChildren, layerIsLocked, layerIsVisible, type StackItem } from './stack'
-import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'

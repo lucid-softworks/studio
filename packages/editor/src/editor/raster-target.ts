@@ -1,6 +1,7 @@
 import { getLayerBounds, type LayerBounds } from './renderer'
 import { selectionAlphaAt } from './selection'
-import type { AssetMap, EditorDocument, Position, RasterLayer } from './types'
+import type { AssetMap } from './runtime-assets'
+import type { EditorDocument, Position, RasterLayer } from './types'
 
 export type RasterTarget = {
   layer: RasterLayer

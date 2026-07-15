@@ -1,4 +1,5 @@
 export type Position = { x: number; y: number }
+export const EDITOR_DOCUMENT_SCHEMA_VERSION = 2 as const
 export type BackgroundKind = 'gradient' | 'solid' | 'image' | 'transparent'
 export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
 export type ShapeKind = 'rectangle' | 'ellipse'
@@ -9,18 +10,6 @@ export type LayerEffects = {
   outerGlow: { enabled: boolean; color: string; opacity: number; size: number }
   colorOverlay: { enabled: boolean; color: string; opacity: number }
 }
-
-export type SourceImage = {
-  element: HTMLImageElement
-  name: string
-  blob?: Blob
-  surface?: HTMLCanvasElement
-  revision?: number
-  objectUrl?: string
-  isDemo?: boolean
-}
-
-export type AssetMap = Record<string, SourceImage>
 
 export type BaseLayer = {
   id: string
@@ -124,6 +113,7 @@ export type PatternSettings = {
 }
 
 export type EditorDocument = {
+  schemaVersion: typeof EDITOR_DOCUMENT_SCHEMA_VERSION
   canvasPreset: string
   canvasSize: { width: number; height: number }
   background: BackgroundSettings
@@ -200,10 +190,19 @@ export type DocumentAction =
   | { type: 'reset-document' }
 
 export type HistoryState = {
-  past: EditorDocument[]
+  past: DocumentHistoryCommand[]
   present: EditorDocument
-  future: EditorDocument[]
+  future: DocumentHistoryCommand[]
   groupKey: string | null
+}
+
+export type DocumentStatePatch = Partial<EditorDocument>
+
+export type DocumentHistoryCommand = {
+  type: 'document-change'
+  actionType: DocumentAction['type']
+  undo: DocumentStatePatch
+  redo: DocumentStatePatch
 }
 
 export type HistoryAction =

@@ -1,7 +1,8 @@
 import { initializeCanvas, readPsd, type Layer, type Psd } from 'ag-psd'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createId, createRasterLayer, initialDocument } from './presets'
-import type { AssetMap, BlendMode, EditorDocument, LayerGroup, RasterLayer } from './types'
+import type { AssetMap } from './runtime-assets'
+import type { BlendMode, EditorDocument, LayerGroup, RasterLayer } from './types'
 
 let initialized = false
 

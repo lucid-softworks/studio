@@ -1,6 +1,6 @@
 import { getCanvasPreset, initialDocument } from './presets'
 import { flattenStackLayers, getDescendantGroupIds, getGroupAncestors, getStackChildren } from './stack'
-import type { DocumentAction, EditorDocument, EditorLayer, HistoryAction, HistoryState } from './types'
+import type { DocumentAction, DocumentHistoryCommand, DocumentStatePatch, EditorDocument, EditorLayer, HistoryAction, HistoryState } from './types'
 
 type StackRef = { type: 'layer' | 'group'; id: string }
 
@@ -204,6 +204,36 @@ export const initialHistoryState: HistoryState = {
   groupKey: null,
 }
 
+const documentFields = [
+  'schemaVersion',
+  'canvasPreset',
+  'canvasSize',
+  'background',
+  'pattern',
+  'groups',
+  'layers',
+  'selectedLayerId',
+  'selectedLayerIds',
+  'selectedGroupId',
+] as const satisfies readonly (keyof EditorDocument)[]
+
+function documentPatch(from: EditorDocument, to: EditorDocument): DocumentStatePatch {
+  return Object.fromEntries(documentFields.filter((field) => from[field] !== to[field]).map((field) => [field, to[field]])) as DocumentStatePatch
+}
+
+function applyDocumentPatch(document: EditorDocument, patch: DocumentStatePatch): EditorDocument {
+  return { ...document, ...patch }
+}
+
+function historyCommand(before: EditorDocument, after: EditorDocument, actionType: DocumentAction['type']): DocumentHistoryCommand {
+  return {
+    type: 'document-change',
+    actionType,
+    undo: documentPatch(after, before),
+    redo: documentPatch(before, after),
+  }
+}
+
 export function historyReducer(state: HistoryState, action: HistoryAction): HistoryState {
   switch (action.type) {
     case 'apply': {
@@ -212,11 +242,15 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
       if (action.record === false) return { ...state, present }
 
       if (action.groupKey && action.groupKey === state.groupKey) {
-        return { ...state, present, future: [] }
+        const previousCommand = state.past.at(-1)
+        if (!previousCommand) return { ...state, present, future: [] }
+        const beforeGroup = applyDocumentPatch(state.present, previousCommand.undo)
+        const command = historyCommand(beforeGroup, present, previousCommand.actionType)
+        return { ...state, past: [...state.past.slice(0, -1), command], present, future: [] }
       }
 
       return {
-        past: [...state.past, state.present].slice(-60),
+        past: [...state.past, historyCommand(state.present, present, action.action.type)].slice(-60),
         present,
         future: [],
         groupKey: action.groupKey ?? null,
@@ -225,21 +259,21 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
     case 'end-group':
       return state.groupKey ? { ...state, groupKey: null } : state
     case 'undo': {
-      const previous = state.past.at(-1)
-      if (!previous) return state
+      const command = state.past.at(-1)
+      if (!command) return state
       return {
         past: state.past.slice(0, -1),
-        present: previous,
-        future: [state.present, ...state.future].slice(0, 60),
+        present: applyDocumentPatch(state.present, command.undo),
+        future: [command, ...state.future].slice(0, 60),
         groupKey: null,
       }
     }
     case 'redo': {
-      const next = state.future[0]
-      if (!next) return state
+      const command = state.future[0]
+      if (!command) return state
       return {
-        past: [...state.past, state.present].slice(-60),
-        present: next,
+        past: [...state.past, command].slice(-60),
+        present: applyDocumentPatch(state.present, command.redo),
         future: state.future.slice(1),
         groupKey: null,
       }

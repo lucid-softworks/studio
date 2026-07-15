@@ -2,7 +2,8 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObjec
 import { extractImageData, floodFillImageData, hexToRgba, type RasterEdit } from '../editor/raster'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
 import type { SelectionState } from '../editor/selection'
-import type { AssetMap, EditorDocument, Position } from '../editor/types'
+import type { AssetMap } from '../editor/runtime-assets'
+import type { EditorDocument, Position } from '../editor/types'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>

@@ -1,5 +1,6 @@
 import { renderComposition, type RenderCompositionOptions } from '../renderer'
-import type { AssetMap, EditorDocument } from '../types'
+import type { AssetMap } from '../runtime-assets'
+import type { EditorDocument } from '../types'
 
 export type CompositionRendererKind = 'canvas2d' | 'webgpu'
 

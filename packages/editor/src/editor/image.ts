@@ -1,4 +1,4 @@
-import type { SourceImage } from './types'
+import type { SourceImage } from './runtime-assets'
 
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const MAX_FILE_SIZE = 30 * 1024 * 1024
