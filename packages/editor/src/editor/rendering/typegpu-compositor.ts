@@ -1,7 +1,47 @@
-import { common, d, std, type TgpuRoot } from 'typegpu'
+import { common, d, std, tgpu, type TgpuRoot } from 'typegpu'
 import { typeGpuBlendModeCodes, type TypeGpuBlendMode } from './typegpu-blend-modes'
 
 type TypeGpuImageSource = HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | ImageBitmap | ImageData | OffscreenCanvas | VideoFrame
+
+const gpuLuminosity = tgpu.fn([d.vec3f], d.f32)((color) => {
+  'use gpu'
+  return std.dot(color, d.vec3f(0.3, 0.59, 0.11))
+})
+
+const gpuSaturation = tgpu.fn([d.vec3f], d.f32)((color) => {
+  'use gpu'
+  return std.sub(std.max(color.x, color.y, color.z), std.min(color.x, color.y, color.z))
+})
+
+const gpuClipColor = tgpu.fn([d.vec3f], d.vec3f)((color) => {
+  'use gpu'
+  const lightness = gpuLuminosity(color)
+  const minimum = std.min(color.x, color.y, color.z)
+  const maximum = std.max(color.x, color.y, color.z)
+  const low = std.add(lightness, std.div(
+    std.mul(std.sub(color, lightness), lightness),
+    std.max(std.sub(lightness, minimum), 0.00001),
+  ))
+  const lowClipped = std.select(color, low, minimum < 0)
+  const high = std.add(lightness, std.div(
+    std.mul(std.sub(lowClipped, lightness), std.sub(1, lightness)),
+    std.max(std.sub(maximum, lightness), 0.00001),
+  ))
+  return std.select(lowClipped, high, maximum > 1)
+})
+
+const gpuSetLuminosity = tgpu.fn([d.vec3f, d.f32], d.vec3f)((color, lightness) => {
+  'use gpu'
+  return gpuClipColor(std.add(color, std.sub(lightness, gpuLuminosity(color))))
+})
+
+const gpuSetSaturation = tgpu.fn([d.vec3f, d.f32], d.vec3f)((color, value) => {
+  'use gpu'
+  const minimum = std.min(color.x, color.y, color.z)
+  const range = std.sub(std.max(color.x, color.y, color.z), minimum)
+  const scaled = std.div(std.mul(std.sub(color, minimum), value), std.max(range, 0.00001))
+  return std.select(d.vec3f(0), scaled, range > 0)
+})
 
 export type TypeGpuFramePresenter = {
   present(source: TypeGpuImageSource): void
@@ -144,6 +184,10 @@ export function createTypeGpuLayerCompositor(
         blended = std.select(high, low, std.le(source, d.vec3f(0.5)))
       } else if (blendMode.$ === typeGpuBlendModeCodes.difference) blended = std.abs(std.sub(backdrop, source))
       else if (blendMode.$ === typeGpuBlendModeCodes.exclusion) blended = std.sub(std.add(backdrop, source), std.mul(2, std.mul(backdrop, source)))
+      else if (blendMode.$ === typeGpuBlendModeCodes.hue) blended = gpuSetLuminosity(gpuSetSaturation(source, gpuSaturation(backdrop)), gpuLuminosity(backdrop))
+      else if (blendMode.$ === typeGpuBlendModeCodes.saturation) blended = gpuSetLuminosity(gpuSetSaturation(backdrop, gpuSaturation(source)), gpuLuminosity(backdrop))
+      else if (blendMode.$ === typeGpuBlendModeCodes.color) blended = gpuSetLuminosity(source, gpuLuminosity(backdrop))
+      else if (blendMode.$ === typeGpuBlendModeCodes.luminosity) blended = gpuSetLuminosity(backdrop, gpuLuminosity(source))
 
       const sourceOnly = std.mul(std.mul(sourceAlpha, std.sub(1, backdropAlpha)), source)
       const blendedOverlap = std.mul(std.mul(sourceAlpha, backdropAlpha), blended)

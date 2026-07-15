@@ -136,11 +136,9 @@ describe('composition render plan', () => {
   })
 
   it('keeps unsupported composition features on the compatibility renderer', () => {
-    const adjusted = { ...createShapeLayer('rectangle', 0), id: 'adjusted', blendMode: 'hue' as const }
     const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 2 }
 
-    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjusted] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
   })
