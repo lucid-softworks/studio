@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { historyCommandLabel } from '../editor/history-labels'
+import { defaultGradients, type GradientPreset } from '../editor/gradients'
 import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
@@ -204,6 +205,43 @@ export function SwatchesPanel({ foregroundColor, backgroundColor, customSwatches
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio palette</h3><div className="grid grid-cols-5 gap-1.5">{defaultSwatches.map((color) => <button key={color} type="button" aria-label={`Set ${target} color to ${color}`} title={color.toUpperCase()} onClick={() => setActiveColor(color)} style={{ backgroundColor: color }} className={`aspect-square rounded-md border transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-violet-400 ${activeColor === color ? 'border-violet-300 ring-2 ring-violet-400/20' : color === '#ffffff' ? 'border-zinc-600' : 'border-white/10'}`} />)}</div></section>
       <section className="mt-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom swatches</h3><button type="button" onClick={() => onAddSwatch(activeColor)} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">+ Save current</button></div>{customSwatches.length ? <div className="grid grid-cols-5 gap-1.5">{customSwatches.map((color) => <div key={color} className="group relative aspect-square"><button type="button" aria-label={`Set ${target} color to custom swatch ${color}`} title={color.toUpperCase()} onClick={() => setActiveColor(color)} style={{ backgroundColor: color }} className={`size-full rounded-md border transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-violet-400 ${activeColor === color ? 'border-violet-300 ring-2 ring-violet-400/20' : 'border-white/10'}`} /><button type="button" aria-label={`Delete custom swatch ${color}`} onClick={() => onRemoveSwatch(color)} className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-zinc-900 text-[9px] text-zinc-500 opacity-0 shadow transition hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button></div>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save the active colour to build a local palette.</div>}</section>
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Swatches set the shared brush, fill, gradient, text, and shape colour.</p>
+    </div>
+  )
+}
+
+function GradientRow({ gradient, custom, onApply, onRemove }: { gradient: GradientPreset; custom?: boolean; onApply: () => void; onRemove?: () => void }) {
+  return (
+    <div className="group flex items-center gap-2 rounded-lg border border-white/[0.06] bg-black/15 p-1.5">
+      <button type="button" aria-label={`Use ${gradient.name} gradient`} onClick={onApply} className="min-w-0 flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-violet-400"><span style={{ backgroundImage: `linear-gradient(90deg, ${gradient.start}, ${gradient.end})` }} className="h-8 w-16 shrink-0 rounded border border-white/10" /><span className="min-w-0"><span className="block truncate text-[10px] font-medium text-zinc-400">{gradient.name}</span><span className="block truncate font-mono text-[8px] text-zinc-700 uppercase">{gradient.start} · {gradient.end}</span></span></button>
+      {custom && onRemove && <button type="button" aria-label={`Delete gradient ${gradient.name}`} onClick={onRemove} className="flex size-6 shrink-0 items-center justify-center rounded text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>}
+    </div>
+  )
+}
+
+export function GradientsPanel({ foregroundColor, backgroundColor, customGradients, onApplyGradient, onAddGradient, onRemoveGradient }: {
+  foregroundColor: string
+  backgroundColor: string
+  customGradients: GradientPreset[]
+  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end'>) => void
+  onAddGradient: (name: string, start: string, end: string) => void
+  onRemoveGradient: (id: string) => void
+}) {
+  const [name, setName] = useState('')
+  const current = { id: 'current', name: 'Current colours', start: foregroundColor, end: backgroundColor }
+  const saveCurrent = () => {
+    const nextName = name.trim()
+    if (!nextName) return
+    onAddGradient(nextName, foregroundColor, backgroundColor)
+    setName('')
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Gradients" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <section><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Active gradient</h3><button type="button" onClick={() => onApplyGradient({ start: backgroundColor, end: foregroundColor })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">Reverse</button></div><GradientRow gradient={current} onApply={() => onApplyGradient(current)} /></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio gradients</h3><div className="space-y-1.5">{defaultGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} onApply={() => onApplyGradient(gradient)} />)}</div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pair</h3><div className="flex gap-2"><input aria-label="Custom gradient name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder="Gradient name" className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!name.trim()} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom gradients</h3>{customGradients.length ? <div className="space-y-1.5">{customGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} custom onApply={() => onApplyGradient(gradient)} onRemove={() => onRemoveGradient(gradient.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Name and save the active colour pair to build a local library.</div>}</section>
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Choosing a preset sets both colours and activates the Gradient tool.</p>
     </div>
   )
 }

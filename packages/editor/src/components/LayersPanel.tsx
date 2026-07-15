@@ -1,5 +1,6 @@
-import { useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
+import type { GradientPreset } from '../editor/gradients'
 import { clampFloatingPanelPosition, type FloatingPanelPosition, type UtilityPanelId } from '../editor/panel-layout'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
@@ -8,7 +9,7 @@ import type { DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLaye
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
-import { HistogramPanel, HistoryPanel, InfoPanel, NavigatorPanel, SwatchesPanel } from './UtilityPanels'
+import { GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, NavigatorPanel, SwatchesPanel } from './UtilityPanels'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -52,11 +53,15 @@ type LayersPanelProps = {
   onBackgroundColorChange: (color: string) => void
   onAddSwatch: (color: string) => void
   onRemoveSwatch: (color: string) => void
+  customGradients: GradientPreset[]
+  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end'>) => void
+  onAddGradient: (name: string, start: string, end: string) => void
+  onRemoveGradient: (id: string) => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
 type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
-const utilityTabs: Array<{ id: UtilityPanelId; label: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav' }, { id: 'histogram', label: 'Hist' }, { id: 'swatches', label: 'Swat' }, { id: 'info', label: 'Info' }]
+const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'info', label: 'Info' }]
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -69,12 +74,15 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const activeTabRef = useRef<HTMLButtonElement>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
   const visibleFloatingPosition = typeof window === 'undefined' ? floatingPosition : clampFloatingPanelPosition(floatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
+
+  useEffect(() => activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), [activePanel])
 
   const startFloatingDrag = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -199,8 +207,8 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       <PanelResizeHandle dockSide={floating ? 'left' : dockSide} width={width} onChange={onWidthChange} label="Utility panel stack" />
       <div draggable={!floating} onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-10 shrink-0 cursor-grab items-center border-b border-white/[0.07] px-1.5 active:cursor-grabbing">
         {floating && <button type="button" aria-label="Move floating panels" title="Drag floating panels" onPointerDown={startFloatingDrag} className="mr-1 flex size-7 shrink-0 touch-none items-center justify-center rounded text-[10px] tracking-[-2px] text-zinc-700 hover:bg-white/[0.05] hover:text-zinc-300">⠿</button>}
-        <div role="tablist" aria-label="Utility panels" className="flex min-w-0 flex-1 items-center">
-          {panelOrder.map((panelId) => utilityTabs.find((tab) => tab.id === panelId)).filter((tab) => tab !== undefined).map((tab) => <button key={tab.id} type="button" role="tab" draggable aria-selected={activePanel === tab.id} onClick={() => onActivePanelChange(tab.id)} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-utility-tab', tab.id) }} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-utility-tab')) { event.preventDefault(); event.stopPropagation() } }} onDrop={(event) => { const moved = event.dataTransfer.getData('application/x-studio-utility-tab') as UtilityPanelId; if (moved) onPanelOrderChange(moved, tab.id); event.preventDefault(); event.stopPropagation() }} className={`min-w-0 flex-1 cursor-grab rounded-md px-1 py-2 text-[9px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 active:cursor-grabbing ${activePanel === tab.id ? 'bg-white/[0.07] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab.label}</button>)}
+        <div role="tablist" aria-label="Utility panels" className="flex min-w-0 flex-1 items-center overflow-x-auto">
+          {panelOrder.map((panelId) => utilityTabs.find((tab) => tab.id === panelId)).filter((tab) => tab !== undefined).map((tab) => <button ref={activePanel === tab.id ? activeTabRef : undefined} key={tab.id} type="button" role="tab" title={tab.title} draggable aria-selected={activePanel === tab.id} onClick={() => onActivePanelChange(tab.id)} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-utility-tab', tab.id) }} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-utility-tab')) { event.preventDefault(); event.stopPropagation() } }} onDrop={(event) => { const moved = event.dataTransfer.getData('application/x-studio-utility-tab') as UtilityPanelId; if (moved) onPanelOrderChange(moved, tab.id); event.preventDefault(); event.stopPropagation() }} className={`min-w-10 flex-1 cursor-grab rounded-md px-1 py-2 text-[9px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 active:cursor-grabbing ${activePanel === tab.id ? 'bg-white/[0.07] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab.label}</button>)}
         </div>
         <button type="button" aria-label={floating ? 'Dock utility panels' : 'Float utility panels'} title={floating ? 'Dock panels' : 'Float panels'} onClick={onToggleFloating} className="flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">{floating ? '⊣' : '↗'}</button>
         {!floating && <PanelCollapseButton dockSide={dockSide} label="Panels" onClick={onToggleCollapsed} />}
@@ -224,6 +232,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'navigator' && <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />}
       {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} renderRevision={renderRevision} />}
       {activePanel === 'swatches' && <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />}
+      {activePanel === 'gradients' && <GradientsPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customGradients={customGradients} onApplyGradient={onApplyGradient} onAddGradient={onAddGradient} onRemoveGradient={onRemoveGradient} />}
       {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} />}
       </>}
     </aside>
