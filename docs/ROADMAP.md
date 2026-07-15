@@ -74,7 +74,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Import brightness/contrast and global hue/saturation adjustment layers as editable adjustments
   - [x] Preserve and render primary inner shadow/glow, bevel, satin, gradient/pattern overlay, and stroke styles
   - [x] Preserve every PSD adjustment descriptor as typed Studio data and render supported adjustments locally
-  - [ ] Preserve multiple style instances and custom contours, render noise gradients, and evaluate Color Lookup LUT previews
+  - [x] Evaluate embedded `.cube` Color Lookup LUT previews entirely on-device
+  - [ ] Preserve multiple style instances and custom contours, render noise gradients, and preview remaining Color Lookup encodings
 - [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [x] Write layered PSD files from Studio documents

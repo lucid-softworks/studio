@@ -286,6 +286,15 @@ function hasUnsupportedAdvancedBlending(layer: Layer) {
   return Boolean(layer.knockout)
 }
 
+function canPreviewColorLookup(adjustment: Extract<NonNullable<Layer['adjustment']>, { type: 'color lookup' }>) {
+  if (adjustment.lutFormat !== 'cube' || !adjustment.lut3DFileData?.length) return false
+  try {
+    return new TextDecoder().decode(adjustment.lut3DFileData).includes('LUT_3D_SIZE')
+  } catch {
+    return false
+  }
+}
+
 function importableRasterMask(layer: Layer) {
   const mask = layer.realMask ?? layer.mask
   return Boolean(mask && !mask.disabled && (mask.imageData || mask.canvas))
@@ -720,7 +729,7 @@ export function psdImportWarnings(psd: Psd) {
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
-      if (layer.adjustment?.type === 'color lookup') add('color-lookup-preview', 'Color Lookup data was preserved, but its LUT preview is not yet rendered', path)
+      if (layer.adjustment?.type === 'color lookup' && !canPreviewColorLookup(layer.adjustment)) add('color-lookup-preview', 'Color Lookup data was preserved, but this LUT encoding cannot yet be previewed', path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
       if (hasUnsupportedAdvancedBlending(layer)) add('advanced-blending', 'Knockout blending was not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {

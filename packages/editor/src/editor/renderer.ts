@@ -901,8 +901,62 @@ function gradientMapColor(value: number, adjustment: Extract<AdjustmentDescripto
   return leftColor.map((channel, index) => channel + (rightColor[index] - channel) * amount) as [number, number, number]
 }
 
+type CubeLut = { size: number; values: Array<[number, number, number]>; domainMin: [number, number, number]; domainMax: [number, number, number] }
+
+function parseCubeLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>): CubeLut | null {
+  if (adjustment.lutFormat !== 'cube' || !adjustment.lut3DFileData?.length) return null
+  let text: string
+  try {
+    text = new TextDecoder().decode(Uint8Array.from(adjustment.lut3DFileData))
+  } catch {
+    return null
+  }
+  let size = 0
+  let domainMin: [number, number, number] = [0, 0, 0]
+  let domainMax: [number, number, number] = [1, 1, 1]
+  const values: Array<[number, number, number]> = []
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#') || line.startsWith('TITLE')) continue
+    const parts = line.split(/\s+/)
+    if (parts[0] === 'LUT_3D_SIZE') size = Number(parts[1])
+    else if (parts[0] === 'DOMAIN_MIN') domainMin = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
+    else if (parts[0] === 'DOMAIN_MAX') domainMax = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
+    else if (parts.length >= 3 && parts.slice(0, 3).every((part) => Number.isFinite(Number(part)))) values.push([Number(parts[0]), Number(parts[1]), Number(parts[2])])
+  }
+  return size >= 2 && values.length >= size ** 3 ? { size, values, domainMin, domainMax } : null
+}
+
+function sampleCubeLut(lut: CubeLut, red: number, green: number, blue: number) {
+  const input = [red, green, blue].map((channel, index) => Math.max(0, Math.min(1, (channel / 255 - lut.domainMin[index]) / Math.max(0.000001, lut.domainMax[index] - lut.domainMin[index]))))
+  const scaled = input.map((value) => value * (lut.size - 1))
+  const low = scaled.map(Math.floor)
+  const high = low.map((value) => Math.min(lut.size - 1, value + 1))
+  const fraction = scaled.map((value, index) => value - low[index])
+  const at = (r: number, g: number, b: number) => lut.values[r + g * lut.size + b * lut.size * lut.size]
+  const output = [0, 1, 2].map((channel) => {
+    const c000 = at(low[0], low[1], low[2])[channel]
+    const c100 = at(high[0], low[1], low[2])[channel]
+    const c010 = at(low[0], high[1], low[2])[channel]
+    const c110 = at(high[0], high[1], low[2])[channel]
+    const c001 = at(low[0], low[1], high[2])[channel]
+    const c101 = at(high[0], low[1], high[2])[channel]
+    const c011 = at(low[0], high[1], high[2])[channel]
+    const c111 = at(high[0], high[1], high[2])[channel]
+    const x00 = c000 + (c100 - c000) * fraction[0]
+    const x10 = c010 + (c110 - c010) * fraction[0]
+    const x01 = c001 + (c101 - c001) * fraction[0]
+    const x11 = c011 + (c111 - c011) * fraction[0]
+    const y0 = x00 + (x10 - x00) * fraction[1]
+    const y1 = x01 + (x11 - x01) * fraction[1]
+    return (y0 + (y1 - y0) * fraction[2]) * 255
+  })
+  return output as [number, number, number]
+}
+
 function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescriptor) {
   const clampByte = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
+  const cubeLut = adjustment.type === 'color lookup' ? parseCubeLut(adjustment) : null
   for (let index = 0; index < pixels.data.length; index += 4) {
     let red = pixels.data[index]
     let green = pixels.data[index + 1]
@@ -988,9 +1042,11 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
         }
         break
       }
+      case 'color lookup':
+        if (cubeLut) [red, green, blue] = sampleCubeLut(cubeLut, red, green, blue)
+        break
       case 'brightness/contrast':
       case 'hue/saturation':
-      case 'color lookup':
         break
     }
     pixels.data[index] = clampByte(red)
