@@ -129,7 +129,6 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: LayerRenderNode[])
     }
     if (
       !isTypeGpuBlendMode(node.blendMode)
-      || node.clipBaseLayerId
       || node.filters
       || node.effects
     ) return false

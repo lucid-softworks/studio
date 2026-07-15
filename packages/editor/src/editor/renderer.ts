@@ -13,6 +13,7 @@ export type RenderCompositionOptions = { showSelection?: boolean }
 export type NativeLayerPass = {
   source: HTMLCanvasElement
   maskSource?: HTMLCanvasElement | HTMLImageElement
+  clipSource?: HTMLCanvasElement
   blendMode: TypeGpuBlendMode
 }
 export type NativeLayerPasses = { width: number; height: number; layers: NativeLayerPass[] }
@@ -639,6 +640,7 @@ export function renderNativeLayerPasses(
   resources.prune('canvas2d', new Set(Object.keys(assets)))
 
   const preparePass = (index: number) => {
+    while (passCanvases.length <= index) passCanvases.push(globalThis.document.createElement('canvas'))
     const canvas = passCanvases[index]
     if (canvas.width !== size.width) canvas.width = size.width
     if (canvas.height !== size.height) canvas.height = size.height
@@ -668,13 +670,32 @@ export function renderNativeLayerPasses(
   }
 
   const compositionLayers: NativeLayerPass[] = [{ source: passCanvases[0], blendMode: 'normal' }]
+  let clipPassIndex = passCount
   plan.layers.forEach((node, index) => {
     const maskSource = node.maskAssetId
       ? canvasImageResource(resources, assets, node.maskAssetId)?.source
       : undefined
+    let clipSource: HTMLCanvasElement | undefined
+    const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
+    if (clippingBase && clippingBase.type !== 'adjustment') {
+      const clipPass = preparePass(clipPassIndex)
+      clipPassIndex += 1
+      if (clipPass.context) {
+        drawMaskedLayer(
+          clipPass.context,
+          clipPass.canvas,
+          clippingBase,
+          clippingBase.maskAssetId ?? null,
+          assets,
+          resources,
+        )
+        clipSource = clipPass.canvas
+      }
+    }
     compositionLayers.push({
       source: passCanvases[index + 1],
       maskSource,
+      clipSource,
       blendMode: node.blendMode as TypeGpuBlendMode,
     })
   })

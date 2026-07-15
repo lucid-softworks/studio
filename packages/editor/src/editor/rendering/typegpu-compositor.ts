@@ -17,6 +17,7 @@ export type TypeGpuLayerCompositor = {
 export type TypeGpuCompositionLayer = {
   source: TypeGpuImageSource
   maskSource?: TypeGpuImageSource
+  clipSource?: TypeGpuImageSource
   blendMode: TypeGpuBlendMode
 }
 
@@ -80,6 +81,11 @@ export function createTypeGpuLayerCompositor(
     format: 'rgba8unorm',
   }).$usage('sampled', 'render')
   const maskView = maskTexture.createView(d.texture2d(d.f32))
+  const clipTexture = root.createTexture({
+    size: [width, height],
+    format: 'rgba8unorm',
+  }).$usage('sampled', 'render')
+  const clipView = clipTexture.createView(d.texture2d(d.f32))
   const compositionTextures = [0, 1].map(() => root.createTexture({
     size: [width, height],
     format: 'rgba8unorm',
@@ -88,6 +94,7 @@ export function createTypeGpuLayerCompositor(
   const compositionRenderViews = compositionTextures.map((texture) => texture.createView('render'))
   const blendMode = root.createUniform(d.u32, typeGpuBlendModeCodes.normal)
   const hasMask = root.createUniform(d.u32, 0)
+  const hasClip = root.createUniform(d.u32, 0)
   const sampler = root.createSampler({
     magFilter: 'linear',
     minFilter: 'linear',
@@ -100,10 +107,12 @@ export function createTypeGpuLayerCompositor(
       'use gpu'
       const sourceSample = std.textureSample(layerView.$, sampler.$, uv)
       const maskSample = std.textureSample(maskView.$, sampler.$, uv)
+      const clipSample = std.textureSample(clipView.$, sampler.$, uv)
       const backdropSample = std.textureSample(compositionSampleViews[backdropIndex].$, sampler.$, uv)
       const source = sourceSample.xyz
       const maskAlpha = std.select(1, maskSample.w, hasMask.$ === 1)
-      const sourceAlpha = std.mul(sourceSample.w, maskAlpha)
+      const clipAlpha = std.select(1, clipSample.w, hasClip.$ === 1)
+      const sourceAlpha = std.mul(sourceSample.w, std.mul(maskAlpha, clipAlpha))
       const backdropAlpha = backdropSample.w
       const backdrop = std.div(backdropSample.xyz, std.max(backdropAlpha, 0.00001))
       const one = d.vec3f(1)
@@ -162,7 +171,9 @@ export function createTypeGpuLayerCompositor(
         const outputIndex = 1 - backdropIndex
         layerTexture.write(layer.source)
         if (layer.maskSource) maskTexture.write(layer.maskSource)
+        if (layer.clipSource) clipTexture.write(layer.clipSource)
         hasMask.write(layer.maskSource ? 1 : 0)
+        hasClip.write(layer.clipSource ? 1 : 0)
         blendMode.write(typeGpuBlendModeCodes[layer.blendMode])
         blendPipelines[backdropIndex].withColorAttachment({
           view: compositionRenderViews[outputIndex],
@@ -175,9 +186,11 @@ export function createTypeGpuLayerCompositor(
     dispose() {
       layerTexture.destroy()
       maskTexture.destroy()
+      clipTexture.destroy()
       compositionTextures.forEach((texture) => texture.destroy())
       blendMode.buffer.destroy()
       hasMask.buffer.destroy()
+      hasClip.buffer.destroy()
     },
   }
 }

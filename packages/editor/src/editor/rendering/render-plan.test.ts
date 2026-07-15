@@ -152,6 +152,14 @@ describe('composition render plan', () => {
       .toMatchObject({ layerId: 'masked', maskAssetId: 'mask' })
   })
 
+  it('keeps clipping layers in the native composition plan', () => {
+    const base = { ...createShapeLayer('rectangle', 0), id: 'base', stackOrder: 0 }
+    const clipped = { ...createShapeLayer('ellipse', 1), id: 'clipped', clipToBelow: true, stackOrder: 1 }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [base, clipped] })?.layers[1])
+      .toMatchObject({ layerId: 'clipped', clipBaseLayerId: 'base' })
+  })
+
   it('keeps separable blend modes in the native composition plan', () => {
     const blendModes = Object.keys(typeGpuBlendModeCodes) as Array<keyof typeof typeGpuBlendModeCodes>
     const layers = blendModes.map((blendMode, index) => ({
