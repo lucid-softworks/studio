@@ -3,11 +3,12 @@ import { historyCommandLabel } from '../editor/history-labels'
 import { defaultGradients, type GradientPreset } from '../editor/gradients'
 import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
+import { defaultPatterns, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
 import { defaultSwatches } from '../editor/swatches'
-import type { DocumentHistoryCommand, EditorDocument } from '../editor/types'
+import type { DocumentHistoryCommand, EditorDocument, PatternSettings } from '../editor/types'
 
 export function HistoryPanel({ past, future, rasterUndoDepth, onJump }: {
   past: DocumentHistoryCommand[]
@@ -242,6 +243,66 @@ export function GradientsPanel({ foregroundColor, backgroundColor, customGradien
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pair</h3><div className="flex gap-2"><input aria-label="Custom gradient name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder="Gradient name" className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!name.trim()} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom gradients</h3>{customGradients.length ? <div className="space-y-1.5">{customGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} custom onApply={() => onApplyGradient(gradient)} onRemove={() => onRemoveGradient(gradient.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Name and save the active colour pair to build a local library.</div>}</section>
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Choosing a preset sets both colours and activates the Gradient tool.</p>
+    </div>
+  )
+}
+
+function PatternPreview({ pattern }: { pattern: Pick<PatternSettings, 'kind' | 'color' | 'opacity' | 'size'> }) {
+  const spacing = Math.max(8, Math.min(20, Math.round(pattern.size / 4)))
+  const lines = Array.from({ length: Math.ceil(72 / spacing) + 1 }, (_, index) => index * spacing)
+  return (
+    <svg viewBox="0 0 72 44" aria-hidden="true" className="h-11 w-full rounded-md bg-[repeating-conic-gradient(#202024_0_25%,#18181b_0_50%)_50%/10px_10px]">
+      <g fill="none" stroke={pattern.color} strokeOpacity={pattern.opacity / 100}>
+        {pattern.kind === 'grid' && <>{lines.map((position) => <path key={`v${position}`} d={`M${position} 0V44`} />)}{lines.map((position) => <path key={`h${position}`} d={`M0 ${position}H72`} />)}</>}
+        {pattern.kind === 'waves' && [-spacing, 0, spacing, spacing * 2, spacing * 3, spacing * 4].map((position) => <path key={position} d={`M-8 ${position} Q10 ${position - spacing / 2} 28 ${position} T64 ${position} T100 ${position}`} />)}
+      </g>
+      {pattern.kind === 'dots' && <g fill={pattern.color} fillOpacity={pattern.opacity / 100}>{lines.flatMap((x) => lines.map((y) => <circle key={`${x}:${y}`} cx={x} cy={y} r="1.4" />))}</g>}
+    </svg>
+  )
+}
+
+function PatternRow({ pattern, custom, active, onApply, onRemove }: { pattern: PatternPreset; custom?: boolean; active: boolean; onApply: () => void; onRemove?: () => void }) {
+  return (
+    <div className={`group relative rounded-lg border p-1.5 transition ${active ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}>
+      <button type="button" aria-label={`Use ${pattern.name} pattern`} aria-pressed={active} onClick={onApply} className="w-full text-left focus-visible:outline-2 focus-visible:outline-violet-400"><PatternPreview pattern={pattern} /><span className="mt-1.5 block truncate px-0.5 text-[9px] font-medium text-zinc-400">{pattern.name}</span><span className="block px-0.5 font-mono text-[8px] text-zinc-700">{pattern.kind} · {pattern.size}px</span></button>
+      {custom && onRemove && <button type="button" aria-label={`Delete pattern ${pattern.name}`} onClick={onRemove} className="absolute top-2 right-2 flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-500 opacity-0 shadow transition hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>}
+    </div>
+  )
+}
+
+export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPattern, onRemovePattern }: {
+  pattern: PatternSettings
+  customPatterns: PatternPreset[]
+  onApplyPattern: (pattern: PatternSettings) => void
+  onAddPattern: (name: string, pattern: PatternSettings) => void
+  onRemovePattern: (id: string) => void
+}) {
+  const [name, setName] = useState('')
+  const matches = (preset: PatternPreset) => pattern.kind === preset.kind && pattern.color === preset.color && pattern.opacity === preset.opacity && pattern.size === preset.size
+  const applyPreset = (preset: PatternPreset) => onApplyPattern({ kind: preset.kind, color: preset.color, opacity: preset.opacity, size: preset.size })
+  const saveCurrent = () => {
+    const nextName = name.trim()
+    if (!nextName || pattern.kind === 'none') return
+    onAddPattern(nextName, pattern)
+    setName('')
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Patterns" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <section>
+        <div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Document pattern</h3><button type="button" disabled={pattern.kind === 'none'} onClick={() => onApplyPattern({ ...pattern, kind: 'none' })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Clear</button></div>
+        <div className="rounded-lg border border-white/[0.07] bg-black/20 p-2.5">
+          <PatternPreview pattern={pattern} />
+          <div className="mt-2 grid grid-cols-4 gap-1">{(['none', 'grid', 'dots', 'waves'] as PatternSettings['kind'][]).map((kind) => <button key={kind} type="button" aria-pressed={pattern.kind === kind} onClick={() => onApplyPattern({ ...pattern, kind })} className={`rounded-md py-1.5 text-[8px] font-semibold capitalize ${pattern.kind === kind ? 'bg-violet-400/15 text-violet-200' : 'bg-white/[0.03] text-zinc-600 hover:text-zinc-300'}`}>{kind}</button>)}</div>
+          <label className="mt-3 flex items-center gap-2 text-[9px] text-zinc-600"><input aria-label="Pattern color" type="color" value={pattern.color} onChange={(event) => onApplyPattern({ ...pattern, color: event.target.value })} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" /><span className="flex-1">Colour</span><span className="font-mono text-zinc-400 uppercase">{pattern.color}</span></label>
+          <label className="mt-3 block text-[9px] text-zinc-600"><span className="mb-1 flex justify-between"><span>Opacity</span><span className="font-mono text-zinc-400">{pattern.opacity}%</span></span><input aria-label="Pattern opacity" type="range" min="1" max="100" value={pattern.opacity} onChange={(event) => onApplyPattern({ ...pattern, opacity: Number(event.target.value) })} className="w-full accent-violet-400" /></label>
+          <label className="mt-3 block text-[9px] text-zinc-600"><span className="mb-1 flex justify-between"><span>Spacing</span><span className="font-mono text-zinc-400">{pattern.size}px</span></span><input aria-label="Pattern spacing" type="range" min="12" max="160" value={pattern.size} onChange={(event) => onApplyPattern({ ...pattern, size: Number(event.target.value) })} className="w-full accent-violet-400" /></label>
+        </div>
+      </section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio patterns</h3><div className="grid grid-cols-2 gap-2">{defaultPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} active={matches(preset)} onApply={() => applyPreset(preset)} />)}</div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pattern</h3><div className="flex gap-2"><input aria-label="Custom pattern name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder={pattern.kind === 'none' ? 'Choose a pattern first' : 'Pattern name'} disabled={pattern.kind === 'none'} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40 disabled:text-zinc-700" /><button type="button" disabled={!name.trim() || pattern.kind === 'none'} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom patterns</h3>{customPatterns.length ? <div className="grid grid-cols-2 gap-2">{customPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} custom active={matches(preset)} onApply={() => applyPreset(preset)} onRemove={() => onRemovePattern(preset.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save the active procedural pattern to build a local library.</div>}</section>
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Pattern changes are stored in the document and can be undone from History.</p>
     </div>
   )
 }

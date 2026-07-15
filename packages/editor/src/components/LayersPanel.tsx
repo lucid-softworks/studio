@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
 import type { GradientPreset } from '../editor/gradients'
+import type { PatternPreset } from '../editor/patterns'
 import { clampFloatingPanelPosition, type FloatingPanelPosition, type UtilityPanelId } from '../editor/panel-layout'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
-import type { DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLayer, LayerGroup } from '../editor/types'
+import type { DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLayer, LayerGroup, PatternSettings } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
-import { GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, NavigatorPanel, SwatchesPanel } from './UtilityPanels'
+import { GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, NavigatorPanel, PatternsPanel, SwatchesPanel } from './UtilityPanels'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -57,11 +58,15 @@ type LayersPanelProps = {
   onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end'>) => void
   onAddGradient: (name: string, start: string, end: string) => void
   onRemoveGradient: (id: string) => void
+  customPatterns: PatternPreset[]
+  onApplyPattern: (pattern: PatternSettings) => void
+  onAddPattern: (name: string, pattern: PatternSettings) => void
+  onRemovePattern: (id: string) => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
 type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
-const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'info', label: 'Info' }]
+const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'patterns', label: 'Patt', title: 'Patterns' }, { id: 'info', label: 'Info' }]
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -74,7 +79,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
@@ -233,6 +238,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} renderRevision={renderRevision} />}
       {activePanel === 'swatches' && <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />}
       {activePanel === 'gradients' && <GradientsPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customGradients={customGradients} onApplyGradient={onApplyGradient} onAddGradient={onAddGradient} onRemoveGradient={onRemoveGradient} />}
+      {activePanel === 'patterns' && <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} />}
       {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} />}
       </>}
     </aside>
