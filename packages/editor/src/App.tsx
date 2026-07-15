@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { CanvasStage } from './components/CanvasStage'
 import { downloadBlob } from './editor/download'
-import { DownloadIcon, RedoIcon, UndoIcon, UploadIcon } from './components/Icons'
 import { Inspector } from './components/Inspector'
 import { LayersPanel } from './components/LayersPanel'
+import { MenuBar } from './components/MenuBar'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
@@ -26,7 +26,6 @@ function App({ onExit }: AppProps) {
   const [assets, setAssets] = useState<AssetMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('png')
   const [notice, setNotice] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [isProjectSaving, setIsProjectSaving] = useState(false)
@@ -355,20 +354,20 @@ function App({ onExit }: AppProps) {
     })
   }
 
-  const exportImage = () => {
+  const exportImage = (format: ExportFormat) => {
     setIsExporting(true)
     const exportCanvas = window.document.createElement('canvas')
     renderComposition(exportCanvas, { ...document, selectedLayerId: null }, assets)
-    const mime = `image/${exportFormat}`
+    const mime = `image/${format}`
     exportCanvas.toBlob((blob) => {
       if (!blob) {
-        setNotice(`The ${exportFormat.toUpperCase()} could not be created.`)
+        setNotice(`The ${format.toUpperCase()} could not be created.`)
         setIsExporting(false)
         return
       }
-      downloadBlob(blob, `studio-composition.${exportFormat === 'jpeg' ? 'jpg' : exportFormat}`)
+      downloadBlob(blob, `studio-composition.${format === 'jpeg' ? 'jpg' : format}`)
       setIsExporting(false)
-    }, mime, exportFormat === 'png' ? undefined : 0.92)
+    }, mime, format === 'png' ? undefined : 0.92)
   }
 
   const saveProject = async () => {
@@ -449,12 +448,24 @@ function App({ onExit }: AppProps) {
     }
   }
 
+  const newDocument = () => {
+    for (const asset of Object.values(assetsRef.current)) if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl)
+    setAssets({})
+    rasterUndoRef.current = []
+    rasterRedoRef.current = []
+    bumpRasterHistory()
+    historyDispatch({ type: 'replace', document: structuredClone(initialDocument) })
+    setEditingMaskLayerId(null)
+    resetSelection()
+    setNotice(null)
+  }
+
   const backgroundName = document.background.imageAssetId ? assets[document.background.imageAssetId]?.name : undefined
 
   return (
     <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
       <header className="flex h-[65px] items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-3 sm:px-5">
-        <div className="flex items-center gap-2.5">
+        <div className="flex h-full items-center gap-2.5">
           <button type="button" title={onExit ? 'Back to Studio home' : undefined} onClick={onExit} className={`flex items-center gap-2.5 rounded-lg text-left ${onExit ? 'focus-visible:outline-2 focus-visible:outline-violet-400' : 'cursor-default'}`}>
             <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg bg-violet-500 shadow-[0_0_24px_rgba(139,92,246,0.25)]">
               <span className="absolute -top-3 -left-2 size-7 rounded-full bg-fuchsia-400/80 blur-[5px]" />
@@ -466,28 +477,22 @@ function App({ onExit }: AppProps) {
               <span className="hidden text-[10px] font-medium tracking-wide text-zinc-600 uppercase md:inline">Composition editor</span>
             </span>
           </button>
-          <div className="ml-1 hidden items-center gap-0.5 border-l border-white/[0.07] pl-2 sm:flex">
-            <button type="button" disabled={history.past.length === 0 && rasterUndoRef.current.length === 0} aria-label="Undo" title="Undo (⌘Z)" onClick={performUndo} className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-25"><UndoIcon /></button>
-            <button type="button" disabled={history.future.length === 0 && rasterRedoRef.current.length === 0} aria-label="Redo" title="Redo (⇧⌘Z)" onClick={performRedo} className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-25"><RedoIcon /></button>
-          </div>
+          <MenuBar
+            onNew={newDocument}
+            onOpen={() => projectInputRef.current?.click()}
+            onSave={() => void saveProject()}
+            onAddImage={() => imageInputRef.current?.click()}
+            onExport={exportImage}
+            onUndo={performUndo}
+            onRedo={performRedo}
+            canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
+            canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
+            saving={isProjectSaving}
+            exporting={isExporting}
+          />
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="hidden text-[9px] font-medium text-zinc-700 xl:inline">{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span>
-          <button type="button" aria-label="Open file" title="Open image, PSD, or Studio project" onClick={() => projectInputRef.current?.click()} className="flex h-9 min-w-8 items-center justify-center rounded-lg px-1.5 text-[10px] font-medium text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 sm:px-2.5 sm:text-xs"><span className="sm:hidden">O</span><span className="hidden sm:inline">Open</span></button>
-          <button type="button" aria-label="Save project" title="Save Studio project" disabled={isProjectSaving} onClick={() => void saveProject()} className="flex h-9 min-w-8 items-center justify-center rounded-lg px-1.5 text-[10px] font-medium text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 disabled:opacity-40 sm:px-2.5 sm:text-xs"><span className="sm:hidden">S</span><span className="hidden sm:inline">{isProjectSaving ? 'Saving…' : 'Save'}</span></button>
-          <button type="button" aria-label="Add image" onClick={() => imageInputRef.current?.click()} className="flex h-9 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.04] px-3 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-violet-400">
-            <UploadIcon /><span className="hidden sm:inline">Add image</span>
-          </button>
-          <div className="flex h-9 overflow-hidden rounded-lg bg-zinc-100 text-zinc-950 shadow-sm">
-            <button type="button" disabled={isExporting} onClick={exportImage} className="flex items-center gap-2 px-3 text-xs font-semibold transition hover:bg-white disabled:opacity-40">
-              <DownloadIcon />{isExporting ? 'Exporting…' : 'Export'}
-            </button>
-            <select aria-label="Export format" value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ExportFormat)} className="border-l border-zinc-300 bg-transparent px-1.5 text-[10px] font-bold outline-none">
-              <option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WEBP</option>
-            </select>
-          </div>
-        </div>
+        <div className="hidden items-center gap-2 text-[9px] font-medium text-zinc-700 sm:flex"><span className={`size-1.5 rounded-full ${saveStatus === 'saving' ? 'bg-amber-400' : saveStatus === 'saved' ? 'bg-emerald-400/70' : 'bg-zinc-700'}`} /><span>{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span></div>
       </header>
 
       <main className="flex flex-col lg:flex-row">
