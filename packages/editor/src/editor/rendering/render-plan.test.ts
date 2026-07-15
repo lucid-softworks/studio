@@ -132,17 +132,26 @@ describe('composition render plan', () => {
       layers: [first, second],
     })
 
-    expect(plan?.layers.map((layer) => layer.layerId)).toEqual(['first', 'second'])
+    expect(plan?.layers.map((node) => node.kind === 'group' ? node.groupId : node.layerId)).toEqual(['first', 'second'])
   })
 
-  it('keeps unsupported composition features on the compatibility renderer', () => {
+  it('keeps unsupported filters and blur adjustments on the compatibility renderer', () => {
     const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
-    const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 2 }
     const blurredAdjustment = { ...createAdjustmentLayer(0), id: 'blurred', blur: 4 }
+    const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
+    const filteredChild = { ...filtered, groupId: isolated.id }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
-    expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [blurredAdjustment] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [filteredChild] })).toBeNull()
+  })
+
+  it('keeps isolated groups as native texture composition passes', () => {
+    const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, blendMode: 'multiply' as const, stackOrder: 0 }
+    const child = { ...createShapeLayer('ellipse', 0), id: 'child', groupId: isolated.id, stackOrder: 0 }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [child] })?.layers[0])
+      .toMatchObject({ kind: 'group', groupId: 'isolated', isolated: true, opacity: 75, blendMode: 'multiply', children: [{ layerId: 'child' }] })
   })
 
   it('keeps color-only adjustments in the native composition plan', () => {

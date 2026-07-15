@@ -17,6 +17,7 @@ export type NativeTextureLayerPass = {
   maskSource?: HTMLCanvasElement | HTMLImageElement
   clipSource?: HTMLCanvasElement
   blendMode: TypeGpuBlendMode
+  opacity?: number
 }
 export type NativeAdjustmentPass = {
   kind: 'adjustment'
@@ -673,13 +674,15 @@ export function renderNativeLayerPasses(
 
   const layers = new Map(documentState.layers.map((layer) => [layer.id, layer]))
   plan.layers.forEach((node, index) => {
-    const layer = layers.get(node.layerId)
+    const layer = node.kind === 'group' ? undefined : layers.get(node.layerId)
     const signature = node.kind === 'layer' && layer
       ? layerPassSignature(layer, assets)
-      : `adjustment:${node.layerId}`
+      : node.kind === 'adjustment' ? `adjustment:${node.layerId}` : null
     const pass = preparePass(index + 1, signature)
     if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
       drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
+    } else if (pass.shouldRender && node.kind === 'group' && pass.context) {
+      drawRenderPlan(pass.context, pass.canvas, documentState, assets, resources, node.children)
     }
   })
 
@@ -692,6 +695,15 @@ export function renderNativeLayerPasses(
   const compositionLayers: NativeLayerPass[] = [{ kind: 'layer', source: passCanvases[0], blendMode: 'normal' }]
   let clipPassIndex = passCount
   plan.layers.forEach((node, index) => {
+    if (node.kind === 'group') {
+      compositionLayers.push({
+        kind: 'layer',
+        source: passCanvases[index + 1],
+        blendMode: node.blendMode as TypeGpuBlendMode,
+        opacity: node.opacity / 100,
+      })
+      return
+    }
     if (node.kind === 'adjustment') {
       compositionLayers.push({
         kind: 'adjustment',

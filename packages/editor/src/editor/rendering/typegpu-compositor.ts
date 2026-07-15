@@ -90,6 +90,7 @@ export type TypeGpuCompositionTextureLayer = {
   maskSource?: TypeGpuImageSource
   clipSource?: TypeGpuImageSource
   blendMode: TypeGpuBlendMode
+  opacity?: number
 }
 
 export type TypeGpuCompositionAdjustment = {
@@ -179,6 +180,7 @@ export function createTypeGpuLayerCompositor(
   const hasMask = root.createUniform(d.u32, 0)
   const hasClip = root.createUniform(d.u32, 0)
   const sourceKind = root.createUniform(d.u32, 0)
+  const sourceOpacity = root.createUniform(d.f32, 1)
   const adjustmentOpacity = root.createUniform(d.f32, 1)
   const adjustmentBrightness = root.createUniform(d.f32, 1)
   const adjustmentContrast = root.createUniform(d.f32, 1)
@@ -202,6 +204,7 @@ export function createTypeGpuLayerCompositor(
       const maskAlpha = std.select(1, maskSample.w, hasMask.$ === 1)
       const clipAlpha = std.select(1, clipSample.w, hasClip.$ === 1)
       let sourceAlpha = std.mul(sourceSample.w, std.mul(maskAlpha, clipAlpha))
+      sourceAlpha = std.mul(sourceAlpha, std.select(sourceOpacity.$, 1, sourceKind.$ === 1))
       const backdropAlpha = backdropSample.w
       const backdrop = std.div(backdropSample.xyz, std.max(backdropAlpha, 0.00001))
       const one = d.vec3f(1)
@@ -285,6 +288,7 @@ export function createTypeGpuLayerCompositor(
           adjustmentHue.write(layer.hue)
         } else {
           sourceKind.write(0)
+          sourceOpacity.write(layer.opacity ?? 1)
           layerTexture.write(layer.source)
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
@@ -309,6 +313,7 @@ export function createTypeGpuLayerCompositor(
       hasMask.buffer.destroy()
       hasClip.buffer.destroy()
       sourceKind.buffer.destroy()
+      sourceOpacity.buffer.destroy()
       adjustmentOpacity.buffer.destroy()
       adjustmentBrightness.buffer.destroy()
       adjustmentContrast.buffer.destroy()
