@@ -125,22 +125,16 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
         const source = sourceCanvasRef.current
         const worker = workerRef.current
         if (!source || !worker || source.width === 0 || source.height === 0) return
-        try {
-          const scale = Math.min(1, 256 / source.width, 256 / source.height)
-          const sample = globalThis.document.createElement('canvas')
-          sample.width = Math.max(1, Math.round(source.width * scale))
-          sample.height = Math.max(1, Math.round(source.height * scale))
-          const context = sample.getContext('2d', { willReadFrequently: true })
-          if (!context) throw new Error('Canvas sampling is unavailable')
-          context.drawImage(source, 0, 0, sample.width, sample.height)
-          const image = context.getImageData(0, 0, sample.width, sample.height)
-          const id = requestRef.current + 1
-          requestRef.current = id
-          setStatus('sampling')
-          worker.postMessage({ id, data: image.data.buffer }, [image.data.buffer])
-        } catch {
-          setStatus('error')
-        }
+        const id = requestRef.current + 1
+        requestRef.current = id
+        setStatus('sampling')
+        void createImageBitmap(source).then((bitmap) => {
+          if (id !== requestRef.current) {
+            bitmap.close()
+            return
+          }
+          worker.postMessage({ id, bitmap, maxSize: 256 }, [bitmap])
+        }).catch(() => setStatus('error'))
       })
     })
     return () => {
