@@ -5,6 +5,7 @@ import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
 import { defaultPatterns, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
+import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { SelectionState } from '../editor/selection'
 import { defaultSwatches } from '../editor/swatches'
@@ -303,6 +304,60 @@ export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPa
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pattern</h3><div className="flex gap-2"><input aria-label="Custom pattern name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder={pattern.kind === 'none' ? 'Choose a pattern first' : 'Pattern name'} disabled={pattern.kind === 'none'} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40 disabled:text-zinc-700" /><button type="button" disabled={!name.trim() || pattern.kind === 'none'} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom patterns</h3>{customPatterns.length ? <div className="grid grid-cols-2 gap-2">{customPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} custom active={matches(preset)} onApply={() => applyPreset(preset)} onRemove={() => onRemovePattern(preset.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save the active procedural pattern to build a local library.</div>}</section>
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Pattern changes are stored in the document and can be undone from History.</p>
+    </div>
+  )
+}
+
+function BrushThumbnail({ brush }: { brush: BrushPreset }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    if (brush.tip) {
+      const scale = Math.min(56 / brush.tip.width, 56 / brush.tip.height)
+      const width = brush.tip.width * scale
+      const height = brush.tip.height * scale
+      context.drawImage(brush.tip, (64 - width) / 2, (64 - height) / 2, width, height)
+    } else {
+      const gradient = context.createRadialGradient(32, 32, 8, 32, 32, 25)
+      gradient.addColorStop(0, 'rgba(255,255,255,1)')
+      gradient.addColorStop(0.72, 'rgba(255,255,255,0.95)')
+      gradient.addColorStop(1, 'rgba(255,255,255,0)')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, 64, 64)
+    }
+  }, [brush])
+  return <canvas ref={canvasRef} width="64" height="64" aria-hidden="true" className="size-12 rounded-md bg-[repeating-conic-gradient(#26262a_0_25%,#1d1d20_0_50%)_50%/8px_8px]" />
+}
+
+export function LibrariesPanel({ brushes, activeBrushId, fonts, activeFontFamily, canApplyFont, onBrushChange, onLoadBrush, onRemoveBrush, onApplyFont, onLoadFont }: {
+  brushes: BrushPreset[]
+  activeBrushId: string
+  fonts: CustomFontResource[]
+  activeFontFamily?: string
+  canApplyFont: boolean
+  onBrushChange: (id: string) => void
+  onLoadBrush: () => void
+  onRemoveBrush: (id: string) => void
+  onApplyFont: (family: string) => void
+  onLoadFont: () => void
+}) {
+  const [view, setView] = useState<'brushes' | 'fonts'>('brushes')
+  return (
+    <div role="tabpanel" aria-label="Libraries" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/25 p-1">{(['brushes', 'fonts'] as const).map((tab) => <button key={tab} type="button" aria-pressed={view === tab} onClick={() => setView(tab)} className={`rounded-md py-2 text-[9px] font-semibold capitalize transition ${view === tab ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab}</button>)}</div>
+      {view === 'brushes' && <>
+        <div className="mt-4 flex items-center justify-between"><div><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Brush library</h3><p className="mt-1 text-[9px] text-zinc-700">Stored locally in this browser</p></div><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">+ Import</button></div>
+        <div className="mt-3 grid grid-cols-2 gap-2">{brushes.map((brush) => <div key={brush.id} className={`group relative rounded-lg border p-2 transition ${activeBrushId === brush.id ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}><button type="button" aria-label={`Use ${brush.name} brush`} aria-pressed={activeBrushId === brush.id} onClick={() => onBrushChange(brush.id)} className="flex w-full flex-col items-center text-center focus-visible:outline-2 focus-visible:outline-violet-400"><BrushThumbnail brush={brush} /><span className="mt-2 block w-full truncate text-[9px] font-medium text-zinc-400">{brush.name}</span><span className="font-mono text-[8px] text-zinc-700">{brush.spacing}% spacing</span></button>{!brush.builtIn && <button type="button" aria-label={`Delete brush ${brush.name}`} onClick={() => onRemoveBrush(brush.id)} className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-500 opacity-0 shadow transition hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>}</div>)}</div>
+        {brushes.length === 1 && <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Import a PNG, JPEG, WebP, or Studio brush preset to add a custom tip.</div>}
+      </>}
+      {view === 'fonts' && <>
+        <div className="mt-4 flex items-center justify-between"><div><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Font library</h3><p className="mt-1 text-[9px] text-zinc-700">TTF, OTF, WOFF, or WOFF2</p></div><button type="button" onClick={onLoadFont} className="rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">+ Import</button></div>
+        {fonts.length ? <div className="mt-3 space-y-2">{fonts.map((font) => <button key={font.id} type="button" aria-label={`Use ${font.name} font`} aria-pressed={activeFontFamily === font.family} disabled={!canApplyFont} onClick={() => onApplyFont(font.family)} className={`w-full rounded-lg border p-3 text-left transition focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-not-allowed disabled:opacity-45 ${activeFontFamily === font.family ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}><span style={{ fontFamily: font.family }} className="block truncate text-lg text-zinc-200">Aa Bb Cc</span><span className="mt-1 block truncate text-[9px] text-zinc-500">{font.name}</span></button>)}</div> : <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Import a font to keep it available locally across editing sessions.</div>}
+        <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">{canApplyFont ? 'Choose a font to apply it to the selected text layer.' : 'Select a text layer to apply a library font.'}</p>
+      </>}
     </div>
   )
 }

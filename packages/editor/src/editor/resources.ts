@@ -168,3 +168,7 @@ export async function loadBrushLibrary(): Promise<BrushPreset[]> {
   }))
   return brushes.filter((brush): brush is BrushPreset => brush !== null)
 }
+
+export async function removeBrush(id: string) {
+  await storeRequest(BRUSH_STORE, 'readwrite', (store) => store.delete(id))
+}

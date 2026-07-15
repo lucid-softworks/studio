@@ -136,6 +136,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Add text-on-path, vertical text, warp text, and editable text transforms
 - [ ] Preserve advanced text metadata through Studio and PSD documents
 - [ ] Add a persistent local font library with missing-font substitution controls
+  - [x] Persist imported web fonts locally and expose them through the Libraries panel and text controls
+  - [ ] Add missing-font detection, substitution mapping, and font-library removal controls
 
 ## M8 — painting and retouching
 
@@ -147,6 +149,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
 - [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
   - [x] Add persistent local custom-swatch, two-colour gradient, and procedural-pattern libraries connected to live editor state
+  - [x] Expose browser-persisted custom brush tips and fonts through the Libraries panel
   - [ ] Add tool-preset and expanded brush-preset libraries plus multi-stop gradients and bitmap pattern import/export
 - [ ] Add tablet tilt, twist, barrel button, and per-device pressure calibration
 
@@ -160,8 +163,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
   - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
-  - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, and Patterns panels
-  - [ ] Add Actions, Channels, Paths, and Libraries panels
+  - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
+  - [ ] Add Actions, Channels, and Paths panels
 - [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server
