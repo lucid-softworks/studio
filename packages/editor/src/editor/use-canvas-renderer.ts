@@ -6,11 +6,12 @@ export function useCanvasRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   document: EditorDocument,
   assets: AssetMap,
+  resourceRevision = 0,
 ) {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const frame = requestAnimationFrame(() => renderComposition(canvas, document, assets))
     return () => cancelAnimationFrame(frame)
-  }, [assets, canvasRef, document])
+  }, [assets, canvasRef, document, resourceRevision])
 }

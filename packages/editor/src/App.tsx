@@ -17,6 +17,7 @@ import type { RasterEdit } from './editor/raster'
 import type { AssetMap, EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
 import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
+import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -36,10 +37,16 @@ function App({ onExit }: AppProps) {
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
   const [tool, setTool] = useState<EditorTool>('move')
   const [zoom, setZoom] = useState(100)
+  const [customFonts, setCustomFonts] = useState<CustomFontResource[]>([])
+  const [customBrushes, setCustomBrushes] = useState<BrushPreset[]>([])
+  const [brushId, setBrushId] = useState(roundBrush.id)
+  const [resourceRevision, bumpResourceRevision] = useReducer((value: number) => value + 1, 0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const projectInputRef = useRef<HTMLInputElement>(null)
+  const fontInputRef = useRef<HTMLInputElement>(null)
+  const brushInputRef = useRef<HTMLInputElement>(null)
   const hydratedRef = useRef(false)
   const rasterUndoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
@@ -47,7 +54,43 @@ function App({ onExit }: AppProps) {
   const document = history.present
 
   assetsRef.current = assets
-  useCanvasRenderer(canvasRef, document, assets)
+  useCanvasRenderer(canvasRef, document, assets, resourceRevision)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([loadFontLibrary(), loadBrushLibrary()]).then(([fonts, brushes]) => {
+      if (cancelled) return
+      setCustomFonts(fonts)
+      setCustomBrushes(brushes)
+      bumpResourceRevision()
+    }).catch(() => {
+      if (!cancelled) setNotice('The local font and brush library could not be restored.')
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const loadFontFile = useCallback(async (file: File) => {
+    try {
+      const font = await importFont(file)
+      setCustomFonts((current) => [...current.filter((candidate) => candidate.id !== font.id), font])
+      bumpResourceRevision()
+      setNotice(`Loaded ${font.name}. Select it from a text layer’s font menu.`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That font could not be loaded.')
+    }
+  }, [])
+
+  const loadBrushFile = useCallback(async (file: File) => {
+    try {
+      const brush = await importBrush(file)
+      setCustomBrushes((current) => [...current.filter((candidate) => candidate.id !== brush.id), brush])
+      setBrushId(brush.id)
+      setTool('brush')
+      setNotice(`Loaded ${brush.name} and selected it for painting.`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That brush could not be loaded.')
+    }
+  }, [])
 
   const dispatch = useCallback<EditorDispatch>((action, options) => {
     if (rasterRedoRef.current.length) {
@@ -704,6 +747,8 @@ function App({ onExit }: AppProps) {
             onOpen={() => projectInputRef.current?.click()}
             onSave={() => void saveProject()}
             onAddImage={() => imageInputRef.current?.click()}
+            onLoadFont={() => fontInputRef.current?.click()}
+            onLoadBrush={() => brushInputRef.current?.click()}
             onExport={exportImage}
             onUndo={performUndo}
             onRedo={performRedo}
@@ -747,14 +792,16 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} />
-        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} />
+        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
       <input ref={backgroundInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
       <input ref={projectInputRef} type="file" className="sr-only" accept=".studio,.psd,image/png,image/jpeg,image/webp,application/json,application/x-studio+json,image/vnd.adobe.photoshop" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
+      <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
+      <input ref={brushInputRef} type="file" className="sr-only" accept=".studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
 
       {notice && (
         <div role="status" className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-red-300/15 bg-red-950/90 px-4 py-3 text-xs text-red-100 shadow-2xl backdrop-blur-md">

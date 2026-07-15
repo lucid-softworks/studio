@@ -16,6 +16,7 @@ import { RasterPaintOverlay } from './RasterPaintOverlay'
 import { SelectionOverlay } from './SelectionOverlay'
 import type { EditorTool } from './ToolRail'
 import { TransformOverlay } from './TransformOverlay'
+import type { BrushPreset } from '../editor/resources'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -42,6 +43,10 @@ type CanvasStageProps = {
   onAddText: (position: Position, color: string) => void
   onAddShape: (shape: ShapeKind, position: Position, fill: string) => void
   onCrop: (bounds: NonNullable<SelectionState['bounds']>) => void
+  brushes: BrushPreset[]
+  brushId: string
+  onBrushChange: (id: string) => void
+  onLoadBrush: () => void
 }
 
 const toolNames: Record<EditorTool, string> = {
@@ -121,7 +126,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   }
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop }: CanvasStageProps) {
+export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop, brushes, brushId, onBrushChange, onLoadBrush }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [brushSize, setBrushSize] = useState(48)
   const [brushColor, setBrushColor] = useState('#ff3b81')
@@ -141,6 +146,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'lasso' || tool === 'magic-wand'
   const paintTool = tool === 'brush' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
+  const brush = brushes.find((candidate) => candidate.id === brushId) ?? brushes[0]
   const retouchTool = tool === 'healing' || tool === 'clone-stamp'
   const measurementAngle = measurement ? Math.atan2(measurement.endY - measurement.startY, measurement.endX - measurement.startX) * 180 / Math.PI : 0
   const measurementLength = measurement ? Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY) : 0
@@ -303,6 +309,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         <div className="flex items-center gap-3">
           {(paintTool || retouchTool) && (
             <div className="hidden items-center gap-2 md:flex">
+              {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => onBrushChange(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button></>}
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
               {tool === 'brush' && <input aria-label="Brush color" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
@@ -380,7 +387,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
             <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
-            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : 100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={brushColor} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : 100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={brushColor} secondaryColor={secondaryColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move' || tool === 'object-select'} />

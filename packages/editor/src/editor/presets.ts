@@ -87,6 +87,7 @@ export function createTextLayer(index: number): TextLayer {
     type: 'text',
     text: 'Make something beautiful',
     color: '#ffffff',
+    fontFamily: 'Inter',
     fontSize: 72,
     fontWeight: 700,
     textAlign: 'center',

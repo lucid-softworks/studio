@@ -40,7 +40,10 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     })(),
   }))
   const groupIds = new Set(groups.map((group) => group.id))
-  let layers = value.layers.map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer)
+  let layers = value.layers.map((layer) => {
+    const normalizedLayer = layer.type === 'text' && !layer.fontFamily ? { ...layer, fontFamily: 'Inter' } : layer
+    return normalizedLayer.groupId && !groupIds.has(normalizedLayer.groupId) ? { ...normalizedLayer, groupId: null } : normalizedLayer
+  })
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
   let normalized = { ...value, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {

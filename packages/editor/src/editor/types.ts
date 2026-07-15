@@ -77,6 +77,7 @@ export type TextLayer = BaseLayer & {
   type: 'text'
   text: string
   color: string
+  fontFamily?: string
   fontSize: number
   fontWeight: 400 | 600 | 700
   textAlign: 'left' | 'center' | 'right'
@@ -157,6 +158,7 @@ export type LayerPatch = Partial<{
   flipY: boolean
   text: string
   color: string
+  fontFamily: string
   fontSize: number
   fontWeight: 400 | 600 | 700
   textAlign: 'left' | 'center' | 'right'

@@ -3,12 +3,14 @@ import { getLayerBounds, type LayerBounds } from '../editor/renderer'
 import { extractImageData, type RasterEdit } from '../editor/raster'
 import { selectionAlphaAt, type SelectionState } from '../editor/selection'
 import type { AssetMap, EditorDocument, Position, RasterLayer } from '../editor/types'
+import type { BrushPreset } from '../editor/resources'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
   assets: AssetMap
   tool: 'brush' | 'eraser' | 'dodge' | 'burn'
+  brush: BrushPreset
   size: number
   color: string
   opacity: number
@@ -34,9 +36,10 @@ type Stroke = {
   selectionData: ImageData | null
 }
 
-export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, color, opacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
+export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, opacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const strokeRef = useRef<Stroke | null>(null)
+  const tintedTipRef = useRef<{ brushId: string; color: string; surface: HTMLCanvasElement } | null>(null)
   const canvas = canvasRef.current
   const selectedRasterLayer = document.layers.find((candidate) => candidate.id === document.selectedLayerId && candidate.type === 'raster') as RasterLayer | undefined
   const maskSurface = maskAssetId ? assets[maskAssetId]?.surface : undefined
@@ -94,6 +97,37 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, co
     const strokeColor = tool === 'dodge' ? '#ffffff' : tool === 'burn' ? '#000000' : maskAssetId ? '#ffffff' : color
     context.strokeStyle = strokeColor
     context.fillStyle = strokeColor
+    if (brush.tip) {
+      let tip: HTMLCanvasElement = brush.tip
+      if (tool !== 'eraser') {
+        const cached = tintedTipRef.current
+        if (cached?.brushId === brush.id && cached.color === strokeColor) tip = cached.surface
+        else {
+          const tinted = globalThis.document.createElement('canvas')
+          tinted.width = brush.tip.width
+          tinted.height = brush.tip.height
+          const tintedContext = tinted.getContext('2d')
+          if (!tintedContext) { context.restore(); return }
+          tintedContext.drawImage(brush.tip, 0, 0)
+          tintedContext.globalCompositeOperation = 'source-in'
+          tintedContext.fillStyle = strokeColor
+          tintedContext.fillRect(0, 0, tinted.width, tinted.height)
+          tintedTipRef.current = { brushId: brush.id, color: strokeColor, surface: tinted }
+          tip = tinted
+        }
+      }
+      const distance = Math.hypot(to.x - from.x, to.y - from.y)
+      const spacing = Math.max(1, radius * 2 * brush.spacing / 100)
+      const steps = Math.max(1, Math.ceil(distance / spacing))
+      for (let step = 1; step <= steps; step += 1) {
+        const progress = distance === 0 ? 0 : step / steps
+        const x = from.x + (to.x - from.x) * progress
+        const y = from.y + (to.y - from.y) * progress
+        context.drawImage(tip, x - radius, y - radius, radius * 2, radius * 2)
+      }
+      context.restore()
+      return
+    }
     context.lineWidth = radius * 2
     context.lineCap = 'round'
     context.lineJoin = 'round'

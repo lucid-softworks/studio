@@ -8,6 +8,8 @@ type MenuBarProps = {
   onOpen: () => void
   onSave: () => void
   onAddImage: () => void
+  onLoadFont: () => void
+  onLoadBrush: () => void
   onExport: (format: ExportFormat) => void
   onUndo: () => void
   onRedo: () => void
@@ -106,6 +108,8 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem shortcut="⌘O" onSelect={() => select(props.onOpen)}>Open…</MenuItem>
         <Separator />
         <MenuItem onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
+        <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
+        <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
         <Separator />
         <MenuItem shortcut="⌘S" disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />

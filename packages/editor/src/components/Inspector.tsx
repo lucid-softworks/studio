@@ -5,6 +5,7 @@ import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
+import type { CustomFontResource } from '../editor/resources'
 
 type InspectorProps = {
   document: EditorDocument
@@ -12,6 +13,8 @@ type InspectorProps = {
   endHistoryGroup: () => void
   onBackgroundImage: () => void
   backgroundImageName?: string
+  customFonts: CustomFontResource[]
+  onLoadFont: () => void
 }
 
 const tabClass = (active: boolean) =>
@@ -40,7 +43,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -274,6 +277,17 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 <span className="mb-2 block text-[11px] font-medium text-zinc-500">Content</span>
                 <textarea className={`${fieldClass} min-h-24 resize-y leading-relaxed`} value={selected.text} onChange={(event) => updateLayer(selected, { text: event.target.value }, `text-${selected.id}`)} onBlur={endHistoryGroup} />
               </label>
+              <div className="mt-3 flex gap-2">
+                <select aria-label="Font family" value={selected.fontFamily ?? 'Inter'} onChange={(event) => updateLayer(selected, { fontFamily: event.target.value })} className={`${fieldClass} min-w-0 flex-1`}>
+                  <option value="Inter">Inter</option>
+                  <option value="Arial">Arial</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Courier New">Courier New</option>
+                  {customFonts.map((font) => <option key={font.id} value={font.family}>{font.name}</option>)}
+                </select>
+                <button type="button" onClick={onLoadFont} className="rounded-lg border border-white/[0.08] px-3 text-[10px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">Load…</button>
+              </div>
               <div className="mt-3 flex gap-2">
                 <label className="flex flex-1 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] text-zinc-500">
                   <input type="color" aria-label="Text color" value={selected.color} onChange={(event) => updateLayer(selected, { color: event.target.value }, `text-color-${selected.id}`)} onBlur={endHistoryGroup} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />

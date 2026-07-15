@@ -200,7 +200,8 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
 }
 
 function setTextStyle(context: CanvasRenderingContext2D, layer: TextLayer) {
-  context.font = `${layer.fontWeight} ${layer.fontSize}px Inter, system-ui, sans-serif`
+  const family = (layer.fontFamily || 'Inter').replace(/["\\]/g, '')
+  context.font = `${layer.fontWeight} ${layer.fontSize}px "${family}", Inter, system-ui, sans-serif`
   context.textBaseline = 'middle'
   context.textAlign = layer.textAlign
   ;(context as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${layer.letterSpacing}px`
