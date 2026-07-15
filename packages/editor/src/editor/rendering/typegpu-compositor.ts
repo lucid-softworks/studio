@@ -119,6 +119,9 @@ export type TypeGpuCompositionTextureLayer = {
     invert: number
     blur: number
   } | null
+  effects?: {
+    colorOverlay: { enabled: boolean; color: string; opacity: number }
+  } | null
 }
 
 export type TypeGpuCompositionAdjustment = {
@@ -224,6 +227,9 @@ export function createTypeGpuLayerCompositor(
   const filterGrayscale = root.createUniform(d.f32, 0)
   const filterSepia = root.createUniform(d.f32, 0)
   const filterInvert = root.createUniform(d.f32, 0)
+  const hasColorOverlay = root.createUniform(d.u32, 0)
+  const colorOverlayColor = root.createUniform(d.vec3f, d.vec3f(0))
+  const colorOverlayOpacity = root.createUniform(d.f32, 0)
   const adjustmentOpacity = root.createUniform(d.f32, 1)
   const adjustmentBrightness = root.createUniform(d.f32, 1)
   const adjustmentContrast = root.createUniform(d.f32, 1)
@@ -291,17 +297,20 @@ export function createTypeGpuLayerCompositor(
           adjustmentHue.$,
         )
         sourceAlpha = std.mul(adjustmentAlpha, adjustmentOpacity.$)
-      } else if (hasLayerFilters.$ === 1) {
-        source = gpuApplyLayerFilters(
-          source,
-          filterBrightness.$,
-          filterContrast.$,
-          filterSaturation.$,
-          filterHue.$,
-          filterGrayscale.$,
-          filterSepia.$,
-          filterInvert.$,
-        )
+      } else {
+        if (hasColorOverlay.$ === 1) source = std.mix(source, colorOverlayColor.$, colorOverlayOpacity.$)
+        if (hasLayerFilters.$ === 1) {
+          source = gpuApplyLayerFilters(
+            source,
+            filterBrightness.$,
+            filterContrast.$,
+            filterSaturation.$,
+            filterHue.$,
+            filterGrayscale.$,
+            filterSepia.$,
+            filterInvert.$,
+          )
+        }
       }
 
       let blended = source
@@ -364,6 +373,7 @@ export function createTypeGpuLayerCompositor(
         if (layer.kind === 'adjustment') {
           sourceKind.write(1)
           hasLayerFilters.write(0)
+          hasColorOverlay.write(0)
           hasMask.write(0)
           hasClip.write(0)
           adjustmentOpacity.write(layer.opacity)
@@ -390,6 +400,13 @@ export function createTypeGpuLayerCompositor(
             filterInvert.write(layer.filters.invert / 100)
           }
           blurRadius.write(layer.filters?.blur ?? 0)
+          const overlay = layer.effects?.colorOverlay
+          hasColorOverlay.write(overlay?.enabled ? 1 : 0)
+          if (overlay?.enabled) {
+            const color = Number.parseInt(overlay.color.slice(1), 16)
+            colorOverlayColor.write(d.vec3f(((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255))
+            colorOverlayOpacity.write(overlay.opacity / 100)
+          }
           layerTexture.write(layer.source)
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
@@ -428,6 +445,9 @@ export function createTypeGpuLayerCompositor(
       filterGrayscale.buffer.destroy()
       filterSepia.buffer.destroy()
       filterInvert.buffer.destroy()
+      hasColorOverlay.buffer.destroy()
+      colorOverlayColor.buffer.destroy()
+      colorOverlayOpacity.buffer.destroy()
       adjustmentOpacity.buffer.destroy()
       adjustmentBrightness.buffer.destroy()
       adjustmentContrast.buffer.destroy()

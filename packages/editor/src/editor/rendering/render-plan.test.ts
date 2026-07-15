@@ -136,12 +136,19 @@ describe('composition render plan', () => {
   })
 
   it('keeps layer effects on the compatibility renderer', () => {
-    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', effects: { ...defaultLayerEffects, colorOverlay: { ...defaultLayerEffects.colorOverlay, enabled: true } } }
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', effects: { ...defaultLayerEffects, dropShadow: { ...defaultLayerEffects.dropShadow, enabled: true } } }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
     const filteredChild = { ...filtered, groupId: isolated.id }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [filteredChild] })).toBeNull()
+  })
+
+  it('keeps color overlay effects in the native composition plan', () => {
+    const layer = { ...createShapeLayer('ellipse', 1), id: 'overlay', effects: { ...defaultLayerEffects, colorOverlay: { ...defaultLayerEffects.colorOverlay, enabled: true, color: '#ff3366', opacity: 72 } } }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [layer] })?.layers[0])
+      .toMatchObject({ kind: 'layer', layerId: 'overlay', effects: { colorOverlay: { enabled: true, color: '#ff3366', opacity: 72 } } })
   })
 
   it('keeps color layer filters in the native composition plan', () => {

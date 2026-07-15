@@ -120,6 +120,10 @@ export function buildCompositionRenderPlan(document: EditorDocument): Compositio
   }
 }
 
+function hasUnsupportedNativeEffects(effects: LayerEffects | null) {
+  return Boolean(effects?.dropShadow.enabled || effects?.outerGlow.enabled)
+}
+
 function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderNode | AdjustmentRenderNode | GroupRenderNode>): boolean {
   for (const node of nodes) {
     if (node.kind === 'group') {
@@ -138,7 +142,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
     }
     if (
       !isTypeGpuBlendMode(node.blendMode)
-      || node.effects
+      || hasUnsupportedNativeEffects(node.effects)
     ) return false
     layers.push(node)
   }

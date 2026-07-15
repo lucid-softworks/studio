@@ -19,6 +19,7 @@ export type NativeTextureLayerPass = {
   blendMode: TypeGpuBlendMode
   opacity?: number
   filters?: LayerFilters | null
+  effects?: LayerEffects | null
 }
 export type NativeAdjustmentPass = {
   kind: 'adjustment'
@@ -750,6 +751,7 @@ export function renderNativeLayerPasses(
       clipSource,
       blendMode: node.blendMode as TypeGpuBlendMode,
       filters: node.filters,
+      effects: node.effects,
     })
   })
   if (passCount > plan.layers.length + 1) {
