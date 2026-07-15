@@ -107,6 +107,55 @@ export function calculateEffectOffset(angle: number, distance: number, width: nu
   }
 }
 
+export const gpuCompositePixel = tgpu.fn(
+  [d.vec4f, d.vec3f, d.f32, d.u32],
+  d.vec4f,
+)((backdropSample, source, sourceAlpha, mode) => {
+  'use gpu'
+  const backdropAlpha = backdropSample.w
+  const backdrop = std.div(backdropSample.xyz, std.max(backdropAlpha, 0.00001))
+  const one = d.vec3f(1)
+  let blended = source
+
+  if (mode === typeGpuBlendModeCodes.multiply) blended = std.mul(backdrop, source)
+  else if (mode === typeGpuBlendModeCodes.screen) blended = std.sub(std.add(backdrop, source), std.mul(backdrop, source))
+  else if (mode === typeGpuBlendModeCodes.overlay) {
+    const low = std.mul(2, std.mul(backdrop, source))
+    const high = std.sub(one, std.mul(2, std.mul(std.sub(one, backdrop), std.sub(one, source))))
+    blended = std.select(high, low, std.le(backdrop, d.vec3f(0.5)))
+  } else if (mode === typeGpuBlendModeCodes.darken) blended = std.min(backdrop, source)
+  else if (mode === typeGpuBlendModeCodes.lighten) blended = std.max(backdrop, source)
+  else if (mode === typeGpuBlendModeCodes['color-dodge']) {
+    const dodge = std.min(one, std.div(backdrop, std.max(std.sub(one, source), d.vec3f(0.00001))))
+    blended = std.select(dodge, one, std.ge(source, one))
+  } else if (mode === typeGpuBlendModeCodes['color-burn']) {
+    const burn = std.sub(one, std.min(one, std.div(std.sub(one, backdrop), std.max(source, d.vec3f(0.00001)))))
+    blended = std.select(burn, d.vec3f(0), std.le(source, d.vec3f(0)))
+  } else if (mode === typeGpuBlendModeCodes['hard-light']) {
+    const low = std.mul(2, std.mul(backdrop, source))
+    const high = std.sub(one, std.mul(2, std.mul(std.sub(one, backdrop), std.sub(one, source))))
+    blended = std.select(high, low, std.le(source, d.vec3f(0.5)))
+  } else if (mode === typeGpuBlendModeCodes['soft-light']) {
+    const low = std.sub(backdrop, std.mul(std.sub(one, std.mul(2, source)), std.mul(backdrop, std.sub(one, backdrop))))
+    const polynomial = std.mul(std.add(std.mul(std.sub(std.mul(16, backdrop), d.vec3f(12)), backdrop), d.vec3f(4)), backdrop)
+    const transfer = std.select(std.sqrt(backdrop), polynomial, std.le(backdrop, d.vec3f(0.25)))
+    const high = std.add(backdrop, std.mul(std.sub(std.mul(2, source), one), std.sub(transfer, backdrop)))
+    blended = std.select(high, low, std.le(source, d.vec3f(0.5)))
+  } else if (mode === typeGpuBlendModeCodes.difference) blended = std.abs(std.sub(backdrop, source))
+  else if (mode === typeGpuBlendModeCodes.exclusion) blended = std.sub(std.add(backdrop, source), std.mul(2, std.mul(backdrop, source)))
+  else if (mode === typeGpuBlendModeCodes.hue) blended = gpuSetLuminosity(gpuSetSaturation(source, gpuSaturation(backdrop)), gpuLuminosity(backdrop))
+  else if (mode === typeGpuBlendModeCodes.saturation) blended = gpuSetLuminosity(gpuSetSaturation(backdrop, gpuSaturation(source)), gpuLuminosity(backdrop))
+  else if (mode === typeGpuBlendModeCodes.color) blended = gpuSetLuminosity(source, gpuLuminosity(backdrop))
+  else if (mode === typeGpuBlendModeCodes.luminosity) blended = gpuSetLuminosity(backdrop, gpuLuminosity(source))
+
+  const sourceOnly = std.mul(std.mul(sourceAlpha, std.sub(1, backdropAlpha)), source)
+  const blendedOverlap = std.mul(std.mul(sourceAlpha, backdropAlpha), blended)
+  const backdropOnly = std.mul(std.sub(1, sourceAlpha), backdropSample.xyz)
+  const output = std.add(std.add(sourceOnly, blendedOverlap), backdropOnly)
+  const outputAlpha = std.add(sourceAlpha, std.mul(backdropAlpha, std.sub(1, sourceAlpha)))
+  return d.vec4f(output, outputAlpha)
+})
+
 export type TypeGpuFramePresenter = {
   present(source: TypeGpuImageSource): void
   dispose(): void
@@ -301,9 +350,6 @@ export function createTypeGpuLayerCompositor(
       const clipAlpha = std.select(1, clipSample.w, hasClip.$ === 1)
       let sourceAlpha = std.mul(sourceSample.w, std.mul(maskAlpha, clipAlpha))
       sourceAlpha = std.mul(sourceAlpha, std.select(sourceOpacity.$, 1, sourceKind.$ === 1))
-      const backdropAlpha = backdropSample.w
-      const backdrop = std.div(backdropSample.xyz, std.max(backdropAlpha, 0.00001))
-      const one = d.vec3f(1)
 
       if (sourceKind.$ === 1) {
         const blurredSample = std.textureSample(blurSampleViews[1].$, sampler.$, uv)
@@ -341,46 +387,7 @@ export function createTypeGpuLayerCompositor(
           )
         }
       }
-
-      let blended = source
-
-      if (blendMode.$ === typeGpuBlendModeCodes.multiply) blended = std.mul(backdrop, source)
-      else if (blendMode.$ === typeGpuBlendModeCodes.screen) blended = std.sub(std.add(backdrop, source), std.mul(backdrop, source))
-      else if (blendMode.$ === typeGpuBlendModeCodes.overlay) {
-        const low = std.mul(2, std.mul(backdrop, source))
-        const high = std.sub(one, std.mul(2, std.mul(std.sub(one, backdrop), std.sub(one, source))))
-        blended = std.select(high, low, std.le(backdrop, d.vec3f(0.5)))
-      } else if (blendMode.$ === typeGpuBlendModeCodes.darken) blended = std.min(backdrop, source)
-      else if (blendMode.$ === typeGpuBlendModeCodes.lighten) blended = std.max(backdrop, source)
-      else if (blendMode.$ === typeGpuBlendModeCodes['color-dodge']) {
-        const dodge = std.min(one, std.div(backdrop, std.max(std.sub(one, source), d.vec3f(0.00001))))
-        blended = std.select(dodge, one, std.ge(source, one))
-      } else if (blendMode.$ === typeGpuBlendModeCodes['color-burn']) {
-        const burn = std.sub(one, std.min(one, std.div(std.sub(one, backdrop), std.max(source, d.vec3f(0.00001)))))
-        blended = std.select(burn, d.vec3f(0), std.le(source, d.vec3f(0)))
-      } else if (blendMode.$ === typeGpuBlendModeCodes['hard-light']) {
-        const low = std.mul(2, std.mul(backdrop, source))
-        const high = std.sub(one, std.mul(2, std.mul(std.sub(one, backdrop), std.sub(one, source))))
-        blended = std.select(high, low, std.le(source, d.vec3f(0.5)))
-      } else if (blendMode.$ === typeGpuBlendModeCodes['soft-light']) {
-        const low = std.sub(backdrop, std.mul(std.sub(one, std.mul(2, source)), std.mul(backdrop, std.sub(one, backdrop))))
-        const polynomial = std.mul(std.add(std.mul(std.sub(std.mul(16, backdrop), d.vec3f(12)), backdrop), d.vec3f(4)), backdrop)
-        const transfer = std.select(std.sqrt(backdrop), polynomial, std.le(backdrop, d.vec3f(0.25)))
-        const high = std.add(backdrop, std.mul(std.sub(std.mul(2, source), one), std.sub(transfer, backdrop)))
-        blended = std.select(high, low, std.le(source, d.vec3f(0.5)))
-      } else if (blendMode.$ === typeGpuBlendModeCodes.difference) blended = std.abs(std.sub(backdrop, source))
-      else if (blendMode.$ === typeGpuBlendModeCodes.exclusion) blended = std.sub(std.add(backdrop, source), std.mul(2, std.mul(backdrop, source)))
-      else if (blendMode.$ === typeGpuBlendModeCodes.hue) blended = gpuSetLuminosity(gpuSetSaturation(source, gpuSaturation(backdrop)), gpuLuminosity(backdrop))
-      else if (blendMode.$ === typeGpuBlendModeCodes.saturation) blended = gpuSetLuminosity(gpuSetSaturation(backdrop, gpuSaturation(source)), gpuLuminosity(backdrop))
-      else if (blendMode.$ === typeGpuBlendModeCodes.color) blended = gpuSetLuminosity(source, gpuLuminosity(backdrop))
-      else if (blendMode.$ === typeGpuBlendModeCodes.luminosity) blended = gpuSetLuminosity(backdrop, gpuLuminosity(source))
-
-      const sourceOnly = std.mul(std.mul(sourceAlpha, std.sub(1, backdropAlpha)), source)
-      const blendedOverlap = std.mul(std.mul(sourceAlpha, backdropAlpha), blended)
-      const backdropOnly = std.mul(std.sub(1, sourceAlpha), backdropSample.xyz)
-      const output = std.add(std.add(sourceOnly, blendedOverlap), backdropOnly)
-      const outputAlpha = std.add(sourceAlpha, std.mul(backdropAlpha, std.sub(1, sourceAlpha)))
-      return d.vec4f(output, outputAlpha)
+      return gpuCompositePixel(backdropSample, source, sourceAlpha, blendMode.$)
     },
   })
   const blendPipelines = [createBlendPipeline(0), createBlendPipeline(1)]

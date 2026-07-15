@@ -34,7 +34,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Put composition rendering behind a backend interface
 - [x] Keep a Canvas2D compatibility renderer
 - [x] Add lazy TypeGPU capability detection and runtime lifecycle management
-- [ ] Implement the TypeGPU compositor with parity snapshots against Canvas2D
+- [x] Implement the TypeGPU compositor with parity snapshots against Canvas2D
   - [x] Present native per-layer textures with every blend mode, raster masks, and clipping
   - [x] Apply brightness, contrast, saturation, and hue adjustment layers natively
   - [x] Composite isolated and nested group passes through TypeGPU with group opacity and blend modes
@@ -43,7 +43,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Apply layer-filter blur through separable native TypeGPU passes
   - [x] Apply color-overlay layer effects natively
   - [x] Add native drop-shadow and outer-glow effects
-  - [ ] Add GPU/Canvas pixel-parity snapshots
+  - [x] Add GPU/Canvas pixel-parity snapshots
 - [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching
   - [x] Cache unchanged native background, image, raster, shape, clipping, and isolated-group passes
