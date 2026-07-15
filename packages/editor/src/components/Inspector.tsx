@@ -5,8 +5,9 @@ import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
+import { PanelResizeHandle } from './PanelResizeHandle'
 import type { CustomFontResource } from '../editor/resources'
-import type { DragEvent } from 'react'
+import type { CSSProperties, DragEvent } from 'react'
 
 type InspectorProps = {
   document: EditorDocument
@@ -18,6 +19,8 @@ type InspectorProps = {
   onLoadFont: () => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
+  width: number
+  onWidthChange: (width: number) => void
 }
 
 const tabClass = (active: boolean) =>
@@ -46,7 +49,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels, width, onWidthChange }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -56,7 +59,9 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const filters = normalizeLayerFilters(selected?.filters)
 
   return (
-    <aside onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`relative order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[var(--panel-width)] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Properties panel" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <div draggable onDragStart={(event: DragEvent) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'properties') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-5 active:cursor-grabbing">
         <div>
           <h1 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Properties</h1>
@@ -324,6 +329,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
           <button type="button" onClick={() => dispatch({ type: 'select-layer', id: null }, { record: false })} className="mx-5 my-4 rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Back to document settings</button>
         </>
       )}
+      </div>
     </aside>
   )
 }

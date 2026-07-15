@@ -1,8 +1,9 @@
-import { useState, type DragEvent } from 'react'
+import { useState, type CSSProperties, type DragEvent } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
 import type { EditorDispatch, EditorDocument, EditorLayer, LayerGroup } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
+import { PanelResizeHandle } from './PanelResizeHandle'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -16,6 +17,8 @@ type LayersPanelProps = {
   onRemoveMask: (layerId: string) => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
+  width: number
+  onWidthChange: (width: number) => void
 }
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
@@ -32,7 +35,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
@@ -132,7 +135,8 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const rootItems = getStackChildren(document, null)
 
   return (
-    <aside onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[258px] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={`relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[var(--panel-width)] lg:border-t-0 ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+      <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Layers panel" />
       <div draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-panel', 'layers') }} className="flex h-14 shrink-0 cursor-grab items-center justify-between border-b border-white/[0.07] px-4 active:cursor-grabbing">
         <div><h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-100"><span className="text-[10px] tracking-[-2px] text-zinc-700">⠿</span>Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
         <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button></div>

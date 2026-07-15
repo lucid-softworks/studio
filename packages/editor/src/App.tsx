@@ -22,6 +22,7 @@ import { featherSelection, invertSelection, morphSelection, selectAll, type Sele
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
+import { clampPanelWidth } from './editor/panel-layout'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -49,6 +50,17 @@ function App({ onExit }: AppProps) {
   const [propertiesOnLeft, setPropertiesOnLeft] = useState(() => {
     try { return localStorage.getItem('studio.panel-layout') !== 'layers-left' } catch { return true }
   })
+  const [panelWidths, setPanelWidths] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('studio.panel-widths') ?? '{}') as { properties?: number; layers?: number }
+      return {
+        properties: clampPanelWidth(saved.properties ?? 310),
+        layers: clampPanelWidth(saved.layers ?? 258),
+      }
+    } catch {
+      return { properties: 310, layers: 258 }
+    }
+  })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -68,6 +80,10 @@ function App({ onExit }: AppProps) {
   useEffect(() => {
     try { localStorage.setItem('studio.panel-layout', propertiesOnLeft ? 'properties-left' : 'layers-left') } catch { /* local storage is optional */ }
   }, [propertiesOnLeft])
+
+  useEffect(() => {
+    try { localStorage.setItem('studio.panel-widths', JSON.stringify(panelWidths)) } catch { /* local storage is optional */ }
+  }, [panelWidths])
 
   useEffect(() => {
     if (!notice) return
@@ -827,9 +843,9 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} width={panelWidths.properties} onWidthChange={(width) => setPanelWidths((current) => ({ ...current, properties: width }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setPropertiesOnLeft((value) => !value)} width={panelWidths.layers} onWidthChange={(width) => setPanelWidths((current) => ({ ...current, layers: width }))} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
