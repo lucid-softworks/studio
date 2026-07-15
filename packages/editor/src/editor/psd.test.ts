@@ -411,6 +411,46 @@ describe('PSD layer ordering', () => {
       .not.toEqual(expect.arrayContaining([expect.stringMatching(/mask|advanced blending/i)]))
   })
 
+  it('decodes, edits, and rewrites extra alpha-channel pixels', async () => {
+    const channelCanvas = createCanvas(2, 2) as unknown as HTMLCanvasElement
+    const channelContext = channelCanvas.getContext('2d')!
+    const channelPixels = channelContext.createImageData(2, 2)
+    ;[0, 64, 128, 255].forEach((value, pixel) => {
+      channelPixels.data[pixel * 4] = value
+      channelPixels.data[pixel * 4 + 1] = value
+      channelPixels.data[pixel * 4 + 2] = value
+      channelPixels.data[pixel * 4 + 3] = 255
+    })
+    channelContext.putImageData(channelPixels, 0, 0)
+    const channelAsset = { element: channelCanvas as unknown as HTMLImageElement, name: 'Selection', surface: channelCanvas, revision: 0 }
+    const shape = { ...createShapeLayer('rectangle', 0), width: 100, height: 100 }
+    const blob = await exportPsdDocument({
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 2, height: 2 },
+      layers: [shape],
+      channels: [{ id: 9, name: 'Selection', assetId: 'selection-channel' }],
+    }, { 'selection-channel': channelAsset })
+    const bytes = await blob.arrayBuffer()
+    const decoded = readPsd(bytes, { useImageData: true, skipThumbnail: true })
+    expect(decoded.imageResources).toMatchObject({ alphaChannelNames: ['Selection'], alphaIdentifiers: [9] })
+
+    const imported = await importPsdBuffer(bytes, 'channels.psd')
+    expect(imported.document.channels).toHaveLength(1)
+    const assetId = imported.document.channels![0].assetId!
+    const pixels = imported.assets[assetId].surface!.getContext('2d')!.getImageData(0, 0, 2, 2).data
+    expect([pixels[0], pixels[4], pixels[8], pixels[12]]).toEqual([0, 64, 128, 255])
+
+    pixels[4] = pixels[5] = pixels[6] = 96
+    const editedPixels = imported.assets[assetId].surface!.getContext('2d')!.createImageData(2, 2)
+    editedPixels.data.set(pixels)
+    imported.assets[assetId].surface!.getContext('2d')!.putImageData(editedPixels, 0, 0)
+    const edited = await exportPsdDocument(imported.document, imported.assets)
+    const reopened = await importPsdBuffer(await edited.arrayBuffer(), 'edited-channels.psd')
+    const reopenedAsset = reopened.assets[reopened.document.channels![0].assetId!].surface!
+    expect(reopenedAsset.getContext('2d')!.getImageData(1, 0, 1, 1).data[0]).toBe(96)
+  })
+
   it('preserves placed-layer, linked-file, guide, layer-comp, and document metadata', async () => {
     const imageData = new ImageData(4, 4)
     imageData.data.fill(255)

@@ -139,6 +139,7 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
   const rasterAssetIds = new Set([
     ...document.layers.filter((layer) => layer.type === 'raster').map((layer) => layer.assetId),
     ...document.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : []),
+    ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
   ])
   const entries = await Promise.all(assets.map(async (asset) => {
     const source = await loadImageBlob(asset.blob, asset.name)
@@ -154,6 +155,7 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
       ...(layer.maskAssetId ? [layer.maskAssetId] : []),
     ]),
     ...(document.background.imageAssetId ? [document.background.imageAssetId] : []),
+    ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
   ])
   const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]) => {
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob

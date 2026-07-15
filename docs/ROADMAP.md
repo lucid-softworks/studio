@@ -64,11 +64,11 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Preserve vector shape layers and paths on import
   - [x] Import solid rectangles, rounded rectangles, ellipses, and basic strokes as editable shapes
   - [x] Preserve compound/custom paths, gradient and pattern fills, and complete stroke metadata
-- [ ] Preserve raster and vector masks, clipping groups, channels, and blend-if data
+- [x] Preserve raster and vector masks, clipping groups, channels, and blend-if data
   - [x] Import PSD raster masks as editable Studio masks
   - [x] Consume basic shape vector masks as editable rectangle and ellipse geometry
   - [x] Preserve and render independent/compound vector masks, mask density/feather, and non-default blend-if data
-  - [ ] Decode editable extra-channel pixels (alpha-channel names and identifiers already round-trip)
+  - [x] Decode editable 8-bit extra-channel pixels and rewrite locally changed channel planes
 - [ ] Preserve adjustment layers and layer styles as editable Studio properties
   - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
   - [x] Import brightness/contrast and global hue/saturation adjustment layers as editable adjustments

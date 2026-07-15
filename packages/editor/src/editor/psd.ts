@@ -34,6 +34,124 @@ function preservedImageResources(resources: ImageResources | undefined) {
   return Object.keys(selected).length ? serializePsdValue(selected) : undefined
 }
 
+function psdCompositeOffset(buffer: ArrayBuffer) {
+  const view = new DataView(buffer)
+  const psb = view.getUint16(4) === 2
+  let offset = 26
+  const skipSection = (large = false) => {
+    const length = large ? Number(view.getBigUint64(offset)) : view.getUint32(offset)
+    offset += (large ? 8 : 4) + length
+  }
+  skipSection()
+  skipSection()
+  skipSection(psb)
+  return { offset, psb }
+}
+
+function decodePackBitsRow(input: Uint8Array, expected: number) {
+  const output = new Uint8Array(expected)
+  let source = 0
+  let target = 0
+  while (source < input.length && target < expected) {
+    const header = input[source++]
+    if (header <= 127) {
+      const count = header + 1
+      output.set(input.subarray(source, source + count), target)
+      source += count
+      target += count
+    } else if (header >= 129) {
+      const count = 257 - header
+      output.fill(input[source++] ?? 0, target, target + count)
+      target += count
+    }
+  }
+  return output
+}
+
+function decodeCompositePlanes(buffer: ArrayBuffer, width: number, height: number, channels: number, bitsPerChannel: number) {
+  const { offset, psb } = psdCompositeOffset(buffer)
+  const view = new DataView(buffer)
+  const bytes = new Uint8Array(buffer)
+  const compression = view.getUint16(offset)
+  const bytesPerSample = Math.max(1, bitsPerChannel / 8)
+  const rowBytes = width * bytesPerSample
+  const planes = Array.from({ length: channels }, () => new Uint8Array(rowBytes * height))
+  if (compression === 0) {
+    let source = offset + 2
+    for (const plane of planes) {
+      plane.set(bytes.subarray(source, source + plane.length))
+      source += plane.length
+    }
+    return planes
+  }
+  if (compression !== 1) return []
+  const lengthSize = psb ? 4 : 2
+  const lengths: number[] = []
+  let cursor = offset + 2
+  for (let index = 0; index < channels * height; index += 1) {
+    lengths.push(lengthSize === 4 ? view.getUint32(cursor) : view.getUint16(cursor))
+    cursor += lengthSize
+  }
+  for (let channel = 0; channel < channels; channel += 1) {
+    for (let row = 0; row < height; row += 1) {
+      const length = lengths[channel * height + row]
+      planes[channel].set(decodePackBitsRow(bytes.subarray(cursor, cursor + length), rowBytes), row * rowBytes)
+      cursor += length
+    }
+  }
+  return planes
+}
+
+function channelPlaneToCanvas(plane: Uint8Array, width: number, height: number, bitsPerChannel: number) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const pixels = new ImageData(width, height)
+  const view = new DataView(plane.buffer, plane.byteOffset, plane.byteLength)
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const value = bitsPerChannel === 16
+      ? view.getUint16(pixel * 2) / 257
+      : bitsPerChannel === 32
+        ? Math.max(0, Math.min(255, view.getFloat32(pixel * 4) * 255))
+        : plane[pixel]
+    const target = pixel * 4
+    pixels.data[target] = value
+    pixels.data[target + 1] = value
+    pixels.data[target + 2] = value
+    pixels.data[target + 3] = 255
+  }
+  context.putImageData(pixels, 0, 0)
+  return canvas
+}
+
+function appendCompositeChannels(buffer: ArrayBuffer, width: number, height: number, surfaces: HTMLCanvasElement[]) {
+  if (!surfaces.length) return buffer
+  const view = new DataView(buffer)
+  const originalChannelCount = view.getUint16(12)
+  const planes = decodeCompositePlanes(buffer, width, height, originalChannelCount, 8)
+  if (planes.length !== originalChannelCount) return buffer
+  for (const surface of surfaces) {
+    const pixels = surface.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, width, height)
+    if (!pixels) continue
+    const plane = new Uint8Array(width * height)
+    for (let pixel = 0; pixel < plane.length; pixel += 1) plane[pixel] = pixels.data[pixel * 4]
+    planes.push(plane)
+  }
+  const { offset } = psdCompositeOffset(buffer)
+  const output = new Uint8Array(offset + 2 + planes.reduce((total, plane) => total + plane.length, 0))
+  output.set(new Uint8Array(buffer, 0, offset))
+  new DataView(output.buffer).setUint16(12, planes.length)
+  new DataView(output.buffer).setUint16(offset, 0)
+  let cursor = offset + 2
+  for (const plane of planes) {
+    output.set(plane, cursor)
+    cursor += plane.length
+  }
+  return output.buffer
+}
+
 function initializeBrowserCanvas() {
   if (initialized) return
   initializeCanvas((width, height) => {
@@ -801,6 +919,21 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
 
   await importChildren(psd.children ?? [], null)
 
+  const channelNames = psd.imageResources?.alphaChannelNames ?? []
+  const compositePlanes = psd.channels && psd.channels > 3
+    ? decodeCompositePlanes(buffer, psd.width, psd.height, psd.channels, psd.bitsPerChannel ?? 8)
+    : []
+  const globalAlphaChannels = Math.max(0, (psd.channels ?? 3) - 3 - channelNames.length)
+  const channels = channelNames.flatMap((channelName, index) => {
+    const plane = compositePlanes[3 + globalAlphaChannels + index]
+    if (!plane) return []
+    const canvas = channelPlaneToCanvas(plane, psd.width, psd.height, psd.bitsPerChannel ?? 8)
+    if (!canvas) return []
+    const assetId = createId()
+    assets[assetId] = { element: canvas as unknown as HTMLImageElement, name: `${channelName} channel`, surface: canvas, revision: 0 }
+    return [{ id: psd.imageResources?.alphaIdentifiers?.[index], name: channelName, assetId }]
+  })
+
   const composite = layerCanvas(psd)
   if (layers.length === 0 && composite) {
     const assetId = createId()
@@ -822,7 +955,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       layers,
       selectedLayerId,
       selectedLayerIds: selectedLayerId ? [selectedLayerId] : [],
-      channels: (psd.imageResources?.alphaChannelNames ?? []).map((name, index) => ({ id: psd.imageResources?.alphaIdentifiers?.[index], name })),
+      channels,
       guides: (psd.imageResources?.gridAndGuidesInformation?.guides ?? []).map((guide, index) => ({ id: `psd-guide-${index}`, direction: guide.direction, position: guide.location })),
       psdMetadata: {
         imageResources: preservedImageResources(psd.imageResources),
@@ -1106,6 +1239,11 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     gridAndGuidesInformation: guides?.length ? { ...preservedResources.gridAndGuidesInformation, guides } : preservedResources.gridAndGuidesInformation,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
-  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
+  let buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
+  const channelSurfaces = (documentState.channels ?? []).flatMap((channel) => {
+    const surface = channel.assetId ? assets[channel.assetId]?.surface : undefined
+    return surface ? [surface] : []
+  })
+  buffer = appendCompositeChannels(buffer, width, height, channelSurfaces)
   return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
 }

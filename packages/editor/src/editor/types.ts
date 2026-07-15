@@ -243,6 +243,7 @@ export type PatternSettings = {
 export type DocumentChannel = {
   id?: number
   name: string
+  assetId?: string
 }
 
 export type EditorDocument = {
