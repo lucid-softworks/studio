@@ -4,14 +4,15 @@ import { downloadBlob } from './editor/download'
 import { Inspector } from './components/Inspector'
 import { LayersPanel } from './components/LayersPanel'
 import { MenuBar } from './components/MenuBar'
+import { ToolRail, type EditorTool } from './components/ToolRail'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
-import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
+import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { getLayerBounds, renderComposition } from './editor/renderer'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit } from './editor/raster'
-import type { AssetMap, EditorDispatch } from './editor/types'
+import type { AssetMap, EditorDispatch, Position, ShapeKind } from './editor/types'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
@@ -30,6 +31,7 @@ function App({ onExit }: AppProps) {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
+  const [tool, setTool] = useState<EditorTool>('move')
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
@@ -299,6 +301,20 @@ function App({ onExit }: AppProps) {
     dispatch({ type: 'add-layer', layer: createAdjustmentLayer(document.layers.filter((layer) => layer.type === 'adjustment').length) })
   }
 
+  const addTextAt = (position: Position, color: string) => {
+    const layer = createTextLayer(document.layers.filter((candidate) => candidate.type === 'text').length + 1)
+    layer.position = position
+    layer.color = color
+    dispatch({ type: 'add-layer', layer })
+  }
+
+  const addShapeAt = (shape: ShapeKind, position: Position, fill: string) => {
+    const layer = createShapeLayer(shape, document.layers.filter((candidate) => candidate.type === 'shape' && candidate.shape === shape).length + 1)
+    layer.position = position
+    layer.fill = fill
+    dispatch({ type: 'add-layer', layer })
+  }
+
   const addLayerGroup = () => {
     const group = createLayerGroup(document.groups.length)
     if (selectedGroup) group.parentId = selectedGroup.id
@@ -492,8 +508,9 @@ function App({ onExit }: AppProps) {
       </header>
 
       <main className="flex flex-col lg:flex-row">
+        <ToolRail tool={tool} onChange={setTool} />
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} />
-        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} />
+        <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selectionResetToken={selectionResetToken} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} />
       </main>
 
