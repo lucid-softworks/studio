@@ -17,6 +17,7 @@ describe('panel resizing', () => {
       propertiesOnLeft: false,
       panelWidths: { properties: 220, layers: 258 },
       collapsedPanels: { properties: true, layers: false },
+      activeUtilityPanel: 'layers',
     })
     expect(normalizeWorkspaceLayout(null)).toEqual(defaultWorkspaceLayout)
   })

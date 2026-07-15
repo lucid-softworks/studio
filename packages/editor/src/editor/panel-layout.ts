@@ -11,10 +11,13 @@ export type CollapsedPanels = {
   layers: boolean
 }
 
+export type UtilityPanelId = 'layers' | 'history' | 'navigator' | 'info'
+
 export type WorkspaceLayout = {
   propertiesOnLeft: boolean
   panelWidths: PanelWidths
   collapsedPanels: CollapsedPanels
+  activeUtilityPanel: UtilityPanelId
 }
 
 export type WorkspacePreset = {
@@ -27,6 +30,7 @@ export const defaultWorkspaceLayout: WorkspaceLayout = {
   propertiesOnLeft: true,
   panelWidths: { properties: 310, layers: 258 },
   collapsedPanels: { properties: false, layers: false },
+  activeUtilityPanel: 'layers',
 }
 
 export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
@@ -38,6 +42,7 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       propertiesOnLeft: true,
       panelWidths: { properties: 310, layers: 258 },
       collapsedPanels: { properties: true, layers: true },
+      activeUtilityPanel: 'navigator',
     },
   },
   {
@@ -47,6 +52,7 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       propertiesOnLeft: true,
       panelWidths: { properties: 280, layers: 360 },
       collapsedPanels: { properties: true, layers: false },
+      activeUtilityPanel: 'layers',
     },
   },
 ]
@@ -60,6 +66,7 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
   const candidate = value as Partial<WorkspaceLayout>
   const widths = candidate.panelWidths
   const collapsed = candidate.collapsedPanels
+  const utilityPanels: UtilityPanelId[] = ['layers', 'history', 'navigator', 'info']
   return {
     propertiesOnLeft: typeof candidate.propertiesOnLeft === 'boolean' ? candidate.propertiesOnLeft : fallback.propertiesOnLeft,
     panelWidths: {
@@ -70,5 +77,6 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
       properties: typeof collapsed?.properties === 'boolean' ? collapsed.properties : fallback.collapsedPanels.properties,
       layers: typeof collapsed?.layers === 'boolean' ? collapsed.layers : fallback.collapsedPanels.layers,
     },
+    activeUtilityPanel: utilityPanels.includes(candidate.activeUtilityPanel as UtilityPanelId) ? candidate.activeUtilityPanel as UtilityPanelId : fallback.activeUtilityPanel,
   }
 }
