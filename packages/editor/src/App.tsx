@@ -21,6 +21,7 @@ import type { EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } fr
 import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
+import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -34,7 +35,8 @@ function App({ onExit }: AppProps) {
   const [assets, setAssets] = useState<AssetMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNoticeState] = useState<ToastMessage | null>(null)
+  const setNotice = useCallback((message: string | null, tone: ToastTone = 'error') => setNoticeState(message ? { message, tone } : null), [])
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
@@ -68,6 +70,12 @@ function App({ onExit }: AppProps) {
   }, [propertiesOnLeft])
 
   useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNoticeState(null), notice.tone === 'error' ? 8000 : 5000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+
+  useEffect(() => {
     let cancelled = false
     Promise.all([loadFontLibrary(), loadBrushLibrary()]).then(([fonts, brushes]) => {
       if (cancelled) return
@@ -78,18 +86,18 @@ function App({ onExit }: AppProps) {
       if (!cancelled) setNotice('The local font and brush library could not be restored.')
     })
     return () => { cancelled = true }
-  }, [])
+  }, [setNotice])
 
   const loadFontFile = useCallback(async (file: File) => {
     try {
       const font = await importFont(file)
       setCustomFonts((current) => [...current.filter((candidate) => candidate.id !== font.id), font])
       bumpResourceRevision()
-      setNotice(`Loaded ${font.name}. Select it from a text layer’s font menu.`)
+      setNotice(`Loaded ${font.name}. Select it from a text layer’s font menu.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That font could not be loaded.')
     }
-  }, [])
+  }, [setNotice])
 
   const loadBrushFile = useCallback(async (file: File) => {
     try {
@@ -97,11 +105,11 @@ function App({ onExit }: AppProps) {
       setCustomBrushes((current) => [...current.filter((candidate) => candidate.id !== brush.id), brush])
       setBrushId(brush.id)
       setTool('brush')
-      setNotice(`Loaded ${brush.name} and selected it for painting.`)
+      setNotice(`Loaded ${brush.name} and selected it for painting.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That brush could not be loaded.')
     }
-  }, [])
+  }, [setNotice])
 
   const dispatch = useCallback<EditorDispatch>((action, options) => {
     if (rasterRedoRef.current.length) {
@@ -126,7 +134,7 @@ function App({ onExit }: AppProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [dispatch])
+  }, [dispatch, setNotice])
 
   const setBackgroundFile = useCallback(async (file: File) => {
     setIsLoading(true)
@@ -141,7 +149,7 @@ function App({ onExit }: AppProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [dispatch])
+  }, [dispatch, setNotice])
 
   useEffect(() => {
     let cancelled = false
@@ -152,10 +160,10 @@ function App({ onExit }: AppProps) {
         if (recovery) {
           setAssets(recovery.assets)
           historyDispatch({ type: 'replace', document: recovery.document })
-          setNotice('Recovered your locally autosaved project.')
+          setNotice('Recovered your locally autosaved project.', 'info')
         }
       } catch {
-        if (!cancelled) setNotice('Local recovery was unavailable, so a fresh document was opened.')
+        if (!cancelled) setNotice('Local recovery was unavailable, so a fresh document was opened.', 'warning')
       } finally {
         if (!cancelled) {
           hydratedRef.current = true
@@ -165,7 +173,7 @@ function App({ onExit }: AppProps) {
     }
     void hydrate()
     return () => { cancelled = true }
-  }, [dispatch])
+  }, [setNotice])
 
   useEffect(() => {
     if (!hydratedRef.current || isLoading) return
@@ -673,7 +681,7 @@ function App({ onExit }: AppProps) {
       bumpRasterHistory()
       historyDispatch({ type: 'replace', document: loaded.document })
       setSelection(null)
-      setNotice(`Opened ${file.name} entirely in your browser.`)
+      setNotice(`Opened ${file.name} entirely in your browser.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The project could not be opened.')
     } finally {
@@ -718,7 +726,7 @@ function App({ onExit }: AppProps) {
       bumpRasterHistory()
       historyDispatch({ type: 'replace', document: loaded.document })
       setSelection(null)
-      setNotice(`Opened ${file.name} locally.`)
+      setNotice(`Opened ${file.name} locally.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That file could not be opened.')
     } finally {
@@ -822,12 +830,7 @@ function App({ onExit }: AppProps) {
       <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
       <input ref={brushInputRef} type="file" className="sr-only" accept=".studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
 
-      {notice && (
-        <div role="status" className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-red-300/15 bg-red-950/90 px-4 py-3 text-xs text-red-100 shadow-2xl backdrop-blur-md">
-          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-red-400" /><span>{notice}</span>
-          <button type="button" className="ml-2 text-red-300/60 hover:text-red-100" onClick={() => setNotice(null)} aria-label="Dismiss message">×</button>
-        </div>
-      )}
+      {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
     </div>
   )
 }

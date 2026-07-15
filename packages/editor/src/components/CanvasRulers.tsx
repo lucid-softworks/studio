@@ -7,10 +7,13 @@ export function CanvasRulers({ stageRef, canvasRef, zoom }: { stageRef: RefObjec
   const [metrics, setMetrics] = useState<Metrics | null>(null)
 
   useLayoutEffect(() => {
-    const stage = stageRef.current
-    const canvas = canvasRef.current
-    if (!stage || !canvas) return
+    let frame = 0
+    let settleTimer = 0
+    let observer: ResizeObserver | null = null
+    let stage: HTMLDivElement | null = null
     const update = () => {
+      const canvas = canvasRef.current
+      if (!stage || !canvas) return
       const stageRect = stage.getBoundingClientRect()
       const canvasRect = canvas.getBoundingClientRect()
       setMetrics({
@@ -24,17 +27,27 @@ export function CanvasRulers({ stageRef, canvasRef, zoom }: { stageRef: RefObjec
         scrollTop: stage.scrollTop,
       })
     }
-    const observer = new ResizeObserver(update)
-    observer.observe(stage)
-    observer.observe(canvas)
-    stage.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    update()
-    const settleTimer = window.setTimeout(update, 180)
+    const connect = () => {
+      stage = stageRef.current
+      const canvas = canvasRef.current
+      if (!stage || !canvas) {
+        frame = requestAnimationFrame(connect)
+        return
+      }
+      observer = new ResizeObserver(update)
+      observer.observe(stage)
+      observer.observe(canvas)
+      stage.addEventListener('scroll', update, { passive: true })
+      window.addEventListener('resize', update)
+      update()
+      settleTimer = window.setTimeout(update, 180)
+    }
+    connect()
     return () => {
+      cancelAnimationFrame(frame)
       window.clearTimeout(settleTimer)
-      observer.disconnect()
-      stage.removeEventListener('scroll', update)
+      observer?.disconnect()
+      stage?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
     }
   }, [canvasRef, stageRef, zoom])
