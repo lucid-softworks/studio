@@ -1,5 +1,6 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { historyCommandLabel } from '../editor/history-labels'
+import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -76,6 +77,101 @@ export function NavigatorPanel({ sourceCanvasRef, document, zoom, onZoomChange, 
         <input aria-label="Navigator zoom" type="range" min="25" max="250" step="5" value={zoom} onChange={(event) => onZoomChange(Number(event.target.value))} className="w-full accent-violet-400" />
         <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => onZoomChange(50)} className="rounded-md border border-white/[0.07] px-2 py-1.5 text-[10px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">50%</button><button type="button" onClick={() => onZoomChange(100)} className="rounded-md border border-white/[0.07] px-2 py-1.5 text-[10px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">100%</button></div>
       </div>
+    </div>
+  )
+}
+
+type HistogramView = 'rgb' | HistogramChannel
+
+function histogramPath(bins: number[], maximum: number) {
+  const points = bins.map((value, index) => `${index},${110 - value / maximum * 106}`).join(' L')
+  return `M0,110 L${points} L255,110 Z`
+}
+
+export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
+  sourceCanvasRef: RefObject<HTMLCanvasElement | null>
+  document: EditorDocument
+  renderRevision: number
+}) {
+  const [view, setView] = useState<HistogramView>('rgb')
+  const [result, setResult] = useState<HistogramResult | null>(null)
+  const [status, setStatus] = useState<'sampling' | 'ready' | 'error'>('sampling')
+  const workerRef = useRef<Worker | null>(null)
+  const requestRef = useRef(0)
+
+  useEffect(() => {
+    const worker = new Worker(new URL('../editor/workers/histogram.worker.ts', import.meta.url), { type: 'module' })
+    worker.onmessage = (event: MessageEvent<{ id: number; result: HistogramResult }>) => {
+      if (event.data.id !== requestRef.current) return
+      setResult(event.data.result)
+      setStatus('ready')
+    }
+    worker.onerror = () => setStatus('error')
+    workerRef.current = worker
+    return () => {
+      worker.terminate()
+      workerRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const source = sourceCanvasRef.current
+        const worker = workerRef.current
+        if (!source || !worker || source.width === 0 || source.height === 0) return
+        try {
+          const scale = Math.min(1, 256 / source.width, 256 / source.height)
+          const sample = globalThis.document.createElement('canvas')
+          sample.width = Math.max(1, Math.round(source.width * scale))
+          sample.height = Math.max(1, Math.round(source.height * scale))
+          const context = sample.getContext('2d', { willReadFrequently: true })
+          if (!context) throw new Error('Canvas sampling is unavailable')
+          context.drawImage(source, 0, 0, sample.width, sample.height)
+          const image = context.getImageData(0, 0, sample.width, sample.height)
+          const id = requestRef.current + 1
+          requestRef.current = id
+          setStatus('sampling')
+          worker.postMessage({ id, data: image.data.buffer }, [image.data.buffer])
+        } catch {
+          setStatus('error')
+        }
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [document, renderRevision, sourceCanvasRef])
+
+  const visibleChannels: HistogramChannel[] = view === 'rgb' ? ['red', 'green', 'blue'] : [view]
+  const maximum = Math.max(1, ...visibleChannels.flatMap((channel) => result?.bins[channel] ?? []))
+  const statisticChannel: HistogramChannel = view === 'rgb' ? 'luminance' : view
+  const channelStyles: Record<HistogramChannel, { fill: string; stroke: string }> = {
+    red: { fill: 'rgba(248,113,113,0.18)', stroke: '#f87171' },
+    green: { fill: 'rgba(74,222,128,0.18)', stroke: '#4ade80' },
+    blue: { fill: 'rgba(96,165,250,0.18)', stroke: '#60a5fa' },
+    luminance: { fill: 'rgba(196,181,253,0.25)', stroke: '#c4b5fd' },
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Histogram" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="grid grid-cols-5 gap-1 rounded-lg bg-black/25 p-1">
+        {(['rgb', 'red', 'green', 'blue', 'luminance'] as HistogramView[]).map((channel) => <button key={channel} type="button" aria-pressed={view === channel} onClick={() => setView(channel)} className={`rounded-md px-1 py-1.5 text-[8px] font-semibold uppercase transition ${view === channel ? 'bg-white/[0.09] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{channel === 'luminance' ? 'Lum' : channel}</button>)}
+      </div>
+      <div className="relative mt-3 overflow-hidden rounded-lg border border-white/[0.08] bg-black/35 p-2">
+        <div className="pointer-events-none absolute inset-2 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:25%_25%]" />
+        {result ? <svg viewBox="0 0 255 110" preserveAspectRatio="none" aria-label={`${view} histogram`} className="relative h-40 w-full">
+          {visibleChannels.map((channel) => <path key={channel} d={histogramPath(result.bins[channel], maximum)} fill={channelStyles[channel].fill} stroke={channelStyles[channel].stroke} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />)}
+        </svg> : <div className="flex h-40 items-center justify-center text-[10px] text-zinc-700">Sampling document…</div>}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Mean</p><p className="mt-1 font-mono text-[11px] text-zinc-300">{result ? result.mean[statisticChannel].toFixed(1) : '—'}</p></div>
+        <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Median</p><p className="mt-1 font-mono text-[11px] text-zinc-300">{result ? result.median[statisticChannel] : '—'}</p></div>
+        <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Samples</p><p className="mt-1 truncate font-mono text-[11px] text-zinc-300">{result ? result.pixels.toLocaleString() : '—'}</p></div>
+      </div>
+      <p className={`mt-3 text-center text-[9px] ${status === 'error' ? 'text-red-300/70' : 'text-zinc-700'}`}>{status === 'error' ? 'The rendered canvas could not be sampled.' : status === 'sampling' ? 'Updating sampled histogram…' : 'RGB and luminance reduction runs in a local Worker.'}</p>
     </div>
   )
 }

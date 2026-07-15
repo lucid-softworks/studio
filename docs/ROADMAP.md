@@ -124,6 +124,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Add ICC profile parsing, conversion, assign/convert profile, proof colors, and gamut warnings
 - [ ] Add RGB, grayscale, indexed, and CMYK document modes where browser color APIs permit accurate output
 - [ ] Add histogram, info, and scopes panels backed by worker/GPU reductions
+  - [x] Add a sampled RGB/luminance histogram with local Worker reduction and live statistics
+  - [ ] Add exact tiled/high-precision histograms, point sampling, and waveform/vectorscope GPU reductions
 
 ## M7 — typography
 
@@ -156,8 +158,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
   - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
-  - [x] Add functional Properties, Layers, History, Navigator, and Info panels
-  - [ ] Add Actions, Histogram, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
+  - [x] Add functional Properties, Layers, History, Navigator, Histogram, and Info panels
+  - [ ] Add Actions, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
 - [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server

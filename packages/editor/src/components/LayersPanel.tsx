@@ -8,7 +8,7 @@ import type { DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLaye
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
-import { HistoryPanel, InfoPanel, NavigatorPanel } from './UtilityPanels'
+import { HistogramPanel, HistoryPanel, InfoPanel, NavigatorPanel } from './UtilityPanels'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -49,7 +49,7 @@ type LayersPanelProps = {
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
 type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
-const utilityTabs: Array<{ id: UtilityPanelId; label: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav' }, { id: 'info', label: 'Info' }]
+const utilityTabs: Array<{ id: UtilityPanelId; label: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav' }, { id: 'histogram', label: 'Hist' }, { id: 'info', label: 'Info' }]
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -215,6 +215,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       </>}
       {activePanel === 'history' && <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />}
       {activePanel === 'navigator' && <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />}
+      {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} renderRevision={renderRevision} />}
       {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} />}
       </>}
     </aside>
