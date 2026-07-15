@@ -43,6 +43,36 @@ const gpuSetSaturation = tgpu.fn([d.vec3f, d.f32], d.vec3f)((color, value) => {
   return std.select(d.vec3f(0), scaled, range > 0)
 })
 
+export const gpuApplyAdjustment = tgpu.fn(
+  [d.vec3f, d.f32, d.f32, d.f32, d.f32],
+  d.vec3f,
+)((color, brightness, contrast, saturation, hue) => {
+  'use gpu'
+  let adjusted = std.mul(color, brightness)
+  adjusted = std.add(std.mul(std.sub(adjusted, d.vec3f(0.5)), contrast), d.vec3f(0.5))
+  const luminance = std.dot(adjusted, d.vec3f(0.213, 0.715, 0.072))
+  adjusted = std.add(d.vec3f(luminance), std.mul(std.sub(adjusted, d.vec3f(luminance)), saturation))
+
+  const cosine = std.cos(hue)
+  const sine = std.sin(hue)
+  const red = std.dot(adjusted, d.vec3f(
+    std.add(0.213, std.sub(std.mul(0.787, cosine), std.mul(0.213, sine))),
+    std.sub(0.715, std.add(std.mul(0.715, cosine), std.mul(0.715, sine))),
+    std.add(0.072, std.add(std.mul(-0.072, cosine), std.mul(0.928, sine))),
+  ))
+  const green = std.dot(adjusted, d.vec3f(
+    std.add(0.213, std.add(std.mul(-0.213, cosine), std.mul(0.143, sine))),
+    std.add(0.715, std.add(std.mul(0.285, cosine), std.mul(0.14, sine))),
+    std.add(0.072, std.add(std.mul(-0.072, cosine), std.mul(-0.283, sine))),
+  ))
+  const blue = std.dot(adjusted, d.vec3f(
+    std.add(0.213, std.add(std.mul(-0.213, cosine), std.mul(-0.787, sine))),
+    std.add(0.715, std.add(std.mul(-0.715, cosine), std.mul(0.715, sine))),
+    std.add(0.072, std.add(std.mul(0.928, cosine), std.mul(0.072, sine))),
+  ))
+  return std.clamp(d.vec3f(red, green, blue), d.vec3f(0), d.vec3f(1))
+})
+
 export type TypeGpuFramePresenter = {
   present(source: TypeGpuImageSource): void
   dispose(): void
@@ -54,12 +84,25 @@ export type TypeGpuLayerCompositor = {
   dispose(): void
 }
 
-export type TypeGpuCompositionLayer = {
+export type TypeGpuCompositionTextureLayer = {
+  kind: 'layer'
   source: TypeGpuImageSource
   maskSource?: TypeGpuImageSource
   clipSource?: TypeGpuImageSource
   blendMode: TypeGpuBlendMode
 }
+
+export type TypeGpuCompositionAdjustment = {
+  kind: 'adjustment'
+  blendMode: TypeGpuBlendMode
+  opacity: number
+  brightness: number
+  contrast: number
+  saturation: number
+  hue: number
+}
+
+export type TypeGpuCompositionLayer = TypeGpuCompositionTextureLayer | TypeGpuCompositionAdjustment
 
 export function createTypeGpuFramePresenter(
   root: TgpuRoot,
@@ -135,6 +178,12 @@ export function createTypeGpuLayerCompositor(
   const blendMode = root.createUniform(d.u32, typeGpuBlendModeCodes.normal)
   const hasMask = root.createUniform(d.u32, 0)
   const hasClip = root.createUniform(d.u32, 0)
+  const sourceKind = root.createUniform(d.u32, 0)
+  const adjustmentOpacity = root.createUniform(d.f32, 1)
+  const adjustmentBrightness = root.createUniform(d.f32, 1)
+  const adjustmentContrast = root.createUniform(d.f32, 1)
+  const adjustmentSaturation = root.createUniform(d.f32, 1)
+  const adjustmentHue = root.createUniform(d.f32, 0)
   const sampler = root.createSampler({
     magFilter: 'linear',
     minFilter: 'linear',
@@ -149,13 +198,25 @@ export function createTypeGpuLayerCompositor(
       const maskSample = std.textureSample(maskView.$, sampler.$, uv)
       const clipSample = std.textureSample(clipView.$, sampler.$, uv)
       const backdropSample = std.textureSample(compositionSampleViews[backdropIndex].$, sampler.$, uv)
-      const source = sourceSample.xyz
+      let source = sourceSample.xyz
       const maskAlpha = std.select(1, maskSample.w, hasMask.$ === 1)
       const clipAlpha = std.select(1, clipSample.w, hasClip.$ === 1)
-      const sourceAlpha = std.mul(sourceSample.w, std.mul(maskAlpha, clipAlpha))
+      let sourceAlpha = std.mul(sourceSample.w, std.mul(maskAlpha, clipAlpha))
       const backdropAlpha = backdropSample.w
       const backdrop = std.div(backdropSample.xyz, std.max(backdropAlpha, 0.00001))
       const one = d.vec3f(1)
+
+      if (sourceKind.$ === 1) {
+        source = gpuApplyAdjustment(
+          backdrop,
+          adjustmentBrightness.$,
+          adjustmentContrast.$,
+          adjustmentSaturation.$,
+          adjustmentHue.$,
+        )
+        sourceAlpha = std.mul(backdropAlpha, adjustmentOpacity.$)
+      }
+
       let blended = source
 
       if (blendMode.$ === typeGpuBlendModeCodes.multiply) blended = std.mul(backdrop, source)
@@ -213,11 +274,23 @@ export function createTypeGpuLayerCompositor(
       layers.forEach((layer, index) => {
         const backdropIndex = index % 2
         const outputIndex = 1 - backdropIndex
-        layerTexture.write(layer.source)
-        if (layer.maskSource) maskTexture.write(layer.maskSource)
-        if (layer.clipSource) clipTexture.write(layer.clipSource)
-        hasMask.write(layer.maskSource ? 1 : 0)
-        hasClip.write(layer.clipSource ? 1 : 0)
+        if (layer.kind === 'adjustment') {
+          sourceKind.write(1)
+          hasMask.write(0)
+          hasClip.write(0)
+          adjustmentOpacity.write(layer.opacity)
+          adjustmentBrightness.write(layer.brightness)
+          adjustmentContrast.write(layer.contrast)
+          adjustmentSaturation.write(layer.saturation)
+          adjustmentHue.write(layer.hue)
+        } else {
+          sourceKind.write(0)
+          layerTexture.write(layer.source)
+          if (layer.maskSource) maskTexture.write(layer.maskSource)
+          if (layer.clipSource) clipTexture.write(layer.clipSource)
+          hasMask.write(layer.maskSource ? 1 : 0)
+          hasClip.write(layer.clipSource ? 1 : 0)
+        }
         blendMode.write(typeGpuBlendModeCodes[layer.blendMode])
         blendPipelines[backdropIndex].withColorAttachment({
           view: compositionRenderViews[outputIndex],
@@ -235,6 +308,12 @@ export function createTypeGpuLayerCompositor(
       blendMode.buffer.destroy()
       hasMask.buffer.destroy()
       hasClip.buffer.destroy()
+      sourceKind.buffer.destroy()
+      adjustmentOpacity.buffer.destroy()
+      adjustmentBrightness.buffer.destroy()
+      adjustmentContrast.buffer.destroy()
+      adjustmentSaturation.buffer.destroy()
+      adjustmentHue.buffer.destroy()
     },
   }
 }
@@ -248,6 +327,7 @@ export function validateTypeGpuCompositor(root: TgpuRoot) {
   presenter.dispose()
   const compositor = createTypeGpuLayerCompositor(root, 1, 1)
   compositor.compose([{
+    kind: 'layer',
     source: new ImageData(new Uint8ClampedArray([0, 0, 0, 0]), 1, 1),
     blendMode: 'normal',
   }])

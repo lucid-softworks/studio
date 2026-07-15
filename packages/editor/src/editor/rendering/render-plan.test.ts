@@ -138,9 +138,27 @@ describe('composition render plan', () => {
   it('keeps unsupported composition features on the compatibility renderer', () => {
     const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 2 }
+    const blurredAdjustment = { ...createAdjustmentLayer(0), id: 'blurred', blur: 4 }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [blurredAdjustment] })).toBeNull()
+  })
+
+  it('keeps color-only adjustments in the native composition plan', () => {
+    const adjustment = {
+      ...createAdjustmentLayer(0),
+      id: 'color-adjustment',
+      opacity: 72,
+      brightness: 115,
+      contrast: 90,
+      saturation: 80,
+      hue: 24,
+      blur: 0,
+    }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjustment] })?.layers[0])
+      .toMatchObject({ kind: 'adjustment', layerId: 'color-adjustment', opacity: 72, brightness: 115, hue: 24 })
   })
 
   it('keeps raster masks in the native composition plan', () => {

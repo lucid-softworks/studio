@@ -46,7 +46,7 @@ export type CompositionRenderPlan = {
 
 export type NativeLayerCompositionPlan = {
   documentSchemaVersion: number
-  layers: LayerRenderNode[]
+  layers: Array<LayerRenderNode | AdjustmentRenderNode>
 }
 
 function clippingBaseFor(items: StackItem[], index: number) {
@@ -120,11 +120,15 @@ export function buildCompositionRenderPlan(document: EditorDocument): Compositio
   }
 }
 
-function collectNativeLayers(nodes: RenderPlanNode[], layers: LayerRenderNode[]): boolean {
+function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderNode | AdjustmentRenderNode>): boolean {
   for (const node of nodes) {
-    if (node.kind === 'adjustment') return false
     if (node.kind === 'group') {
       if (node.isolated || !collectNativeLayers(node.children, layers)) return false
+      continue
+    }
+    if (node.kind === 'adjustment') {
+      if (node.blur > 0 || !isTypeGpuBlendMode(node.blendMode)) return false
+      layers.push(node)
       continue
     }
     if (
@@ -139,7 +143,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: LayerRenderNode[])
 
 export function buildNativeLayerCompositionPlan(document: EditorDocument): NativeLayerCompositionPlan | null {
   const plan = buildCompositionRenderPlan(document)
-  const layers: LayerRenderNode[] = []
+  const layers: Array<LayerRenderNode | AdjustmentRenderNode> = []
   if (!collectNativeLayers(plan.nodes, layers)) return null
   return { documentSchemaVersion: plan.documentSchemaVersion, layers }
 }

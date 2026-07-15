@@ -10,12 +10,23 @@ import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, R
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RenderCompositionOptions = { showSelection?: boolean }
-export type NativeLayerPass = {
+export type NativeTextureLayerPass = {
+  kind: 'layer'
   source: HTMLCanvasElement
   maskSource?: HTMLCanvasElement | HTMLImageElement
   clipSource?: HTMLCanvasElement
   blendMode: TypeGpuBlendMode
 }
+export type NativeAdjustmentPass = {
+  kind: 'adjustment'
+  blendMode: TypeGpuBlendMode
+  opacity: number
+  brightness: number
+  contrast: number
+  saturation: number
+  hue: number
+}
+export type NativeLayerPass = NativeTextureLayerPass | NativeAdjustmentPass
 export type NativeLayerPasses = { width: number; height: number; layers: NativeLayerPass[] }
 
 export function calculateImageRect(
@@ -658,7 +669,7 @@ export function renderNativeLayerPasses(
   plan.layers.forEach((node, index) => {
     const pass = preparePass(index + 1)
     const layer = layers.get(node.layerId)
-    if (pass.context && layer && layer.type !== 'adjustment') {
+    if (node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
       drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
     }
   })
@@ -669,9 +680,21 @@ export function renderNativeLayerPasses(
     if (selection.context && selected?.visible) drawSelection(selection.context, selection.canvas, selected, assets)
   }
 
-  const compositionLayers: NativeLayerPass[] = [{ source: passCanvases[0], blendMode: 'normal' }]
+  const compositionLayers: NativeLayerPass[] = [{ kind: 'layer', source: passCanvases[0], blendMode: 'normal' }]
   let clipPassIndex = passCount
   plan.layers.forEach((node, index) => {
+    if (node.kind === 'adjustment') {
+      compositionLayers.push({
+        kind: 'adjustment',
+        blendMode: node.blendMode as TypeGpuBlendMode,
+        opacity: node.opacity / 100,
+        brightness: node.brightness / 100,
+        contrast: node.contrast / 100,
+        saturation: node.saturation / 100,
+        hue: node.hue * Math.PI / 180,
+      })
+      return
+    }
     const maskSource = node.maskAssetId
       ? canvasImageResource(resources, assets, node.maskAssetId)?.source
       : undefined
@@ -693,6 +716,7 @@ export function renderNativeLayerPasses(
       }
     }
     compositionLayers.push({
+      kind: 'layer',
       source: passCanvases[index + 1],
       maskSource,
       clipSource,
@@ -700,7 +724,7 @@ export function renderNativeLayerPasses(
     })
   })
   if (passCount > plan.layers.length + 1) {
-    compositionLayers.push({ source: passCanvases[passCount - 1], blendMode: 'normal' })
+    compositionLayers.push({ kind: 'layer', source: passCanvases[passCount - 1], blendMode: 'normal' })
   }
   return { width: size.width, height: size.height, layers: compositionLayers }
 }
