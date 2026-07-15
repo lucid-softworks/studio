@@ -138,7 +138,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
     }
     if (
       !isTypeGpuBlendMode(node.blendMode)
-      || node.filters
+      || (node.filters?.blur ?? 0) > 0
       || node.effects
     ) return false
     layers.push(node)

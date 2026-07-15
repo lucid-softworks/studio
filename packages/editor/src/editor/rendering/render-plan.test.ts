@@ -135,13 +135,20 @@ describe('composition render plan', () => {
     expect(plan?.layers.map((node) => node.kind === 'group' ? node.groupId : node.layerId)).toEqual(['first', 'second'])
   })
 
-  it('keeps unsupported layer filters on the compatibility renderer', () => {
-    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
+  it('keeps blur layer filters on the compatibility renderer', () => {
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: { ...defaultLayerFilters, blur: 4 } }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
     const filteredChild = { ...filtered, groupId: isolated.id }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [filteredChild] })).toBeNull()
+  })
+
+  it('keeps color layer filters in the native composition plan', () => {
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: { ...defaultLayerFilters, contrast: 125, hue: 18, sepia: 40 } }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })?.layers[0])
+      .toMatchObject({ kind: 'layer', layerId: 'filtered', filters: { contrast: 125, hue: 18, sepia: 40 } })
   })
 
   it('keeps isolated groups as native texture composition passes', () => {

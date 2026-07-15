@@ -39,7 +39,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Apply brightness, contrast, saturation, and hue adjustment layers natively
   - [x] Composite isolated and nested group passes through TypeGPU with group opacity and blend modes
   - [x] Apply blur adjustment layers through a native TypeGPU sampling pass
-  - [ ] Add native layer filters and effects
+  - [x] Apply brightness, contrast, saturation, hue, grayscale, sepia, and invert layer filters natively
+  - [ ] Add native layer-filter blur and effects
   - [ ] Add GPU/Canvas pixel-parity snapshots
 - [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching

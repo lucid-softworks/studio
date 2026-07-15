@@ -6,7 +6,7 @@ import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, layerPassSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
-import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
+import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -18,6 +18,7 @@ export type NativeTextureLayerPass = {
   clipSource?: HTMLCanvasElement
   blendMode: TypeGpuBlendMode
   opacity?: number
+  filters?: LayerFilters | null
 }
 export type NativeAdjustmentPass = {
   kind: 'adjustment'
@@ -744,6 +745,7 @@ export function renderNativeLayerPasses(
       maskSource,
       clipSource,
       blendMode: node.blendMode as TypeGpuBlendMode,
+      filters: node.filters,
     })
   })
   if (passCount > plan.layers.length + 1) {

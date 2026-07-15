@@ -73,6 +73,24 @@ export const gpuApplyAdjustment = tgpu.fn(
   return std.clamp(d.vec3f(red, green, blue), d.vec3f(0), d.vec3f(1))
 })
 
+export const gpuApplyLayerFilters = tgpu.fn(
+  [d.vec3f, d.f32, d.f32, d.f32, d.f32, d.f32, d.f32, d.f32],
+  d.vec3f,
+)((color, brightness, contrast, saturation, hue, grayscale, sepia, invert) => {
+  'use gpu'
+  let filtered = gpuApplyAdjustment(color, brightness, contrast, saturation, hue)
+  const luminance = std.dot(filtered, d.vec3f(0.2126, 0.7152, 0.0722))
+  filtered = std.mix(filtered, d.vec3f(luminance), grayscale)
+  const sepiaColor = d.vec3f(
+    std.dot(filtered, d.vec3f(0.393, 0.769, 0.189)),
+    std.dot(filtered, d.vec3f(0.349, 0.686, 0.168)),
+    std.dot(filtered, d.vec3f(0.272, 0.534, 0.131)),
+  )
+  filtered = std.mix(filtered, sepiaColor, sepia)
+  filtered = std.mix(filtered, std.sub(d.vec3f(1), filtered), invert)
+  return std.clamp(filtered, d.vec3f(0), d.vec3f(1))
+})
+
 export type TypeGpuFramePresenter = {
   present(source: TypeGpuImageSource): void
   dispose(): void
@@ -91,6 +109,15 @@ export type TypeGpuCompositionTextureLayer = {
   clipSource?: TypeGpuImageSource
   blendMode: TypeGpuBlendMode
   opacity?: number
+  filters?: {
+    brightness: number
+    contrast: number
+    saturation: number
+    hue: number
+    grayscale: number
+    sepia: number
+    invert: number
+  } | null
 }
 
 export type TypeGpuCompositionAdjustment = {
@@ -188,6 +215,14 @@ export function createTypeGpuLayerCompositor(
   const hasClip = root.createUniform(d.u32, 0)
   const sourceKind = root.createUniform(d.u32, 0)
   const sourceOpacity = root.createUniform(d.f32, 1)
+  const hasLayerFilters = root.createUniform(d.u32, 0)
+  const filterBrightness = root.createUniform(d.f32, 1)
+  const filterContrast = root.createUniform(d.f32, 1)
+  const filterSaturation = root.createUniform(d.f32, 1)
+  const filterHue = root.createUniform(d.f32, 0)
+  const filterGrayscale = root.createUniform(d.f32, 0)
+  const filterSepia = root.createUniform(d.f32, 0)
+  const filterInvert = root.createUniform(d.f32, 0)
   const adjustmentOpacity = root.createUniform(d.f32, 1)
   const adjustmentBrightness = root.createUniform(d.f32, 1)
   const adjustmentContrast = root.createUniform(d.f32, 1)
@@ -251,6 +286,17 @@ export function createTypeGpuLayerCompositor(
           adjustmentHue.$,
         )
         sourceAlpha = std.mul(adjustmentAlpha, adjustmentOpacity.$)
+      } else if (hasLayerFilters.$ === 1) {
+        source = gpuApplyLayerFilters(
+          source,
+          filterBrightness.$,
+          filterContrast.$,
+          filterSaturation.$,
+          filterHue.$,
+          filterGrayscale.$,
+          filterSepia.$,
+          filterInvert.$,
+        )
       }
 
       let blended = source
@@ -312,6 +358,7 @@ export function createTypeGpuLayerCompositor(
         const outputIndex = 1 - backdropIndex
         if (layer.kind === 'adjustment') {
           sourceKind.write(1)
+          hasLayerFilters.write(0)
           hasMask.write(0)
           hasClip.write(0)
           adjustmentOpacity.write(layer.opacity)
@@ -327,6 +374,16 @@ export function createTypeGpuLayerCompositor(
         } else {
           sourceKind.write(0)
           sourceOpacity.write(layer.opacity ?? 1)
+          hasLayerFilters.write(layer.filters ? 1 : 0)
+          if (layer.filters) {
+            filterBrightness.write(layer.filters.brightness / 100)
+            filterContrast.write(layer.filters.contrast / 100)
+            filterSaturation.write(layer.filters.saturation / 100)
+            filterHue.write(layer.filters.hue * Math.PI / 180)
+            filterGrayscale.write(layer.filters.grayscale / 100)
+            filterSepia.write(layer.filters.sepia / 100)
+            filterInvert.write(layer.filters.invert / 100)
+          }
           layerTexture.write(layer.source)
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
@@ -353,6 +410,14 @@ export function createTypeGpuLayerCompositor(
       hasClip.buffer.destroy()
       sourceKind.buffer.destroy()
       sourceOpacity.buffer.destroy()
+      hasLayerFilters.buffer.destroy()
+      filterBrightness.buffer.destroy()
+      filterContrast.buffer.destroy()
+      filterSaturation.buffer.destroy()
+      filterHue.buffer.destroy()
+      filterGrayscale.buffer.destroy()
+      filterSepia.buffer.destroy()
+      filterInvert.buffer.destroy()
       adjustmentOpacity.buffer.destroy()
       adjustmentBrightness.buffer.destroy()
       adjustmentContrast.buffer.destroy()
