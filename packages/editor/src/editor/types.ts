@@ -44,6 +44,13 @@ export type BlendIfSettings = {
   channels: Array<{ source: number[]; destination: number[] }>
 }
 
+export type SerializedPsdValue = null | boolean | number | string | SerializedPsdValue[] | { [key: string]: SerializedPsdValue }
+export type DocumentGuide = { id: string; direction: 'horizontal' | 'vertical'; position: number }
+export type PsdDocumentMetadata = {
+  imageResources?: SerializedPsdValue
+  linkedFiles?: SerializedPsdValue[]
+}
+
 export type BaseLayer = {
   id: string
   name: string
@@ -61,6 +68,8 @@ export type BaseLayer = {
   maskSettings?: LayerMaskSettings
   vectorMask?: VectorMask
   blendIf?: BlendIfSettings
+  psdLayerId?: number
+  psdPlacedLayer?: SerializedPsdValue
   clipToBelow?: boolean
   groupId?: string | null
   stackOrder?: number
@@ -248,6 +257,8 @@ export type EditorDocument = {
   selectedLayerIds: string[]
   selectedGroupId: string | null
   channels?: DocumentChannel[]
+  guides?: DocumentGuide[]
+  psdMetadata?: PsdDocumentMetadata
 }
 
 export type LayerPatch = Partial<{
@@ -264,6 +275,8 @@ export type LayerPatch = Partial<{
   maskSettings: LayerMaskSettings
   vectorMask: VectorMask | null
   blendIf: BlendIfSettings | null
+  psdLayerId: number
+  psdPlacedLayer: SerializedPsdValue | null
   clipToBelow: boolean
   groupId: string | null
   stackOrder: number

@@ -390,7 +390,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} />
+        <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} guides={document.guides} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(79,70,229,0.08),transparent_42%)]" />
         <div
           className="relative z-10 flex w-full max-w-full shrink-0 items-center justify-center transition-transform duration-150"

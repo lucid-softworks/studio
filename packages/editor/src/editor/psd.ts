@@ -1,12 +1,38 @@
-import { initializeCanvas, readPsd, writePsd, type Color, type Layer, type LayerMaskData, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
-import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, ShapeLayer, TextLayer, VectorMask } from './types'
+import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, TextLayer, VectorMask } from './types'
 
 let initialized = false
+
+function serializePsdValue(value: unknown): SerializedPsdValue {
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  if (value instanceof Uint8Array) return { __studioBytes: [...value] }
+  if (Array.isArray(value)) return value.map(serializePsdValue)
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => [key, serializePsdValue(entry)]))
+  return null
+}
+
+function revivePsdValue(value: SerializedPsdValue): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(revivePsdValue)
+  if (Array.isArray(value.__studioBytes)) return Uint8Array.from(value.__studioBytes as number[])
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, revivePsdValue(entry)]))
+}
+
+function preservedImageResources(resources: ImageResources | undefined) {
+  if (!resources) return undefined
+  const keys = [
+    'versionInfo', 'globalAngle', 'globalAltitude', 'pixelAspectRatio', 'urlsList', 'gridAndGuidesInformation',
+    'resolutionInfo', 'captionDigest', 'xmpMetadata', 'printScale', 'printInformation', 'backgroundColor',
+    'idsSeedNumber', 'printFlags', 'iccUntaggedProfile', 'pathSelectionState', 'slices', 'layerComps',
+  ] as const
+  const selected = Object.fromEntries(keys.flatMap((key) => resources[key] === undefined ? [] : [[key, resources[key]]]))
+  return Object.keys(selected).length ? serializePsdValue(selected) : undefined
+}
 
 function initializeBrowserCanvas() {
   if (initialized) return
@@ -188,6 +214,8 @@ function applyPsdLayerMetadata(target: EditorLayer, source: Layer, documentWidth
   if (settings) target.maskSettings = settings
   if (includeVectorMask) target.vectorMask = psdVectorMask(source, documentWidth, documentHeight)
   target.blendIf = psdBlendIf(source)
+  target.psdLayerId = source.id
+  target.psdPlacedLayer = source.placedLayer ? serializePsdValue(source.placedLayer) : undefined
 }
 
 function effectEnabled(effect: { enabled?: boolean; present?: boolean } | undefined) {
@@ -568,7 +596,7 @@ export function psdImportWarnings(psd: Psd) {
       const name = layer.name?.trim() || `Layer ${index + 1}`
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.text && !canImportPsdText(layer)) add('text', 'Complex text was rasterized', path)
-      if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
+      if (layer.placedLayer) add('smart-object-preview', 'Smart objects use raster previews while their placed and linked metadata remains preserved', path)
       const editableShape = canImportPsdShape(layer, psd.width, psd.height)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
@@ -587,9 +615,6 @@ export function psdImportWarnings(psd: Psd) {
 
   if (psd.bitsPerChannel && psd.bitsPerChannel !== 8) add('depth', `${psd.bitsPerChannel}-bit channels were converted to 8-bit raster data`)
   if (psd.colorMode !== undefined && psd.colorMode !== 3) add('color-mode', 'The source color mode was converted to RGB')
-  if (psd.imageResources?.gridAndGuidesInformation?.guides?.length) add('guides', 'PSD guides were not imported')
-  if (psd.imageResources?.layerComps?.list.length) add('layer-comps', 'Layer comps were not imported')
-  if (psd.linkedFiles?.length) add('linked-files', 'Linked file metadata was not preserved')
   visit(psd.children ?? [])
 
   return [...warnings.values()].map(({ message, paths }) => {
@@ -798,6 +823,11 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       selectedLayerId,
       selectedLayerIds: selectedLayerId ? [selectedLayerId] : [],
       channels: (psd.imageResources?.alphaChannelNames ?? []).map((name, index) => ({ id: psd.imageResources?.alphaIdentifiers?.[index], name })),
+      guides: (psd.imageResources?.gridAndGuidesInformation?.guides ?? []).map((guide, index) => ({ id: `psd-guide-${index}`, direction: guide.direction, position: guide.location })),
+      psdMetadata: {
+        imageResources: preservedImageResources(psd.imageResources),
+        linkedFiles: psd.linkedFiles?.map((file) => serializePsdValue(file)),
+      },
     },
   }
 }
@@ -1029,7 +1059,8 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
       protected: layer.locked ? { position: true, composite: true } : undefined,
       mask: exportedMask(layer, assets, width, height), vectorMask: exportedVectorMask(layer, width, height),
-      blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects),
+      blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects), id: layer.psdLayerId,
+      placedLayer: layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined,
     }
     if (layer.type === 'adjustment') return { ...base, adjustment: exportedAdjustment(layer) }
     const rendered = renderCanvas([{ ...layer, opacity: 100, blendMode: 'normal', clipToBelow: false, maskAssetId: null, effects: null, groupId: null, stackOrder: 0 }])
@@ -1064,7 +1095,17 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   resources.dispose()
   const channelNames = documentState.channels?.map((channel) => channel.name)
   const channelIds = documentState.channels?.flatMap((channel) => channel.id === undefined ? [] : [channel.id])
-  const imageResources = channelNames?.length ? { alphaChannelNames: channelNames, alphaIdentifiers: channelIds?.length === channelNames.length ? channelIds : undefined } : undefined
-  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources }, { psb, noBackground: true })
+  const preservedResources = documentState.psdMetadata?.imageResources
+    ? revivePsdValue(documentState.psdMetadata.imageResources) as ImageResources
+    : {}
+  const guides = documentState.guides?.map((guide) => ({ direction: guide.direction, location: guide.position }))
+  const imageResources: ImageResources | undefined = Object.keys(preservedResources).length || channelNames?.length || guides?.length ? {
+    ...preservedResources,
+    alphaChannelNames: channelNames?.length ? channelNames : preservedResources.alphaChannelNames,
+    alphaIdentifiers: channelIds?.length === channelNames?.length ? channelIds : preservedResources.alphaIdentifiers,
+    gridAndGuidesInformation: guides?.length ? { ...preservedResources.gridAndGuidesInformation, guides } : preservedResources.gridAndGuidesInformation,
+  } : undefined
+  const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
+  const buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
   return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
 }

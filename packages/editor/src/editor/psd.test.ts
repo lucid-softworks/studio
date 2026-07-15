@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createCanvas, ImageData } from '@napi-rs/canvas'
-import { readPsd, type Layer, type Psd } from 'ag-psd'
+import { LayerCompCapturedInfo, readPsd, writePsd, type Layer, type Psd } from 'ag-psd'
 import { createLayerGroup, createShapeLayer, createTextLayer, initialDocument } from './presets'
-import { exportPsdDocument, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdTextLayer, psdVectorMask } from './psd'
+import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdTextLayer, psdVectorMask } from './psd'
 
 Object.assign(globalThis, {
   ImageData,
@@ -73,7 +73,6 @@ describe('PSD layer ordering', () => {
     expect(psdImportWarnings(psd)).toEqual(expect.arrayContaining([
       '16-bit channels were converted to 8-bit raster data',
       'The source color mode was converted to RGB',
-      'PSD guides were not imported',
       'Complex text was rasterized: Artwork / Heading',
       'Some Photoshop-only layer effects were not preserved: Artwork / Glow',
       'Unsupported “linear light” blending was changed to normal: Artwork / Blend',
@@ -410,5 +409,43 @@ describe('PSD layer ordering', () => {
     expect(decoded.imageResources).toMatchObject({ alphaChannelNames: ['Saved selection'], alphaIdentifiers: [41] })
     expect(psdImportWarnings({ width: 200, height: 100, children: [layer!] }))
       .not.toEqual(expect.arrayContaining([expect.stringMatching(/mask|advanced blending/i)]))
+  })
+
+  it('preserves placed-layer, linked-file, guide, layer-comp, and document metadata', async () => {
+    const imageData = new ImageData(4, 4)
+    imageData.data.fill(255)
+    const linkedId = '20953ddb-9391-11ec-b4f1-c15674f50bc4'
+    const source: Psd = {
+      width: 4,
+      height: 4,
+      imageData,
+      children: [{
+        id: 77, name: 'Embedded artwork', left: 0, top: 0, right: 4, bottom: 4, imageData,
+        placedLayer: { id: linkedId, type: 'raster', transform: [0, 0, 4, 0, 4, 4, 0, 4], width: 4, height: 4 },
+      }],
+      linkedFiles: [{ id: linkedId, name: 'artwork.psb', type: '8BPS', creator: '8BIM', data: Uint8Array.from([8, 66, 80, 83, 0, 1]) }],
+      imageResources: {
+        gridAndGuidesInformation: { grid: { horizontal: 32, vertical: 32 }, guides: [{ direction: 'vertical', location: 2 }] },
+        resolutionInfo: { horizontalResolution: 300, horizontalResolutionUnit: 'PPI', widthUnit: 'Inches', verticalResolution: 300, verticalResolutionUnit: 'PPI', heightUnit: 'Inches' },
+        xmpMetadata: '<x:xmpmeta>local metadata</x:xmpmeta>',
+        layerComps: { list: [{ id: 5, name: 'Hero', capturedInfo: LayerCompCapturedInfo.Visibility | LayerCompCapturedInfo.Position | LayerCompCapturedInfo.Appearance }], lastApplied: 5 },
+      },
+    }
+    const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'metadata.psd')
+    expect(imported.document.guides).toEqual([{ id: 'psd-guide-0', direction: 'vertical', position: 2 }])
+    expect(imported.document.layers[0]).toMatchObject({ psdLayerId: 77, psdPlacedLayer: { id: linkedId, type: 'raster' } })
+    expect(imported.document.psdMetadata).toMatchObject({ imageResources: { xmpMetadata: '<x:xmpmeta>local metadata</x:xmpmeta>' }, linkedFiles: [{ id: linkedId, name: 'artwork.psb', data: { __studioBytes: [8, 66, 80, 83, 0, 1] } }] })
+
+    const blob = await exportPsdDocument(imported.document, imported.assets)
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    expect(decoded.children?.[0]).toMatchObject({ id: 77, placedLayer: { id: linkedId, type: 'raster', width: 4, height: 4 } })
+    expect(decoded.linkedFiles?.[0]).toMatchObject({ id: linkedId, name: 'artwork.psb' })
+    expect([...decoded.linkedFiles![0].data!]).toEqual([8, 66, 80, 83, 0, 1])
+    expect(decoded.imageResources).toMatchObject({
+      gridAndGuidesInformation: { guides: [{ direction: 'vertical', location: 2 }] },
+      resolutionInfo: { horizontalResolution: 300, verticalResolution: 300 },
+      xmpMetadata: '<x:xmpmeta>local metadata</x:xmpmeta>',
+      layerComps: { list: [{ id: 5, name: 'Hero', capturedInfo: 7 }], lastApplied: 5 },
+    })
   })
 })

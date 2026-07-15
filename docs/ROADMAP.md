@@ -75,7 +75,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Preserve and render primary inner shadow/glow, bevel, satin, gradient/pattern overlay, and stroke styles
   - [x] Preserve every PSD adjustment descriptor as typed Studio data and render supported adjustments locally
   - [ ] Preserve multiple style instances and custom contours, render noise gradients, and evaluate Color Lookup LUT previews
-- [ ] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
+- [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [x] Write layered PSD files from Studio documents
 - [x] Add import → export → import structural and pixel-diff tests

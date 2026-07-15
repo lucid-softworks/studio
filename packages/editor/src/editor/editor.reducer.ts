@@ -216,6 +216,8 @@ const documentFields = [
   'selectedLayerIds',
   'selectedGroupId',
   'channels',
+  'guides',
+  'psdMetadata',
 ] as const satisfies readonly (keyof EditorDocument)[]
 
 function documentPatch(from: EditorDocument, to: EditorDocument): DocumentStatePatch {

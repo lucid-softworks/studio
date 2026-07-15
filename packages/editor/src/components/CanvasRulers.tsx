@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useState, type RefObject } from 'react'
 import { rulerStep, rulerValues } from './canvas-ruler-scale'
+import type { DocumentGuide } from '../editor/types'
 
 type Metrics = { width: number; height: number; canvasLeft: number; canvasTop: number; scaleX: number; scaleY: number; scrollLeft: number; scrollTop: number }
 
-export function CanvasRulers({ stageRef, canvasRef, zoom }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number }) {
+export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [] }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number; guides?: DocumentGuide[] }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
 
   useLayoutEffect(() => {
@@ -82,6 +83,9 @@ export function CanvasRulers({ stageRef, canvasRef, zoom }: { stageRef: RefObjec
         })}
       </svg>
       <div className="absolute top-0 left-0 size-[22px] border-r border-b border-white/[0.08] bg-[#1a1a1e]" />
+      {guides.map((guide) => guide.direction === 'vertical'
+        ? <div key={guide.id} className="absolute top-[22px] bottom-0 w-px bg-cyan-400/75 shadow-[0_0_3px_rgba(34,211,238,0.5)]" style={{ left: metrics.canvasLeft + guide.position * metrics.scaleX }} />
+        : <div key={guide.id} className="absolute right-0 left-[22px] h-px bg-cyan-400/75 shadow-[0_0_3px_rgba(34,211,238,0.5)]" style={{ top: metrics.canvasTop + guide.position * metrics.scaleY }} />)}
     </div>
   )
 }
