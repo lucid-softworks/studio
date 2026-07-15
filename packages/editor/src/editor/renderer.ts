@@ -675,6 +675,7 @@ let adjustmentCanvas: HTMLCanvasElement | null = null
 let layerEffectsCanvas: HTMLCanvasElement | null = null
 let layerEffectPassCanvas: HTMLCanvasElement | null = null
 let colorOverlayCanvas: HTMLCanvasElement | null = null
+let strokeEffectsCanvas: HTMLCanvasElement | null = null
 
 function prepareScratchCanvas(current: HTMLCanvasElement | null, canvas: HTMLCanvasElement) {
   const scratch = current ?? document.createElement('canvas')
@@ -797,6 +798,31 @@ function applyPatternOverlay(context: CanvasRenderingContext2D, canvas: HTMLCanv
   context.restore()
 }
 
+function drawStrokeEffect(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, source: HTMLCanvasElement, stroke: LayerEffects['stroke'], inner: boolean) {
+  strokeEffectsCanvas = prepareScratchCanvas(strokeEffectsCanvas, canvas)
+  const strokeContext = strokeEffectsCanvas.getContext('2d')
+  if (!strokeContext) return
+  strokeContext.clearRect(0, 0, canvas.width, canvas.height)
+  if (inner) drawInnerTintedEffect(strokeContext, canvas, source, '#ffffff', 100, stroke.size / 2, 0, 0, 'normal')
+  else drawTintedEffect(strokeContext, canvas, source, '#ffffff', 100, stroke.size / (stroke.position === 'center' ? 2 : 1), 0, 0, 'normal')
+  if (stroke.fillType === 'gradient') {
+    applyGradientOverlay(strokeContext, canvas, { ...stroke.gradient, enabled: true, opacity: 100, blendMode: 'normal' })
+  } else if (stroke.fillType === 'pattern') {
+    applyPatternOverlay(strokeContext, canvas, { ...stroke.pattern, enabled: true, opacity: 100, blendMode: 'normal' })
+  } else {
+    strokeContext.save()
+    strokeContext.globalCompositeOperation = 'source-in'
+    strokeContext.fillStyle = stroke.color
+    strokeContext.fillRect(0, 0, canvas.width, canvas.height)
+    strokeContext.restore()
+  }
+  context.save()
+  context.globalCompositeOperation = stroke.blendMode === 'normal' ? 'source-over' : stroke.blendMode
+  context.globalAlpha = stroke.opacity / 100
+  context.drawImage(strokeEffectsCanvas, 0, 0)
+  context.restore()
+}
+
 function drawLayerWithEffects(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -821,7 +847,7 @@ function drawLayerWithEffects(
       const angle = value.dropShadow.angle * Math.PI / 180
       drawTintedEffect(context, canvas, layerEffectsCanvas, value.dropShadow.color, value.dropShadow.opacity, value.dropShadow.blur, Math.cos(angle) * value.dropShadow.distance, Math.sin(angle) * value.dropShadow.distance, value.dropShadow.blendMode)
     }
-    if (value.stroke.enabled && value.stroke.position !== 'inside') drawTintedEffect(context, canvas, layerEffectsCanvas, value.stroke.color, value.stroke.opacity, value.stroke.size / (value.stroke.position === 'center' ? 2 : 1), 0, 0, value.stroke.blendMode)
+    if (value.stroke.enabled && value.stroke.position !== 'inside') drawStrokeEffect(context, canvas, layerEffectsCanvas, value.stroke, false)
   }
   colorOverlayCanvas = prepareScratchCanvas(colorOverlayCanvas, canvas)
   const overlayContext = colorOverlayCanvas.getContext('2d')
@@ -858,7 +884,7 @@ function drawLayerWithEffects(
       drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.highlightColor, value.bevel.highlightOpacity, value.bevel.size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
       drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.shadowColor, value.bevel.shadowOpacity, value.bevel.size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
     }
-    if (value.stroke.enabled && value.stroke.position === 'inside') drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.stroke.color, value.stroke.opacity, value.stroke.size / 2, 0, 0, value.stroke.blendMode)
+    if (value.stroke.enabled && value.stroke.position === 'inside') drawStrokeEffect(context, canvas, layerEffectsCanvas, value.stroke, true)
   }
 }
 

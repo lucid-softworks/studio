@@ -10,7 +10,11 @@ export const defaultLayerEffects: LayerEffects = {
   colorOverlay: { enabled: false, color: '#8b5cf6', opacity: 70, blendMode: 'normal' },
   gradientOverlay: { enabled: false, opacity: 100, angle: 90, scale: 100, style: 'linear', reverse: false, blendMode: 'normal', name: 'Foreground to background', gradientType: 'solid', colorStops: [{ color: '#000000', position: 0 }, { color: '#ffffff', position: 1 }], opacityStops: [{ opacity: 1, position: 0 }, { opacity: 1, position: 1 }], roughness: 50, randomSeed: 1, colorModel: 'rgb', restrictColors: false, addTransparency: false, min: [0, 0, 0, 0], max: [1, 1, 1, 1] },
   patternOverlay: { enabled: false, opacity: 100, scale: 100, blendMode: 'normal', id: '', name: 'Pattern', phase: { x: 0, y: 0 }, linked: true },
-  stroke: { enabled: false, color: '#ffffff', opacity: 100, size: 3, position: 'outside', blendMode: 'normal' },
+  stroke: {
+    enabled: false, color: '#ffffff', opacity: 100, size: 3, position: 'outside', blendMode: 'normal', fillType: 'color',
+    gradient: { angle: 90, scale: 100, style: 'linear', reverse: false, name: 'Foreground to background', gradientType: 'solid', colorStops: [{ color: '#000000', position: 0 }, { color: '#ffffff', position: 1 }], opacityStops: [{ opacity: 1, position: 0 }, { opacity: 1, position: 1 }], roughness: 50, randomSeed: 1, colorModel: 'rgb', restrictColors: false, addTransparency: false, min: [0, 0, 0, 0], max: [1, 1, 1, 1] },
+    pattern: { scale: 100, id: '', name: 'Pattern', phase: { x: 0, y: 0 }, linked: true },
+  },
 }
 
 export function normalizeLayerEffects(effects?: Partial<LayerEffects> | null): LayerEffects {
@@ -24,7 +28,12 @@ export function normalizeLayerEffects(effects?: Partial<LayerEffects> | null): L
     colorOverlay: { ...defaultLayerEffects.colorOverlay, ...effects?.colorOverlay },
     gradientOverlay: { ...defaultLayerEffects.gradientOverlay, ...effects?.gradientOverlay },
     patternOverlay: { ...defaultLayerEffects.patternOverlay, ...effects?.patternOverlay },
-    stroke: { ...defaultLayerEffects.stroke, ...effects?.stroke },
+    stroke: {
+      ...defaultLayerEffects.stroke,
+      ...effects?.stroke,
+      gradient: { ...defaultLayerEffects.stroke.gradient, ...effects?.stroke?.gradient },
+      pattern: { ...defaultLayerEffects.stroke.pattern, ...effects?.stroke?.pattern },
+    },
   }
 }
 

@@ -5,6 +5,8 @@ export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
 export type ShapeKind = 'rectangle' | 'ellipse' | 'path'
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity'
 export type LayerFilters = { brightness: number; contrast: number; saturation: number; hue: number; grayscale: number; sepia: number; invert: number; blur: number }
+export type GradientEffectSettings = { enabled: boolean; opacity: number; angle: number; scale: number; style: 'linear' | 'radial' | 'angle' | 'reflected' | 'diamond'; reverse: boolean; blendMode: BlendMode; name: string; gradientType: 'solid' | 'noise'; colorStops: Array<{ color: string; position: number }>; opacityStops: Array<{ opacity: number; position: number }>; roughness: number; randomSeed: number; colorModel: 'rgb' | 'hsb' | 'lab' | 'hsl'; restrictColors: boolean; addTransparency: boolean; min: number[]; max: number[] }
+export type PatternEffectSettings = { enabled: boolean; opacity: number; scale: number; blendMode: BlendMode; id: string; name: string; phase: Position; linked: boolean }
 export type LayerEffects = {
   dropShadow: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; blur: number; spread: number; blendMode: BlendMode }
   innerShadow: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; blur: number; choke: number; blendMode: BlendMode }
@@ -13,9 +15,9 @@ export type LayerEffects = {
   bevel: { enabled: boolean; size: number; depth: number; angle: number; altitude: number; highlightColor: string; highlightOpacity: number; shadowColor: string; shadowOpacity: number; style: 'outer bevel' | 'inner bevel' | 'emboss' | 'pillow emboss' | 'stroke emboss'; direction: 'up' | 'down' }
   satin: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; size: number; invert: boolean; blendMode: BlendMode }
   colorOverlay: { enabled: boolean; color: string; opacity: number; blendMode: BlendMode }
-  gradientOverlay: { enabled: boolean; opacity: number; angle: number; scale: number; style: 'linear' | 'radial' | 'angle' | 'reflected' | 'diamond'; reverse: boolean; blendMode: BlendMode; name: string; gradientType: 'solid' | 'noise'; colorStops: Array<{ color: string; position: number }>; opacityStops: Array<{ opacity: number; position: number }>; roughness: number; randomSeed: number; colorModel: 'rgb' | 'hsb' | 'lab' | 'hsl'; restrictColors: boolean; addTransparency: boolean; min: number[]; max: number[] }
-  patternOverlay: { enabled: boolean; opacity: number; scale: number; blendMode: BlendMode; id: string; name: string; phase: Position; linked: boolean }
-  stroke: { enabled: boolean; color: string; opacity: number; size: number; position: 'inside' | 'center' | 'outside'; blendMode: BlendMode }
+  gradientOverlay: GradientEffectSettings
+  patternOverlay: PatternEffectSettings
+  stroke: { enabled: boolean; color: string; opacity: number; size: number; position: 'inside' | 'center' | 'outside'; blendMode: BlendMode; fillType: 'color' | 'gradient' | 'pattern'; gradient: Omit<GradientEffectSettings, 'enabled' | 'opacity' | 'blendMode'>; pattern: Omit<PatternEffectSettings, 'enabled' | 'opacity' | 'blendMode'> }
 }
 
 export type VectorPath = {

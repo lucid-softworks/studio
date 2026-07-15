@@ -79,7 +79,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Preserve and render multiple style instances while retaining custom contour descriptors
   - [x] Preview embedded `.3dl` Color Lookup LUTs, including input shaper tables
   - [ ] Preview `.look` and ICC-profile Color Lookup encodings
-  - [ ] Preview gradient and pattern layer-effect strokes
+  - [x] Preview and round-trip gradient and pattern layer-effect strokes
 - [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [x] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
   - [x] Preserve exact unedited high-depth raster and alpha samples with deterministic 8-bit canvas previews

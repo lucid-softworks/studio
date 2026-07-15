@@ -89,7 +89,6 @@ describe('PSD layer ordering', () => {
         name: 'Artwork',
         children: [
           { name: 'Heading', text: {} as NonNullable<Layer['text']> },
-          { name: 'Glow', effects: { stroke: [{ enabled: true, fillType: 'pattern' }] } },
           { name: 'Blend', blendMode: 'linear light' },
         ],
       }],
@@ -100,7 +99,6 @@ describe('PSD layer ordering', () => {
       '16-bit source samples were preserved; the canvas preview uses an 8-bit display conversion',
       'The source color mode was converted to RGB',
       'Complex text was rasterized: Artwork / Heading',
-      'Some Photoshop-only layer effects were not preserved: Artwork / Glow',
       'Unsupported “linear light” blending was changed to normal: Artwork / Blend',
     ]))
   })
@@ -177,6 +175,25 @@ describe('PSD layer ordering', () => {
       patternOverlay: { enabled: true, pattern: { id: 'pattern-1', name: 'Paper' } },
       stroke: [{ enabled: true, fillType: 'color', position: 'inside' }],
     })
+  })
+
+  it('round-trips editable gradient and pattern effect strokes', async () => {
+    const gradient = psdLayerEffects({ effects: { stroke: [{
+      enabled: true, fillType: 'gradient', opacity: 0.8, size: { units: 'Pixels', value: 9 }, position: 'outside', blendMode: 'overlay',
+      gradient: { type: 'solid', name: 'Sunset', style: 'linear', angle: 35, scale: 120, reverse: true, colorStops: [{ color: { r: 255, g: 40, b: 20 }, location: 0, midpoint: 50 }, { color: { r: 30, g: 20, b: 255 }, location: 4096, midpoint: 50 }], opacityStops: [{ opacity: 1, location: 0, midpoint: 50 }, { opacity: 1, location: 4096, midpoint: 50 }] },
+    }] } })!
+    const pattern = psdLayerEffects({ effects: { stroke: [{ enabled: true, fillType: 'pattern', opacity: 0.6, size: { units: 'Pixels', value: 5 }, position: 'inside', pattern: { id: 'paper-1', name: 'Paper' } }] } })!
+    expect(gradient.stroke).toMatchObject({ fillType: 'gradient', gradient: { name: 'Sunset', angle: 35, scale: 120, reverse: true } })
+    expect(gradient.stroke.gradient.colorStops[0]).toMatchObject({ color: '#ff2814' })
+    expect(pattern.stroke).toMatchObject({ fillType: 'pattern', pattern: { id: 'paper-1', name: 'Paper' } })
+
+    const shape = { ...createShapeLayer('rectangle', 0), effects: gradient, additionalEffects: [pattern] }
+    const blob = await exportPsdDocument({ ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 64, height: 64 }, layers: [shape] }, {})
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    expect(decoded.children?.[0]?.effects?.stroke).toMatchObject([
+      { fillType: 'gradient', gradient: { name: 'Sunset', angle: 35, scale: 120, reverse: true } },
+      { fillType: 'pattern', pattern: { id: 'paper-1', name: 'Paper' } },
+    ])
   })
 
   it('round-trips seeded noise-gradient layer styles', async () => {

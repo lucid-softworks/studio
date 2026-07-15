@@ -524,7 +524,18 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
     },
     stroke: {
       enabled: Boolean(stroke), color: stroke ? colorHex(stroke.color) : defaultLayerEffects.stroke.color, opacity: Math.round((stroke?.opacity ?? 1) * 100), size: stroke?.size?.value ?? 3,
-      position: stroke?.position ?? 'outside', blendMode: psdBlendMode(stroke?.blendMode),
+      position: stroke?.position ?? 'outside', blendMode: psdBlendMode(stroke?.blendMode), fillType: stroke?.fillType ?? 'color',
+      gradient: stroke?.gradient ? {
+        angle: stroke.gradient.angle ?? 90, scale: stroke.gradient.scale ?? 100, style: stroke.gradient.style ?? 'linear', reverse: stroke.gradient.reverse ?? false,
+        name: stroke.gradient.name, gradientType: stroke.gradient.type,
+        colorStops: stroke.gradient.type === 'solid' ? stroke.gradient.colorStops.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location })) : defaultLayerEffects.stroke.gradient.colorStops,
+        opacityStops: stroke.gradient.type === 'solid' ? stroke.gradient.opacityStops.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location })) : defaultLayerEffects.stroke.gradient.opacityStops,
+        roughness: stroke.gradient.type === 'noise' ? stroke.gradient.roughness ?? 50 : 50, randomSeed: stroke.gradient.type === 'noise' ? stroke.gradient.randomSeed ?? 1 : 1,
+        colorModel: stroke.gradient.type === 'noise' ? stroke.gradient.colorModel ?? 'rgb' : 'rgb', restrictColors: stroke.gradient.type === 'noise' ? stroke.gradient.restrictColors ?? false : false,
+        addTransparency: stroke.gradient.type === 'noise' ? stroke.gradient.addTransparency ?? false : false,
+        min: stroke.gradient.type === 'noise' ? stroke.gradient.min : [0, 0, 0, 0], max: stroke.gradient.type === 'noise' ? stroke.gradient.max : [1, 1, 1, 1],
+      } : defaultLayerEffects.stroke.gradient,
+      pattern: stroke?.pattern ? { ...defaultLayerEffects.stroke.pattern, id: stroke.pattern.id, name: stroke.pattern.name } : defaultLayerEffects.stroke.pattern,
     },
   }
 }
@@ -632,14 +643,6 @@ export function psdShapeLayer(layer: Layer, documentWidth: number, documentHeigh
     } : undefined,
     effects: psdLayerEffects(layer),
   }
-}
-
-function hasUnsupportedEffects(layer: Layer) {
-  const effects = layer.effects
-  if (!effects || effects.disabled) return false
-  return Boolean(
-    effects.stroke?.some((effect) => effectEnabled(effect) && effect.fillType && effect.fillType !== 'color')
-  )
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -831,7 +834,6 @@ export function psdImportWarnings(psd: Psd) {
       const editableShape = canImportPsdShape(layer, psd.width, psd.height)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
-      if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
       if (layer.adjustment?.type === 'color lookup' && !canPreviewColorLookup(layer.adjustment)) add('color-lookup-preview', 'Color Lookup data was preserved, but this LUT encoding cannot yet be previewed', path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
@@ -1127,7 +1129,22 @@ function generatedEffects(effects: LayerEffects | null | undefined): Layer['effe
     },
   }]
   if (effects.patternOverlay.enabled) result.patternOverlay = { enabled: true, opacity: effects.patternOverlay.opacity / 100, scale: effects.patternOverlay.scale, blendMode: studioPsdBlendModes[effects.patternOverlay.blendMode], pattern: { id: effects.patternOverlay.id, name: effects.patternOverlay.name }, phase: effects.patternOverlay.phase, align: effects.patternOverlay.linked }
-  if (effects.stroke.enabled) result.stroke = [{ enabled: true, fillType: 'color', color: psdColor(effects.stroke.color), opacity: effects.stroke.opacity / 100, size: { units: 'Pixels', value: effects.stroke.size }, position: effects.stroke.position, blendMode: studioPsdBlendModes[effects.stroke.blendMode] }]
+  if (effects.stroke.enabled) result.stroke = [{
+    enabled: true, fillType: effects.stroke.fillType, color: effects.stroke.fillType === 'color' ? psdColor(effects.stroke.color) : undefined,
+    gradient: effects.stroke.fillType === 'gradient' ? (effects.stroke.gradient.gradientType === 'noise' ? {
+      type: 'noise', name: effects.stroke.gradient.name, roughness: effects.stroke.gradient.roughness, randomSeed: effects.stroke.gradient.randomSeed,
+      colorModel: effects.stroke.gradient.colorModel === 'hsl' ? 'hsb' : effects.stroke.gradient.colorModel, restrictColors: effects.stroke.gradient.restrictColors,
+      addTransparency: effects.stroke.gradient.addTransparency, min: effects.stroke.gradient.min, max: effects.stroke.gradient.max,
+      style: effects.stroke.gradient.style, angle: effects.stroke.gradient.angle, scale: effects.stroke.gradient.scale, reverse: effects.stroke.gradient.reverse,
+    } : {
+      type: 'solid', name: effects.stroke.gradient.name,
+      colorStops: effects.stroke.gradient.colorStops.map((stop) => ({ color: psdColor(stop.color), location: Math.round(stop.position * 4096), midpoint: 50 })),
+      opacityStops: effects.stroke.gradient.opacityStops.map((stop) => ({ opacity: stop.opacity, location: Math.round(stop.position * 4096), midpoint: 50 })),
+      style: effects.stroke.gradient.style, angle: effects.stroke.gradient.angle, scale: effects.stroke.gradient.scale, reverse: effects.stroke.gradient.reverse,
+    }) : undefined,
+    pattern: effects.stroke.fillType === 'pattern' ? { id: effects.stroke.pattern.id, name: effects.stroke.pattern.name } : undefined,
+    opacity: effects.stroke.opacity / 100, size: { units: 'Pixels', value: effects.stroke.size }, position: effects.stroke.position, blendMode: studioPsdBlendModes[effects.stroke.blendMode],
+  }]
   return Object.keys(result).length ? result : undefined
 }
 

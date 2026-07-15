@@ -1,6 +1,7 @@
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
 import { createShapeLayer, initialDocument } from './presets'
+import { defaultLayerEffects } from './effects'
 import { calculateImageRect, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel } from './renderer'
 import type { ImageLayer } from './types'
 
@@ -127,6 +128,23 @@ Mesh 1 12
     const canvas = createCanvas(10, 10) as unknown as HTMLCanvasElement
     renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 10, height: 10 }, layers: [shape, adjustment] }, {})
     expect([...canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data]).toEqual([0, 0, 0, 255])
+  })
+})
+
+describe('filled layer-effect strokes', () => {
+  it('renders a gradient through the generated stroke mask', () => {
+    const shape = {
+      ...createShapeLayer('rectangle', 0), width: 30, height: 30, fill: '#ff0000',
+      effects: { ...defaultLayerEffects, stroke: { ...defaultLayerEffects.stroke, enabled: true, size: 12, fillType: 'gradient' as const, gradient: { ...defaultLayerEffects.stroke.gradient, angle: 0, colorStops: [{ color: '#000000', position: 0 }, { color: '#ffffff', position: 1 }] } } },
+    }
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 100, height: 100 }, layers: [shape] }, {})
+    const context = canvas.getContext('2d')!
+    const left = context.getImageData(30, 50, 1, 1).data
+    const right = context.getImageData(70, 50, 1, 1).data
+    expect(left[3]).toBeGreaterThan(0)
+    expect(right[3]).toBeGreaterThan(0)
+    expect(right[0]).toBeGreaterThan(left[0])
   })
 })
 
