@@ -1,7 +1,7 @@
 import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
-import { renderComposition, getLayerBounds } from './renderer'
+import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
 import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, TextLayer, VectorMask } from './types'
@@ -287,12 +287,7 @@ function hasUnsupportedAdvancedBlending(layer: Layer) {
 }
 
 function canPreviewColorLookup(adjustment: Extract<NonNullable<Layer['adjustment']>, { type: 'color lookup' }>) {
-  if (adjustment.lutFormat !== 'cube' || !adjustment.lut3DFileData?.length) return false
-  try {
-    return new TextDecoder().decode(adjustment.lut3DFileData).includes('LUT_3D_SIZE')
-  } catch {
-    return false
-  }
+  return Boolean(parseColorLookupLut(psdAdjustmentDescriptor(adjustment) as Extract<AdjustmentDescriptor, { type: 'color lookup' }>))
 }
 
 function importableRasterMask(layer: Layer) {

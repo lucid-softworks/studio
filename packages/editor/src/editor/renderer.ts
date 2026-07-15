@@ -917,16 +917,30 @@ function gradientMapColor(value: number, adjustment: Extract<AdjustmentDescripto
   return leftColor.map((channel, index) => channel + (rightColor[index] - channel) * amount) as [number, number, number]
 }
 
-type CubeLut = { size: number; values: Array<[number, number, number]>; domainMin: [number, number, number]; domainMax: [number, number, number] }
+type CubeLut = {
+  size: number
+  values: Array<[number, number, number]>
+  domainMin: [number, number, number]
+  domainMax: [number, number, number]
+  order: 'red-fastest' | 'blue-fastest'
+  shaper?: number[]
+}
 
-function parseCubeLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>): CubeLut | null {
-  if (adjustment.lutFormat !== 'cube' || !adjustment.lut3DFileData?.length) return null
+function decodeLutText(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>) {
+  if (!adjustment.lut3DFileData?.length) return null
   let text: string
   try {
     text = new TextDecoder().decode(Uint8Array.from(adjustment.lut3DFileData))
   } catch {
     return null
   }
+  return text.replace(/^\uFEFF/, '')
+}
+
+function parseCubeLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>): CubeLut | null {
+  if (adjustment.lutFormat !== 'cube') return null
+  const text = decodeLutText(adjustment)
+  if (!text) return null
   let size = 0
   let domainMin: [number, number, number] = [0, 0, 0]
   let domainMax: [number, number, number] = [1, 1, 1]
@@ -940,16 +954,66 @@ function parseCubeLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color l
     else if (parts[0] === 'DOMAIN_MAX') domainMax = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
     else if (parts.length >= 3 && parts.slice(0, 3).every((part) => Number.isFinite(Number(part)))) values.push([Number(parts[0]), Number(parts[1]), Number(parts[2])])
   }
-  return size >= 2 && values.length >= size ** 3 ? { size, values, domainMin, domainMax } : null
+  return size >= 2 && values.length >= size ** 3 ? { size, values, domainMin, domainMax, order: 'red-fastest' } : null
+}
+
+function likelyIntegerScale(maximum: number) {
+  if (maximum <= 511) return 255
+  if (maximum <= 2047) return 1023
+  if (maximum <= 8191) return 4095
+  return 65535
+}
+
+function parse3dlLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>): CubeLut | null {
+  if (adjustment.lutFormat !== '3dl') return null
+  const text = decodeLutText(adjustment)
+  if (!text) return null
+  let rawShaper: number[] | undefined
+  const rawValues: Array<[number, number, number]> = []
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#') || line.startsWith('<')) continue
+    const parts = line.split(/\s+/)
+    if (!parts.every((part) => /^[-+]?\d+$/.test(part))) continue
+    const numbers = parts.map(Number)
+    if (numbers.length > 3 && !rawShaper) rawShaper = numbers
+    else if (numbers.length === 3) rawValues.push(numbers as [number, number, number])
+  }
+  const size = Math.round(Math.cbrt(rawValues.length))
+  if (size < 2 || size ** 3 !== rawValues.length) return null
+  let maximum = Number.NEGATIVE_INFINITY
+  for (const value of rawValues) maximum = Math.max(maximum, value[0], value[1], value[2])
+  if (!Number.isFinite(maximum) || maximum < 128) return null
+  const outputScale = likelyIntegerScale(maximum)
+  const values = rawValues.map((value) => value.map((channel) => Math.max(0, Math.min(1, channel / outputScale))) as [number, number, number])
+  let shaper: number[] | undefined
+  if (rawShaper?.length && Math.max(...rawShaper) >= 128) {
+    const shaperScale = likelyIntegerScale(Math.max(...rawShaper))
+    shaper = rawShaper.map((value) => Math.max(0, Math.min(1, value / shaperScale)))
+  }
+  return { size, values, domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'blue-fastest', shaper }
+}
+
+export function parseColorLookupLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>) {
+  return parseCubeLut(adjustment) ?? parse3dlLut(adjustment)
 }
 
 function sampleCubeLut(lut: CubeLut, red: number, green: number, blue: number) {
-  const input = [red, green, blue].map((channel, index) => Math.max(0, Math.min(1, (channel / 255 - lut.domainMin[index]) / Math.max(0.000001, lut.domainMax[index] - lut.domainMin[index]))))
+  const input = [red, green, blue].map((channel, index) => {
+    const normalized = Math.max(0, Math.min(1, (channel / 255 - lut.domainMin[index]) / Math.max(0.000001, lut.domainMax[index] - lut.domainMin[index])))
+    if (!lut.shaper?.length) return normalized
+    const scaled = normalized * (lut.shaper.length - 1)
+    const low = Math.floor(scaled)
+    const high = Math.min(lut.shaper.length - 1, low + 1)
+    return lut.shaper[low] + (lut.shaper[high] - lut.shaper[low]) * (scaled - low)
+  })
   const scaled = input.map((value) => value * (lut.size - 1))
   const low = scaled.map(Math.floor)
   const high = low.map((value) => Math.min(lut.size - 1, value + 1))
   const fraction = scaled.map((value, index) => value - low[index])
-  const at = (r: number, g: number, b: number) => lut.values[r + g * lut.size + b * lut.size * lut.size]
+  const at = (r: number, g: number, b: number) => lut.order === 'red-fastest'
+    ? lut.values[r + g * lut.size + b * lut.size * lut.size]
+    : lut.values[b + g * lut.size + r * lut.size * lut.size]
   const output = [0, 1, 2].map((channel) => {
     const c000 = at(low[0], low[1], low[2])[channel]
     const c100 = at(high[0], low[1], low[2])[channel]
@@ -972,12 +1036,11 @@ function sampleCubeLut(lut: CubeLut, red: number, green: number, blue: number) {
 
 function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescriptor) {
   const clampByte = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
-  const cubeLut = adjustment.type === 'color lookup' ? parseCubeLut(adjustment) : null
+  const cubeLut = adjustment.type === 'color lookup' ? parseColorLookupLut(adjustment) : null
   for (let index = 0; index < pixels.data.length; index += 4) {
     let red = pixels.data[index]
     let green = pixels.data[index + 1]
     let blue = pixels.data[index + 2]
-    const original = [red, green, blue]
     const luminance = red * 0.299 + green * 0.587 + blue * 0.114
     switch (adjustment.type) {
       case 'levels':
@@ -1075,7 +1138,6 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
       pixels.data[index + 1] = clampByte(pixels.data[index + 1] + correction)
       pixels.data[index + 2] = clampByte(pixels.data[index + 2] + correction)
     }
-    void original
   }
 }
 
