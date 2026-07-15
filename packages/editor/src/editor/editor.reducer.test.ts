@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { documentReducer, historyReducer, initialHistoryState } from './editor.reducer'
-import { createAdjustmentLayer, initialDocument } from './presets'
+import { createAdjustmentLayer, createLayerGroup, initialDocument } from './presets'
 import type { TextLayer } from './types'
 
 const textLayer: TextLayer = {
@@ -66,6 +66,29 @@ describe('documentReducer', () => {
     const next = documentReducer(clipped, { type: 'add-layer', layer: adjustment })
     expect(next.layers[0].clipToBelow).toBe(true)
     expect(next.layers[1]).toMatchObject({ type: 'adjustment', brightness: 100, saturation: 100, hue: 0 })
+  })
+
+  it('groups selected layers into a contiguous stack block', () => {
+    const middle = { ...textLayer, id: 'middle', name: 'Middle' }
+    const top = { ...textLayer, id: 'top', name: 'Top' }
+    const state = { ...initialDocument, layers: [textLayer, middle, top], selectedLayerIds: [textLayer.id, top.id] }
+    const group = { ...createLayerGroup(0), id: 'group-1' }
+    const next = documentReducer(state, { type: 'add-group', group, layerIds: state.selectedLayerIds })
+    expect(next.layers.map((layer) => layer.id)).toEqual(['middle', 'text-1', 'top'])
+    expect(next.layers.filter((layer) => layer.groupId === group.id).map((layer) => layer.id)).toEqual(['text-1', 'top'])
+    expect(next.selectedGroupId).toBe(group.id)
+  })
+
+  it('moves and ungroups folders without scrambling their children', () => {
+    const second = { ...textLayer, id: 'second', name: 'Second', groupId: 'group-1' }
+    const first = { ...textLayer, groupId: 'group-1' }
+    const loose = { ...textLayer, id: 'loose', name: 'Loose' }
+    const group = { ...createLayerGroup(0), id: 'group-1' }
+    const state = { ...initialDocument, groups: [group], layers: [first, second, loose] }
+    const moved = documentReducer(state, { type: 'move-group', id: group.id, direction: 'up' })
+    const ungrouped = documentReducer(moved, { type: 'remove-group', id: group.id })
+    expect(moved.layers.map((layer) => layer.id)).toEqual(['loose', 'text-1', 'second'])
+    expect(ungrouped.layers.map((layer) => layer.groupId ?? null)).toEqual([null, null, null])
   })
 })
 

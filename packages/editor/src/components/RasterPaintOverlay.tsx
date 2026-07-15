@@ -15,6 +15,7 @@ type Props = {
   selection: SelectionState | null
   maskAssetId?: string
   maskLocked?: boolean
+  locked?: boolean
   onChange: (assetId: string) => void
   onCommit: (edit: RasterEdit) => void
 }
@@ -33,7 +34,7 @@ type Stroke = {
   selectionData: ImageData | null
 }
 
-export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, color, opacity, selection, maskAssetId, maskLocked, onChange, onCommit }: Props) {
+export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, color, opacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const strokeRef = useRef<Stroke | null>(null)
   const canvas = canvasRef.current
@@ -106,7 +107,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, co
   }
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!layer || layer.locked || !surface) return
+    if (!layer || layer.locked || locked || !surface) return
     const mapped = sourcePoint(event)
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!mapped || !context) return
@@ -187,7 +188,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, size, co
       aria-label={maskAssetId ? `Mask ${tool === 'brush' ? 'brush' : 'eraser'} surface` : `${tool === 'brush' ? 'Brush' : 'Eraser'} surface`}
       viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
       preserveAspectRatio="none"
-      className={`absolute inset-0 size-full touch-none ${layer && !layer.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
+      className={`absolute inset-0 size-full touch-none ${layer && !layer.locked && !locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerEnd}

@@ -349,6 +349,61 @@ function findClippingBase(layers: EditorLayer[], index: number) {
   return null
 }
 
+function drawLayerStack(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layers: EditorLayer[], assets: AssetMap) {
+  for (const [index, layer] of layers.entries()) {
+    if (!layer.visible) continue
+    if (layer.type === 'adjustment') {
+      drawAdjustmentLayer(context, canvas, layer)
+      continue
+    }
+    context.save()
+    context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
+    if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
+    const clippingBase = layer.clipToBelow ? findClippingBase(layers, index) : null
+    if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
+    else if (clippingBase) { /* Hidden clipping bases hide their complete clipping group. */ }
+    else drawMaskedLayer(context, canvas, layer, assets)
+    context.restore()
+  }
+}
+
+let groupCompositionCanvas: HTMLCanvasElement | null = null
+
+function drawDocumentLayers(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, documentState: EditorDocument, assets: AssetMap) {
+  const groups = new Map(documentState.groups.map((group) => [group.id, group]))
+  const renderedGroups = new Set<string>()
+  for (const [index, layer] of documentState.layers.entries()) {
+    const group = layer.groupId ? groups.get(layer.groupId) : null
+    if (!group) {
+      if (!layer.visible) continue
+      if (layer.type === 'adjustment') drawAdjustmentLayer(context, canvas, layer)
+      else {
+        context.save()
+        context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
+        if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
+        const clippingBase = layer.clipToBelow ? findClippingBase(documentState.layers, index) : null
+        if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
+        else if (!clippingBase) drawMaskedLayer(context, canvas, layer, assets)
+        context.restore()
+      }
+      continue
+    }
+    if (renderedGroups.has(group.id)) continue
+    renderedGroups.add(group.id)
+    if (!group.visible) continue
+    groupCompositionCanvas = prepareScratchCanvas(groupCompositionCanvas, canvas)
+    const groupContext = groupCompositionCanvas.getContext('2d')
+    if (!groupContext) continue
+    groupContext.clearRect(0, 0, canvas.width, canvas.height)
+    drawLayerStack(groupContext, groupCompositionCanvas, documentState.layers.filter((candidate) => candidate.groupId === group.id), assets)
+    context.save()
+    context.globalAlpha = group.opacity / 100
+    context.globalCompositeOperation = group.blendMode === 'normal' ? 'source-over' : group.blendMode
+    context.drawImage(groupCompositionCanvas, 0, 0)
+    context.restore()
+  }
+}
+
 export function getLayerBounds(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -422,8 +477,11 @@ export function findLayerAtPoint(
   assets: AssetMap,
   point: Position,
 ) {
+  const groups = new Map(document.groups.map((group) => [group.id, group]))
   return document.layers.findLast((layer) => {
     if (!layer.visible || layer.locked) return false
+    const group = layer.groupId ? groups.get(layer.groupId) : null
+    if (group && (!group.visible || group.locked)) return false
     const bounds = getLayerBounds(context, canvas, layer, assets)
     return bounds ? pointInsideRotatedBounds(point, bounds) : false
   }) ?? null
@@ -469,21 +527,7 @@ export function renderComposition(
   drawBackground(context, canvas.width, canvas.height, document, assets)
   drawPattern(context, canvas.width, canvas.height, document)
 
-  for (const [index, layer] of document.layers.entries()) {
-    if (!layer.visible) continue
-    if (layer.type === 'adjustment') {
-      drawAdjustmentLayer(context, canvas, layer)
-      continue
-    }
-    context.save()
-    context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
-    if (layer.filters) context.filter = `brightness(${layer.filters.brightness}%) contrast(${layer.filters.contrast}%) saturate(${layer.filters.saturation}%) blur(${layer.filters.blur}px)`
-    const clippingBase = layer.clipToBelow ? findClippingBase(document.layers, index) : null
-    if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
-    else if (clippingBase) { /* Hidden clipping bases hide their complete clipping group. */ }
-    else drawMaskedLayer(context, canvas, layer, assets)
-    context.restore()
-  }
+  drawDocumentLayers(context, canvas, document, assets)
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)

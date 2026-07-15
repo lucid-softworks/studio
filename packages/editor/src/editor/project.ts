@@ -21,7 +21,11 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     : selectedLayerId ? [selectedLayerId] : []
   const fallback = getCanvasPreset(value.canvasPreset)
   const canvasSize = value.canvasSize ?? { width: fallback.width, height: fallback.height }
-  return { ...value, canvasSize, selectedLayerId, selectedLayerIds }
+  const groups = Array.isArray(value.groups) ? value.groups : []
+  const groupIds = new Set(groups.map((group) => group.id))
+  const layers = value.layers.map((layer) => layer.groupId && !groupIds.has(layer.groupId) ? { ...layer, groupId: null } : layer)
+  const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
+  return { ...value, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
 }
 
 function openDatabase() {

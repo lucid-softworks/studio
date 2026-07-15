@@ -1,4 +1,4 @@
-import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, RasterLayer, ShapeKind, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, LayerGroup, RasterLayer, ShapeKind, ShapeLayer, TextLayer } from './types'
 
 export const canvasPresets = [
   { id: 'landscape', label: 'Landscape', shortLabel: '16:10', width: 1600, height: 1000 },
@@ -34,9 +34,11 @@ export const initialDocument: EditorDocument = {
     opacity: 16,
     size: 40,
   },
+  groups: [],
   layers: [],
   selectedLayerId: null,
   selectedLayerIds: [],
+  selectedGroupId: null,
 }
 
 export function createId() {
@@ -121,6 +123,18 @@ export function createAdjustmentLayer(index: number): AdjustmentLayer {
     saturation: 100,
     hue: 0,
     blur: 0,
+  }
+}
+
+export function createLayerGroup(index: number): LayerGroup {
+  return {
+    id: createId(),
+    name: `Group ${index + 1}`,
+    visible: true,
+    locked: false,
+    opacity: 100,
+    blendMode: 'normal',
+    collapsed: false,
   }
 }
 

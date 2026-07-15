@@ -38,6 +38,8 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const preset = getDocumentSize(document)
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
+  const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
+  const selectedLayerGroup = selected?.groupId ? document.groups.find((group) => group.id === selected.groupId) : null
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select'
 
@@ -48,7 +50,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   useEffect(() => {
     const clearSelectedPixels = () => {
       if (!selection?.bounds) return false
-      if ((editingMaskLayer ?? selected)?.locked) return false
+      if ((editingMaskLayer ?? selected)?.locked || selectedLayerGroup?.locked) return false
       const canvas = canvasRef.current
       const context = canvas?.getContext('2d')
       if (!canvas || !context) return false
@@ -123,7 +125,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selection])
+  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLayerGroup?.locked, selection])
 
   return (
     <section
@@ -141,7 +143,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-4 sm:px-5">
         <div className="hidden min-w-0 items-center gap-2 text-xs text-zinc-500 sm:flex">
           <ImageIcon className="size-4 shrink-0 text-zinc-600" />
-          <span className="max-w-48 truncate sm:max-w-72">{document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Canvas'}</span>
+          <span className="max-w-48 truncate sm:max-w-72">{selectedGroup?.name ?? (document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Canvas')}</span>
           {editingMaskLayer && <span className="rounded bg-cyan-400/10 px-1.5 py-0.5 text-[9px] text-cyan-200/80">Mask</span>}
           {selected?.locked && <span className="rounded bg-amber-400/10 px-1.5 py-0.5 text-[9px] text-amber-300/70">Locked</span>}
         </div>
@@ -206,7 +208,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               className={`block h-auto w-auto max-h-[calc(100vh-205px)] max-w-full rounded-sm shadow-[0_28px_80px_rgba(0,0,0,0.5)] transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}
             />
             <SelectionOverlay canvasRef={canvasRef} enabled={selectionTool} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
-            {(tool === 'brush' || tool === 'eraser') && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {(tool === 'brush' || tool === 'eraser') && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} color={brushColor} opacity={100} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLayerGroup?.locked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
 
           </div>

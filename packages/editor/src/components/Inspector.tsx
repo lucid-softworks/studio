@@ -39,6 +39,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
 
 export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
+  const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
   const updateLayer = (layer: EditorLayer, patch: LayerPatch, groupKey?: string) => {
     dispatch({ type: 'update-layer', id: layer.id, patch }, groupKey ? { groupKey } : undefined)
@@ -50,7 +51,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
         <div>
           <h1 className="text-sm font-semibold text-zinc-100">Properties</h1>
-          <p className="mt-0.5 max-w-44 truncate text-[11px] text-zinc-600">{document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Document settings'}</p>
+          <p className="mt-0.5 max-w-44 truncate text-[11px] text-zinc-600">{selectedGroup?.name ?? (document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Document settings')}</p>
         </div>
         <button
           type="button"
@@ -61,7 +62,27 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
         </button>
       </div>
 
-      {!selected ? (
+      {selectedGroup ? (
+        <>
+          <ControlSection title="Layer group">
+            <label className="block">
+              <span className="mb-2 block text-[11px] font-medium text-zinc-500">Name</span>
+              <input className={fieldClass} value={selectedGroup.name} onChange={(event) => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { name: event.target.value } }, { groupKey: `group-name-${selectedGroup.id}` })} onBlur={endHistoryGroup} />
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-2 block text-[11px] font-medium text-zinc-500">Blend mode</span>
+              <select aria-label="Group blend mode" value={selectedGroup.blendMode} onChange={(event) => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { blendMode: event.target.value as BlendMode } })} className={fieldClass}>{blendModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select>
+            </label>
+            <RangeControl label="Group opacity" value={selectedGroup.opacity} min={0} max={100} suffix="%" onChange={(value) => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { opacity: value } }, { groupKey: `group-opacity-${selectedGroup.id}` })} onChangeEnd={endHistoryGroup} />
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { visible: !selectedGroup.visible } })} className={`rounded-lg border px-3 py-2 text-xs ${selectedGroup.visible ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-600'}`}>{selectedGroup.visible ? 'Visible' : 'Hidden'}</button>
+              <button type="button" onClick={() => dispatch({ type: 'update-group', id: selectedGroup.id, patch: { locked: !selectedGroup.locked } })} className={`rounded-lg border px-3 py-2 text-xs ${selectedGroup.locked ? 'border-amber-300/20 bg-amber-300/[0.06] text-amber-100' : 'border-white/[0.08] text-zinc-600'}`}>{selectedGroup.locked ? 'Locked' : 'Unlocked'}</button>
+            </div>
+          </ControlSection>
+          <ControlSection title="Folder contents"><p className="text-xs leading-6 text-zinc-500">{document.layers.filter((layer) => layer.groupId === selectedGroup.id).length} layers are composited together before the folder opacity and blend mode are applied.</p></ControlSection>
+          <button type="button" onClick={() => dispatch({ type: 'select-group', id: null }, { record: false })} className="mx-5 my-4 rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Back to document settings</button>
+        </>
+      ) : !selected ? (
         <>
           <ControlSection title="Canvas">
             <div className="grid grid-cols-4 gap-1 rounded-lg bg-black/30 p-1">

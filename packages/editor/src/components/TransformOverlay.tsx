@@ -34,7 +34,11 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const interactionRef = useRef<Interaction | null>(null)
   const canvas = canvasRef.current
   const context = canvas?.getContext('2d') ?? null
-  const selectedLayers = document.layers.filter((layer) => document.selectedLayerIds.includes(layer.id) && layer.visible)
+  const groups = new Map(document.groups.map((group) => [group.id, group]))
+  const selectedLayers = document.layers.filter((layer) => {
+    const group = layer.groupId ? groups.get(layer.groupId) : null
+    return document.selectedLayerIds.includes(layer.id) && layer.visible && group?.visible !== false
+  })
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const activeBounds = canvas && context && activeLayer ? getLayerBounds(context, canvas, activeLayer, assets) : null
   const selectedBounds = useMemo(() => {
@@ -103,7 +107,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const movingIds = document.selectedLayerIds.includes(layer.id) ? document.selectedLayerIds : [layer.id]
     if (!document.selectedLayerIds.includes(layer.id)) dispatch({ type: 'select-layer', id: layer.id }, { record: false })
     const layers = document.layers
-      .filter((candidate) => movingIds.includes(candidate.id) && !candidate.locked)
+      .filter((candidate) => movingIds.includes(candidate.id) && !candidate.locked && !(candidate.groupId && groups.get(candidate.groupId)?.locked))
       .map((candidate) => ({ id: candidate.id, position: candidate.position }))
     if (layers.length === 0) return
     interactionRef.current = { mode: 'move', pointerId: event.pointerId, start: cursor, layers }

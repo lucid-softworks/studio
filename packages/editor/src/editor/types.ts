@@ -29,6 +29,17 @@ export type BaseLayer = {
   filters?: LayerFilters
   maskAssetId?: string | null
   clipToBelow?: boolean
+  groupId?: string | null
+}
+
+export type LayerGroup = {
+  id: string
+  name: string
+  visible: boolean
+  locked: boolean
+  opacity: number
+  blendMode: BlendMode
+  collapsed: boolean
 }
 
 export type ImageLayer = BaseLayer & {
@@ -104,9 +115,11 @@ export type EditorDocument = {
   canvasSize: { width: number; height: number }
   background: BackgroundSettings
   pattern: PatternSettings
+  groups: LayerGroup[]
   layers: EditorLayer[]
   selectedLayerId: string | null
   selectedLayerIds: string[]
+  selectedGroupId: string | null
 }
 
 export type LayerPatch = Partial<{
@@ -120,6 +133,7 @@ export type LayerPatch = Partial<{
   filters: LayerFilters
   maskAssetId: string | null
   clipToBelow: boolean
+  groupId: string | null
   assetId: string
   padding: number
   scale: number
@@ -146,18 +160,25 @@ export type LayerPatch = Partial<{
   blur: number
 }>
 
+export type GroupPatch = Partial<Omit<LayerGroup, 'id'>>
+
 export type DocumentAction =
   | { type: 'set-canvas-preset'; value: string }
   | { type: 'set-canvas-size'; width: number; height: number }
   | { type: 'set-background'; patch: Partial<BackgroundSettings> }
   | { type: 'set-pattern'; patch: Partial<PatternSettings> }
   | { type: 'add-layer'; layer: EditorLayer }
+  | { type: 'add-group'; group: LayerGroup; layerIds: string[] }
   | { type: 'update-layer'; id: string; patch: LayerPatch }
   | { type: 'update-layers'; changes: Array<{ id: string; patch: LayerPatch }> }
+  | { type: 'update-group'; id: string; patch: GroupPatch }
   | { type: 'remove-layer'; id: string }
   | { type: 'remove-layers'; ids: string[] }
+  | { type: 'remove-group'; id: string; deleteLayers?: boolean }
   | { type: 'select-layer'; id: string | null; mode?: 'replace' | 'toggle' | 'add' }
+  | { type: 'select-group'; id: string | null }
   | { type: 'move-layer'; id: string; direction: 'up' | 'down' }
+  | { type: 'move-group'; id: string; direction: 'up' | 'down' }
   | { type: 'reset-document' }
 
 export type HistoryState = {

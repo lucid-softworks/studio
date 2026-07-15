@@ -1,2 +1,2 @@
 export { default as StudioEditor } from './App'
-export type { EditorDocument, EditorLayer } from './editor/types'
+export type { EditorDocument, EditorLayer, LayerGroup } from './editor/types'
