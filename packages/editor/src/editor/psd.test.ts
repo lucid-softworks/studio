@@ -130,6 +130,19 @@ describe('PSD layer ordering', () => {
     })
   })
 
+  it('round-trips seeded noise-gradient layer styles', async () => {
+    const imported = psdLayerEffects({ effects: { gradientOverlay: [{
+      enabled: true,
+      angle: 18,
+      gradient: { type: 'noise', name: 'Chromatic noise', roughness: 72, randomSeed: 12345, colorModel: 'rgb', restrictColors: true, addTransparency: true, min: [0.1, 0.2, 0.3, 0], max: [0.9, 0.8, 0.7, 1] },
+    }] } })
+    expect(imported?.gradientOverlay).toMatchObject({ enabled: true, gradientType: 'noise', name: 'Chromatic noise', roughness: 72, randomSeed: 12345, restrictColors: true, addTransparency: true, min: [0.1, 0.2, 0.3, 0], max: [0.9, 0.8, 0.7, 1] })
+    const shape = { ...createShapeLayer('rectangle', 0), effects: imported }
+    const blob = await exportPsdDocument({ ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 32, height: 32 }, layers: [shape] }, {})
+    expect(readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]?.effects?.gradientOverlay?.[0]?.gradient)
+      .toMatchObject({ type: 'noise', name: 'Chromatic noise', roughness: 72, randomSeed: 12345, min: [0.1, 0.2, 0.3, 0], max: [0.9, 0.8, 0.7, 1] })
+  })
+
   it('preserves basic vector rectangles and ellipses as editable shapes', () => {
     const rectangle: Layer = {
       name: 'Label',

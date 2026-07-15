@@ -8,7 +8,7 @@ export const defaultLayerEffects: LayerEffects = {
   bevel: { enabled: false, size: 6, depth: 100, angle: 120, altitude: 30, highlightColor: '#ffffff', highlightOpacity: 70, shadowColor: '#000000', shadowOpacity: 70, style: 'inner bevel', direction: 'up' },
   satin: { enabled: false, color: '#000000', opacity: 50, angle: 20, distance: 8, size: 14, invert: false, blendMode: 'multiply' },
   colorOverlay: { enabled: false, color: '#8b5cf6', opacity: 70, blendMode: 'normal' },
-  gradientOverlay: { enabled: false, opacity: 100, angle: 90, scale: 100, style: 'linear', reverse: false, blendMode: 'normal', name: 'Foreground to background', colorStops: [{ color: '#000000', position: 0 }, { color: '#ffffff', position: 1 }], opacityStops: [{ opacity: 1, position: 0 }, { opacity: 1, position: 1 }] },
+  gradientOverlay: { enabled: false, opacity: 100, angle: 90, scale: 100, style: 'linear', reverse: false, blendMode: 'normal', name: 'Foreground to background', gradientType: 'solid', colorStops: [{ color: '#000000', position: 0 }, { color: '#ffffff', position: 1 }], opacityStops: [{ opacity: 1, position: 0 }, { opacity: 1, position: 1 }], roughness: 50, randomSeed: 1, colorModel: 'rgb', restrictColors: false, addTransparency: false, min: [0, 0, 0, 0], max: [1, 1, 1, 1] },
   patternOverlay: { enabled: false, opacity: 100, scale: 100, blendMode: 'normal', id: '', name: 'Pattern', phase: { x: 0, y: 0 }, linked: true },
   stroke: { enabled: false, color: '#ffffff', opacity: 100, size: 3, position: 'outside', blendMode: 'normal' },
 }

@@ -363,7 +363,7 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
   const patternOverlay = effectEnabled(effects.patternOverlay) ? effects.patternOverlay : undefined
   const stroke = effects.stroke?.find(effectEnabled)
   if (!dropShadow && !innerShadow && !outerGlow && !innerGlow && !bevel && !satin && !colorOverlay && !gradientOverlay && !patternOverlay && !stroke) return null
-  const gradient = gradientOverlay?.gradient?.type === 'solid' ? gradientOverlay.gradient : undefined
+  const gradient = gradientOverlay?.gradient
   return {
     ...defaultLayerEffects,
     dropShadow: {
@@ -417,8 +417,16 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
       enabled: Boolean(gradientOverlay), opacity: Math.round((gradientOverlay?.opacity ?? 1) * 100), angle: gradientOverlay?.angle ?? defaultLayerEffects.gradientOverlay.angle,
       scale: gradientOverlay?.scale ?? defaultLayerEffects.gradientOverlay.scale, style: gradientOverlay?.type ?? defaultLayerEffects.gradientOverlay.style,
       reverse: Boolean(gradientOverlay?.reverse), blendMode: psdBlendMode(gradientOverlay?.blendMode as Layer['blendMode']), name: gradient?.name ?? defaultLayerEffects.gradientOverlay.name,
-      colorStops: gradient?.colorStops.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location })) ?? defaultLayerEffects.gradientOverlay.colorStops,
-      opacityStops: gradient?.opacityStops.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location })) ?? defaultLayerEffects.gradientOverlay.opacityStops,
+      gradientType: gradient?.type ?? 'solid',
+      colorStops: gradient?.type === 'solid' ? gradient.colorStops.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location })) : defaultLayerEffects.gradientOverlay.colorStops,
+      opacityStops: gradient?.type === 'solid' ? gradient.opacityStops.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location })) : defaultLayerEffects.gradientOverlay.opacityStops,
+      roughness: gradient?.type === 'noise' ? gradient.roughness ?? 50 : defaultLayerEffects.gradientOverlay.roughness,
+      randomSeed: gradient?.type === 'noise' ? gradient.randomSeed ?? 1 : defaultLayerEffects.gradientOverlay.randomSeed,
+      colorModel: gradient?.type === 'noise' ? gradient.colorModel ?? 'rgb' : defaultLayerEffects.gradientOverlay.colorModel,
+      restrictColors: gradient?.type === 'noise' ? gradient.restrictColors ?? false : defaultLayerEffects.gradientOverlay.restrictColors,
+      addTransparency: gradient?.type === 'noise' ? gradient.addTransparency ?? false : defaultLayerEffects.gradientOverlay.addTransparency,
+      min: gradient?.type === 'noise' ? gradient.min : defaultLayerEffects.gradientOverlay.min,
+      max: gradient?.type === 'noise' ? gradient.max : defaultLayerEffects.gradientOverlay.max,
     },
     patternOverlay: {
       enabled: Boolean(patternOverlay), opacity: Math.round((patternOverlay?.opacity ?? 1) * 100), scale: patternOverlay?.scale ?? 100,
@@ -534,7 +542,6 @@ function hasUnsupportedEffects(layer: Layer) {
     || (effects.stroke?.filter(effectEnabled).length ?? 0) > 1
     || (effects.gradientOverlay?.filter(effectEnabled).length ?? 0) > 1
     || effects.stroke?.some((effect) => effectEnabled(effect) && effect.fillType && effect.fillType !== 'color')
-    || effects.gradientOverlay?.some((effect) => effectEnabled(effect) && effect.gradient?.type === 'noise')
   )
 }
 
@@ -1011,7 +1018,11 @@ function exportedEffects(effects: LayerEffects | null | undefined): Layer['effec
   if (effects.gradientOverlay.enabled) result.gradientOverlay = [{
     enabled: true, opacity: effects.gradientOverlay.opacity / 100, angle: effects.gradientOverlay.angle, scale: effects.gradientOverlay.scale,
     type: effects.gradientOverlay.style, reverse: effects.gradientOverlay.reverse, blendMode: studioPsdBlendModes[effects.gradientOverlay.blendMode],
-    gradient: {
+    gradient: effects.gradientOverlay.gradientType === 'noise' ? {
+      type: 'noise', name: effects.gradientOverlay.name, roughness: effects.gradientOverlay.roughness, randomSeed: effects.gradientOverlay.randomSeed,
+      colorModel: effects.gradientOverlay.colorModel === 'hsl' ? 'hsb' : effects.gradientOverlay.colorModel, restrictColors: effects.gradientOverlay.restrictColors,
+      addTransparency: effects.gradientOverlay.addTransparency, min: effects.gradientOverlay.min, max: effects.gradientOverlay.max,
+    } : {
       type: 'solid', name: effects.gradientOverlay.name,
       colorStops: effects.gradientOverlay.colorStops.map((stop) => ({ color: psdColor(stop.color), location: Math.round(stop.position * 4096), midpoint: 50 })),
       opacityStops: effects.gradientOverlay.opacityStops.map((stop) => ({ opacity: stop.opacity, location: Math.round(stop.position * 4096), midpoint: 50 })),

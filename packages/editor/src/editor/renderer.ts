@@ -743,7 +743,28 @@ function applyGradientOverlay(context: CanvasRenderingContext2D, canvas: HTMLCan
   const gradient = effects.style === 'radial'
     ? context.createRadialGradient(canvas.width / 2, canvas.height / 2, 0, canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) / 2 * effects.scale / 100)
     : context.createLinearGradient(canvas.width / 2 - Math.cos(angle) * radius, canvas.height / 2 - Math.sin(angle) * radius, canvas.width / 2 + Math.cos(angle) * radius, canvas.height / 2 + Math.sin(angle) * radius)
-  const stops = effects.reverse ? [...effects.colorStops].reverse().map((stop) => ({ ...stop, position: 1 - stop.position })) : effects.colorStops
+  let stops = effects.reverse ? [...effects.colorStops].reverse().map((stop) => ({ ...stop, position: 1 - stop.position })) : effects.colorStops
+  if (effects.gradientType === 'noise') {
+    let seed = effects.randomSeed >>> 0 || 1
+    const random = () => {
+      seed ^= seed << 13
+      seed ^= seed >>> 17
+      seed ^= seed << 5
+      return (seed >>> 0) / 0xffffffff
+    }
+    const count = Math.max(8, Math.min(64, Math.round(8 + effects.roughness / 2)))
+    const channel = (index: number) => {
+      const minimum = effects.min[index] ?? 0
+      const maximum = effects.max[index] ?? 1
+      const value = minimum + (maximum - minimum) * random()
+      return Math.round(Math.max(0, Math.min(255, value <= 1 ? value * 255 : value)))
+    }
+    stops = Array.from({ length: count }, (_, index) => ({
+      position: index / (count - 1),
+      color: `rgb(${channel(0)} ${channel(1)} ${channel(2)})`,
+    }))
+    if (effects.reverse) stops.reverse().forEach((stop, index) => { stop.position = index / (count - 1) })
+  }
   for (const stop of stops) gradient.addColorStop(Math.max(0, Math.min(1, stop.position)), stop.color)
   context.save()
   context.globalCompositeOperation = effects.blendMode === 'normal' ? 'source-atop' : effects.blendMode
