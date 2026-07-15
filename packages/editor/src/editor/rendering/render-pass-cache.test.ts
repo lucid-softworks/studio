@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, initialDocument } from '../presets'
 import type { AssetMap, SourceImage } from '../runtime-assets'
-import { backgroundPassSignature, groupPassSignature, layerPassSignature, RenderPassCache } from './render-pass-cache'
+import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, RenderPassCache } from './render-pass-cache'
 
 function source(revision = 0): SourceImage {
   return {
@@ -31,6 +31,43 @@ describe('native render pass cache', () => {
     const beforeRevision = layerPassSignature(layer, firstAssets)
     firstAssets.raster.revision = 1
     expect(layerPassSignature(layer, firstAssets)).not.toBe(beforeRevision)
+    expect(layerPassStructureSignature(layer, firstAssets)).toBe(layerPassStructureSignature(layer, { raster: { ...firstAssets.raster, revision: 2 } }))
+  })
+
+  it('invalidates only tiles touched by revisioned raster edits', () => {
+    const cache = new RenderPassCache()
+    const first = cache.prepare(0, 'revision:1', 700, 500, { structureSignature: 'raster', revision: 1 })
+    const second = cache.prepare(0, 'revision:3', 700, 500, {
+      structureSignature: 'raster',
+      revision: 3,
+      dirtyRegions: [
+        { revision: 2, region: { x: 270, y: 40, width: 12, height: 12 } },
+        { revision: 3, region: { x: 300, y: 60, width: 12, height: 12 } },
+      ],
+    })
+
+    expect(first.shouldRender).toBe(true)
+    expect(first.regions).toHaveLength(6)
+    expect(second).toEqual({ shouldRender: true, regions: [{ x: 256, y: 0, width: 256, height: 256 }] })
+    expect(cache.prepare(0, 'revision:3', 700, 500, { structureSignature: 'raster', revision: 3 })).toEqual({ shouldRender: false, regions: [] })
+  })
+
+  it('falls back to a full pass when structure changes or dirty history is incomplete', () => {
+    const cache = new RenderPassCache()
+    cache.prepare(0, 'revision:1', 700, 500, { structureSignature: 'before', revision: 1 })
+
+    expect(cache.prepare(0, 'revision:2', 700, 500, { structureSignature: 'after', revision: 2, dirtyRegions: [{ revision: 2, region: { x: 0, y: 0, width: 1, height: 1 } }] }).regions).toHaveLength(6)
+    expect(cache.prepare(0, 'revision:3', 700, 500, { structureSignature: 'after', revision: 3 }).regions).toHaveLength(6)
+  })
+
+  it('evicts least-recently-used tile entries within a bounded cache', () => {
+    const cache = new RenderPassCache(2)
+    cache.prepare(0, 'first', 512, 256)
+    cache.prepare(1, 'second', 512, 256)
+
+    expect(cache.cachedTileCount).toBe(2)
+    expect(cache.prepare(0, 'first', 512, 256).shouldRender).toBe(true)
+    expect(cache.cachedTileCount).toBe(2)
   })
 
   it('caches backgrounds and shapes but leaves text dependent on live font resources', () => {

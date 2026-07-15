@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { getLayerBounds, type LayerBounds } from '../editor/renderer'
-import { extractImageData, type RasterEdit } from '../editor/raster'
+import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { selectionAlphaAt, type SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position, RasterLayer } from '../editor/types'
@@ -24,7 +24,7 @@ type Props = {
   maskAssetId?: string
   maskLocked?: boolean
   locked?: boolean
-  onChange: (assetId: string) => void
+  onChange: (assetId: string, region?: RasterRegion) => void
   onCommit: (edit: RasterEdit) => void
 }
 
@@ -176,7 +176,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       selectionData: selectionContext && selection?.bounds ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null,
     }
     draw(point, point, radius, pressure, pressure)
-    onChange(layer.assetId)
+    onChange(layer.assetId, { x: point.x - radius - 2, y: point.y - radius - 2, width: radius * 2 + 4, height: radius * 2 + 4 })
   }
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -184,14 +184,20 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!stroke || stroke.pointerId !== event.pointerId) return
     const mapped = sourcePoint(event)
     if (!mapped) return
-    draw(stroke.last, mapped.point, stroke.radius, stroke.lastPressure, mapped.pressure)
+    const previous = stroke.last
+    draw(previous, mapped.point, stroke.radius, stroke.lastPressure, mapped.pressure)
     stroke.last = mapped.point
     stroke.lastPressure = mapped.pressure
     stroke.minX = Math.min(stroke.minX, mapped.point.x - stroke.radius)
     stroke.minY = Math.min(stroke.minY, mapped.point.y - stroke.radius)
     stroke.maxX = Math.max(stroke.maxX, mapped.point.x + stroke.radius)
     stroke.maxY = Math.max(stroke.maxY, mapped.point.y + stroke.radius)
-    onChange(stroke.layer.assetId)
+    onChange(stroke.layer.assetId, {
+      x: Math.min(previous.x, mapped.point.x) - stroke.radius - 2,
+      y: Math.min(previous.y, mapped.point.y) - stroke.radius - 2,
+      width: Math.abs(mapped.point.x - previous.x) + stroke.radius * 2 + 4,
+      height: Math.abs(mapped.point.y - previous.y) + stroke.radius * 2 + 4,
+    })
   }
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -225,7 +231,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
         }
       }
       context.putImageData(after, x, y)
-      onChange(stroke.layer.assetId)
+      onChange(stroke.layer.assetId, { x, y, width, height })
     }
     onCommit({ assetId: stroke.layer.assetId, x, y, before, after })
   }

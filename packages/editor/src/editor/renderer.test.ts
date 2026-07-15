@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateImageRect, findResizeHandle, getResizeHandles } from './renderer'
+import { calculateImageRect, findResizeHandle, getResizeHandles, selectMipmapLevel } from './renderer'
 import type { ImageLayer } from './types'
 
 const imageLayer: ImageLayer = {
@@ -19,6 +19,14 @@ const imageLayer: ImageLayer = {
   flipX: false,
   flipY: false,
 }
+
+describe('mipmap selection', () => {
+  it('selects bounded levels only when both dimensions are downscaled', () => {
+    expect(selectMipmapLevel(4096, 2048, 512, 256)).toBe(3)
+    expect(selectMipmapLevel(4096, 2048, 4096, 256)).toBe(0)
+    expect(selectMipmapLevel(65_536, 65_536, 1, 1)).toBe(8)
+  })
+})
 
 describe('calculateImageRect', () => {
   it('fits and centres a landscape image inside the padded canvas', () => {

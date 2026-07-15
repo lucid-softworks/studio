@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { extractImageData, floodFillImageData, hexToRgba, type RasterEdit } from '../editor/raster'
+import { extractImageData, floodFillImageData, hexToRgba, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -17,7 +17,7 @@ type Props = {
   maskAssetId?: string
   maskLocked?: boolean
   locked?: boolean
-  onChange: (assetId: string) => void
+  onChange: (assetId: string, region?: RasterRegion) => void
   onCommit: (edit: RasterEdit) => void
 }
 
@@ -51,7 +51,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     const before = extractImageData(beforeFull, region.x, region.y, region.width, region.height)
     const after = constrainRasterRegion(extractImageData(beforeFull, region.x, region.y, region.width, region.height), extractImageData(afterFull, region.x, region.y, region.width, region.height), region.x, region.y, current, selectionData())
     context.putImageData(after, region.x, region.y)
-    onChange(current.layer.assetId)
+    onChange(current.layer.assetId, region)
     onCommit({ assetId: current.layer.assetId, ...region, before, after })
   }
 
@@ -75,7 +75,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     }
     constrainRasterRegion(drag.before, after, 0, 0, current, selectionData())
     context.putImageData(after, 0, 0)
-    onChange(current.layer.assetId)
+    onChange(current.layer.assetId, { x: 0, y: 0, width: after.width, height: after.height })
     onCommit({ assetId: current.layer.assetId, x: 0, y: 0, before: drag.before, after })
   }
 

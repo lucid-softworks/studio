@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { extractImageData, type RasterEdit } from '../editor/raster'
+import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -14,7 +14,7 @@ type Props = {
   strength: number
   selection: SelectionState | null
   locked?: boolean
-  onChange: (assetId: string) => void
+  onChange: (assetId: string, region?: RasterRegion) => void
   onCommit: (edit: RasterEdit) => void
 }
 
@@ -48,12 +48,13 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
   const stamp = (stroke: Stroke, destination: Position) => {
     const context = stroke.target.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
-    const distance = Math.hypot(destination.x - stroke.last.x, destination.y - stroke.last.y)
+    const previous = stroke.last
+    const distance = Math.hypot(destination.x - previous.x, destination.y - previous.y)
     const steps = Math.max(1, Math.ceil(distance / Math.max(1, stroke.radius * 0.3)))
     for (let step = 1; step <= steps; step += 1) {
       const amount = step / steps
-      const x = stroke.last.x + (destination.x - stroke.last.x) * amount
-      const y = stroke.last.y + (destination.y - stroke.last.y) * amount
+      const x = previous.x + (destination.x - previous.x) * amount
+      const y = previous.y + (destination.y - previous.y) * amount
       const sourceX = x + stroke.offset.x
       const sourceY = y + stroke.offset.y
       context.save()
@@ -69,7 +70,12 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       stroke.maxY = Math.max(stroke.maxY, y + stroke.radius)
     }
     stroke.last = destination
-    onChange(stroke.target.layer.assetId)
+    onChange(stroke.target.layer.assetId, {
+      x: Math.min(previous.x, destination.x) - stroke.radius - 2,
+      y: Math.min(previous.y, destination.y) - stroke.radius - 2,
+      width: Math.abs(destination.x - previous.x) + stroke.radius * 2 + 4,
+      height: Math.abs(destination.y - previous.y) + stroke.radius * 2 + 4,
+    })
   }
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -127,7 +133,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const before = extractImageData(stroke.before, x, y, width, height)
     const after = constrainRasterRegion(before, context.getImageData(x, y, width, height), x, y, stroke.target, stroke.selectionData)
     context.putImageData(after, x, y)
-    onChange(stroke.target.layer.assetId)
+    onChange(stroke.target.layer.assetId, { x, y, width, height })
     onCommit({ assetId: stroke.target.layer.assetId, x, y, before, after })
   }
 

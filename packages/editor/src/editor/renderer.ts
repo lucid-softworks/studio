@@ -1,9 +1,10 @@
 import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
+import type { RasterRegion } from './raster'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
-import { backgroundPassSignature, groupPassSignature, layerPassSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
+import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
@@ -59,25 +60,87 @@ export function calculateImageRect(
   }
 }
 
-type CanvasImageResource = { source: HTMLCanvasElement | HTMLImageElement; width: number; height: number }
+type CanvasImageResource = {
+  source: HTMLCanvasElement | HTMLImageElement
+  width: number
+  height: number
+  mipmaps: Map<number, { source: HTMLCanvasElement; lastUsed: number }>
+  mipmapPixels: number
+}
+
+const MAX_MIPMAP_PIXELS_PER_ASSET = 4_194_304
+let mipmapClock = 0
+
+export function selectMipmapLevel(sourceWidth: number, sourceHeight: number, targetWidth: number, targetHeight: number) {
+  const downscale = Math.min(sourceWidth / Math.max(1, targetWidth), sourceHeight / Math.max(1, targetHeight))
+  return Math.max(0, Math.min(8, Math.floor(Math.log2(Math.max(1, downscale)))))
+}
+
+function mipmapSource(image: CanvasImageResource, targetWidth: number, targetHeight: number) {
+  const level = selectMipmapLevel(image.width, image.height, targetWidth, targetHeight)
+  if (level === 0) return image.source
+  const cached = image.mipmaps.get(level)
+  if (cached) {
+    cached.lastUsed = ++mipmapClock
+    return cached.source
+  }
+  const scale = 2 ** level
+  const mipmapWidth = Math.max(1, Math.ceil(image.width / scale))
+  const mipmapHeight = Math.max(1, Math.ceil(image.height / scale))
+  if (mipmapWidth * mipmapHeight > MAX_MIPMAP_PIXELS_PER_ASSET) return image.source
+  const canvas = globalThis.document.createElement('canvas')
+  canvas.width = mipmapWidth
+  canvas.height = mipmapHeight
+  const context = canvas.getContext('2d')
+  if (!context) return image.source
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.drawImage(image.source, 0, 0, canvas.width, canvas.height)
+  image.mipmaps.set(level, { source: canvas, lastUsed: ++mipmapClock })
+  image.mipmapPixels += canvas.width * canvas.height
+  while (image.mipmapPixels > MAX_MIPMAP_PIXELS_PER_ASSET && image.mipmaps.size > 1) {
+    const evicted = [...image.mipmaps.entries()]
+      .filter(([candidate]) => candidate !== level)
+      .sort((left, right) => left[1].lastUsed - right[1].lastUsed)[0]
+    if (!evicted) break
+    image.mipmaps.delete(evicted[0])
+    image.mipmapPixels -= evicted[1].source.width * evicted[1].source.height
+    evicted[1].source.width = 0
+    evicted[1].source.height = 0
+  }
+  return canvas
+}
 
 function canvasImageResource(resources: RenderResourceRegistry, assets: AssetMap, assetId: string): CanvasImageResource | null {
   const asset = assets[assetId]
   if (!asset) return null
-  return resources.resolve('canvas2d', assetId, asset, (source) => ({
-    resource: {
+  return resources.resolve('canvas2d', assetId, asset, (source) => {
+    const resource: CanvasImageResource = {
       source: source.surface ?? source.element,
       width: source.surface?.width ?? source.element.naturalWidth,
       height: source.surface?.height ?? source.element.naturalHeight,
-    },
-  }))
+      mipmaps: new Map(),
+      mipmapPixels: 0,
+    }
+    return {
+      resource,
+      dispose: () => {
+        for (const mipmap of resource.mipmaps.values()) {
+          mipmap.source.width = 0
+          mipmap.source.height = 0
+        }
+        resource.mipmaps.clear()
+        resource.mipmapPixels = 0
+      },
+    }
+  })
 }
 
 function drawCover(context: CanvasRenderingContext2D, image: CanvasImageResource, width: number, height: number) {
   const scale = Math.max(width / image.width, height / image.height)
   const drawWidth = image.width * scale
   const drawHeight = image.height * scale
-  context.drawImage(image.source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
+  context.drawImage(mipmapSource(image, drawWidth, drawHeight), (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight)
 }
 
 function drawGradient(context: CanvasRenderingContext2D, width: number, height: number, colors: [string, string], angleValue: number) {
@@ -207,7 +270,7 @@ function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
     context.beginPath()
     context.roundRect(x, y, bounds.width, bounds.height, radius)
     context.clip()
-    context.drawImage(asset.source, x, y, bounds.width, bounds.height)
+    context.drawImage(mipmapSource(asset, bounds.width, bounds.height), x, y, bounds.width, bounds.height)
     context.restore()
     context.strokeStyle = 'rgba(255,255,255,0.16)'
     context.lineWidth = Math.max(1, canvas.width / 900)
@@ -230,13 +293,40 @@ function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer): LayerBound
   }
 }
 
+function rasterRegionToDocument(canvas: HTMLCanvasElement, layer: RasterLayer, sourceWidth: number, sourceHeight: number, region: RasterRegion): RasterRegion {
+  const bounds = rasterBounds(canvas, layer)
+  const centerX = bounds.x + bounds.width / 2
+  const centerY = bounds.y + bounds.height / 2
+  const angle = bounds.rotation * Math.PI / 180
+  const points = [
+    [region.x, region.y],
+    [region.x + region.width, region.y],
+    [region.x, region.y + region.height],
+    [region.x + region.width, region.y + region.height],
+  ].map(([sourceX, sourceY]) => {
+    let localX = (sourceX / sourceWidth - 0.5) * bounds.width
+    let localY = (sourceY / sourceHeight - 0.5) * bounds.height
+    if (layer.flipX) localX *= -1
+    if (layer.flipY) localY *= -1
+    return {
+      x: centerX + localX * Math.cos(angle) - localY * Math.sin(angle),
+      y: centerY + localX * Math.sin(angle) + localY * Math.cos(angle),
+    }
+  })
+  const left = Math.min(...points.map((point) => point.x)) - 2
+  const top = Math.min(...points.map((point) => point.y)) - 2
+  const right = Math.max(...points.map((point) => point.x)) + 2
+  const bottom = Math.max(...points.map((point) => point.y)) + 2
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
 function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: RasterLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   const asset = canvasImageResource(resources, assets, layer.assetId)
   if (!asset) return
   const bounds = rasterBounds(canvas, layer)
   context.globalAlpha = layer.opacity / 100
   withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
-    context.drawImage(asset.source, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
+    context.drawImage(mipmapSource(asset, bounds.width, bounds.height), -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
   })
   context.globalAlpha = 1
 }
@@ -656,16 +746,40 @@ export function renderNativeLayerPasses(
   while (passCanvases.length < passCount) passCanvases.push(globalThis.document.createElement('canvas'))
   resources.prune('canvas2d', new Set(Object.keys(assets)))
 
-  const preparePass = (index: number, signature: string | null = null) => {
+  const preparePass = (
+    index: number,
+    signature: string | null = null,
+    partial?: {
+      structureSignature: string | null
+      revision: number
+      dirtyRegions: ReadonlyArray<{ revision: number; region: RasterRegion }>
+    },
+  ) => {
     while (passCanvases.length <= index) passCanvases.push(globalThis.document.createElement('canvas'))
     const canvas = passCanvases[index]
     const sizeChanged = canvas.width !== size.width || canvas.height !== size.height
     if (canvas.width !== size.width) canvas.width = size.width
     if (canvas.height !== size.height) canvas.height = size.height
     const context = canvas.getContext('2d')
-    const shouldRender = passCache?.shouldRender(index, signature, sizeChanged) ?? true
-    if (shouldRender && !sizeChanged) context?.clearRect(0, 0, size.width, size.height)
-    return { canvas, context, shouldRender }
+    const invalidation = passCache?.prepare(index, signature, size.width, size.height, {
+      invalidated: sizeChanged,
+      structureSignature: partial?.structureSignature,
+      revision: partial?.revision,
+      dirtyRegions: partial?.dirtyRegions,
+    }) ?? { shouldRender: true, regions: [{ x: 0, y: 0, width: size.width, height: size.height }] }
+    if (invalidation.shouldRender && !sizeChanged) {
+      for (const region of invalidation.regions) context?.clearRect(region.x, region.y, region.width, region.height)
+    }
+    return { canvas, context, shouldRender: invalidation.shouldRender, regions: invalidation.regions }
+  }
+
+  const drawRegions = (context: CanvasRenderingContext2D, regions: readonly RasterRegion[], draw: () => void) => {
+    context.save()
+    context.beginPath()
+    for (const region of regions) context.rect(region.x, region.y, region.width, region.height)
+    context.clip()
+    draw()
+    context.restore()
   }
 
   const background = preparePass(0, backgroundPassSignature(documentState, assets))
@@ -683,15 +797,28 @@ export function renderNativeLayerPasses(
       : node.kind === 'adjustment'
         ? `adjustment:${node.layerId}`
         : groupPassSignature(documentState, node.groupId, assets)
-    const pass = preparePass(index + 1, signature)
+    const rasterAsset = node.kind === 'layer' && layer?.type === 'raster' ? assets[layer.assetId] : undefined
+    const partial = node.kind === 'layer' && layer?.type === 'raster' && signature && rasterAsset?.surface
+      ? {
+          structureSignature: layerPassStructureSignature(layer, assets),
+          revision: rasterAsset.revision ?? 0,
+          dirtyRegions: (rasterAsset.dirtyRegions ?? []).map((entry) => ({
+            revision: entry.revision,
+            region: rasterRegionToDocument(passCanvases[index + 1], layer, rasterAsset.surface!.width, rasterAsset.surface!.height, entry.region),
+          })),
+        }
+      : undefined
+    const pass = preparePass(index + 1, signature, partial)
     if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
-      if (node.filters?.blur || node.effects?.dropShadow.enabled || node.effects?.outerGlow.enabled) {
-        const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
-        if (clippingBase && clippingBase.type !== 'adjustment') drawClippedLayer(pass.context, pass.canvas, layer, node.maskAssetId, clippingBase, assets, resources)
-        else drawMaskedLayer(pass.context, pass.canvas, layer, node.maskAssetId, assets, resources)
-      } else drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
+      drawRegions(pass.context, pass.regions, () => {
+        if (node.filters?.blur || node.effects?.dropShadow.enabled || node.effects?.outerGlow.enabled) {
+          const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
+          if (clippingBase && clippingBase.type !== 'adjustment') drawClippedLayer(pass.context!, pass.canvas, layer, node.maskAssetId, clippingBase, assets, resources)
+          else drawMaskedLayer(pass.context!, pass.canvas, layer, node.maskAssetId, assets, resources)
+        } else drawEditorLayer(pass.context!, pass.canvas, layer, assets, resources)
+      })
     } else if (pass.shouldRender && node.kind === 'group' && pass.context) {
-      drawRenderPlan(pass.context, pass.canvas, documentState, assets, resources, node.children)
+      drawRegions(pass.context, pass.regions, () => drawRenderPlan(pass.context!, pass.canvas, documentState, assets, resources, node.children))
     }
   })
 

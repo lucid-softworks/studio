@@ -4,7 +4,7 @@ import { getLayerBounds } from '../editor/renderer'
 import { layerIsLocked } from '../editor/stack'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDispatch, EditorDocument, Position, ShapeKind } from '../editor/types'
-import { extractImageData, type RasterEdit } from '../editor/raster'
+import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { applySelectionShape, invertSelection, selectionAlphaAt, type SelectionMode, type SelectionState } from '../editor/selection'
 import { RedoIcon, UndoIcon, UploadIcon } from './Icons'
 import { CanvasActionOverlay } from './CanvasActionOverlay'
@@ -34,7 +34,7 @@ type CanvasStageProps = {
   onUndo: () => void
   onRedo: () => void
   onAlign: (alignment: 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom') => void
-  onRasterChange: (assetId: string) => void
+  onRasterChange: (assetId: string, region?: RasterRegion) => void
   onRasterCommit: (edit: RasterEdit) => void
   editingMaskLayerId: string | null
   selection: SelectionState | null
@@ -231,7 +231,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         surfaceContext.putImageData(afterFull, 0, 0)
         const width = right - left + 1
         const height = bottom - top + 1
-        onRasterChange(targetAssetId)
+        onRasterChange(targetAssetId, { x: left, y: top, width, height })
         onRasterCommit({ assetId: targetAssetId, x: left, y: top, before: extractImageData(beforeFull, left, top, width, height), after: extractImageData(afterFull, left, top, width, height) })
       }
       return true

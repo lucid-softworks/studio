@@ -1,3 +1,5 @@
+import type { RasterRegion } from './raster'
+
 /**
  * Runtime-only image state. These values contain browser objects and must never
  * be embedded in the serializable EditorDocument schema; documents refer to
@@ -9,6 +11,7 @@ export type SourceImage = {
   blob?: Blob
   surface?: HTMLCanvasElement
   revision?: number
+  dirtyRegions?: Array<{ revision: number; region: RasterRegion }>
   objectUrl?: string
   isDemo?: boolean
 }

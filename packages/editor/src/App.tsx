@@ -16,7 +16,7 @@ import { canvas2dCompositionRenderer } from './editor/rendering/composition-rend
 import { useRendererCapabilities } from './editor/rendering/use-renderer-capabilities'
 import type { AssetMap } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
-import type { RasterEdit } from './editor/raster'
+import type { RasterEdit, RasterRegion } from './editor/raster'
 import type { EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
 import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
@@ -274,10 +274,15 @@ function App({ onExit }: AppProps) {
     if (!layer?.maskAssetId || document.selectedLayerId !== editingMaskLayerId) setEditingMaskLayerId(null)
   }, [document.layers, document.selectedLayerId, editingMaskLayerId])
 
-  const refreshRasterAsset = useCallback((assetId: string) => {
+  const refreshRasterAsset = useCallback((assetId: string, region?: RasterRegion) => {
     setAssets((current) => {
       const asset = current[assetId]
-      return asset ? { ...current, [assetId]: { ...asset, revision: (asset.revision ?? 0) + 1 } } : current
+      if (!asset) return current
+      const revision = (asset.revision ?? 0) + 1
+      const dirtyRegions = region
+        ? [...(asset.dirtyRegions ?? []), { revision, region }].slice(-64)
+        : asset.dirtyRegions
+      return { ...current, [assetId]: { ...asset, revision, dirtyRegions } }
     })
   }, [])
 
@@ -286,7 +291,7 @@ function App({ onExit }: AppProps) {
     const context = asset?.surface?.getContext('2d', { willReadFrequently: true })
     if (!asset?.surface || !context) return
     context.putImageData(edit[side], edit.x, edit.y)
-    refreshRasterAsset(edit.assetId)
+    refreshRasterAsset(edit.assetId, { x: edit.x, y: edit.y, width: edit[side].width, height: edit[side].height })
     void surfaceToBlob(asset.surface).then((blob) => setAssets((current) => current[edit.assetId] ? { ...current, [edit.assetId]: { ...current[edit.assetId], blob } } : current))
   }, [refreshRasterAsset])
 
