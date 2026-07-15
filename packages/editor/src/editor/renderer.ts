@@ -27,6 +27,7 @@ export type NativeAdjustmentPass = {
   contrast: number
   saturation: number
   hue: number
+  blur: number
 }
 export type NativeLayerPass = NativeTextureLayerPass | NativeAdjustmentPass
 export type NativeLayerPasses = { width: number; height: number; layers: NativeLayerPass[] }
@@ -713,6 +714,7 @@ export function renderNativeLayerPasses(
         contrast: node.contrast / 100,
         saturation: node.saturation / 100,
         hue: node.hue * Math.PI / 180,
+        blur: node.blur,
       })
       return
     }

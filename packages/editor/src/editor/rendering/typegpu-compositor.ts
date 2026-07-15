@@ -101,6 +101,7 @@ export type TypeGpuCompositionAdjustment = {
   contrast: number
   saturation: number
   hue: number
+  blur: number
 }
 
 export type TypeGpuCompositionLayer = TypeGpuCompositionTextureLayer | TypeGpuCompositionAdjustment
@@ -176,6 +177,12 @@ export function createTypeGpuLayerCompositor(
   }).$usage('sampled', 'render'))
   const compositionSampleViews = compositionTextures.map((texture) => texture.createView(d.texture2d(d.f32)))
   const compositionRenderViews = compositionTextures.map((texture) => texture.createView('render'))
+  const blurTextures = [0, 1].map(() => root.createTexture({
+    size: [width, height],
+    format: 'rgba8unorm',
+  }).$usage('sampled', 'render'))
+  const blurSampleViews = blurTextures.map((texture) => texture.createView(d.texture2d(d.f32)))
+  const blurRenderViews = blurTextures.map((texture) => texture.createView('render'))
   const blendMode = root.createUniform(d.u32, typeGpuBlendModeCodes.normal)
   const hasMask = root.createUniform(d.u32, 0)
   const hasClip = root.createUniform(d.u32, 0)
@@ -186,12 +193,34 @@ export function createTypeGpuLayerCompositor(
   const adjustmentContrast = root.createUniform(d.f32, 1)
   const adjustmentSaturation = root.createUniform(d.f32, 1)
   const adjustmentHue = root.createUniform(d.f32, 0)
+  const adjustmentBlur = root.createUniform(d.f32, 0)
+  const texelSize = root.createUniform(d.vec2f, d.vec2f(1 / width, 1 / height))
   const sampler = root.createSampler({
     magFilter: 'linear',
     minFilter: 'linear',
     addressModeU: 'clamp-to-edge',
     addressModeV: 'clamp-to-edge',
   })
+  const createBlurPipeline = (sourceView: (typeof compositionSampleViews)[number], horizontal: boolean) => root.createRenderPipeline({
+    vertex: common.fullScreenTriangle,
+    fragment: ({ uv }) => {
+      'use gpu'
+      const scale = std.max(std.div(adjustmentBlur.$, 4), 0.25)
+      const firstOffset = horizontal
+        ? d.vec2f(std.mul(std.mul(texelSize.$.x, scale), 1.384615), 0)
+        : d.vec2f(0, std.mul(std.mul(texelSize.$.y, scale), 1.384615))
+      const secondOffset = horizontal
+        ? d.vec2f(std.mul(std.mul(texelSize.$.x, scale), 3.230769), 0)
+        : d.vec2f(0, std.mul(std.mul(texelSize.$.y, scale), 3.230769))
+      let sample = std.mul(std.textureSample(sourceView.$, sampler.$, uv), 0.227027)
+      sample = std.add(sample, std.mul(std.textureSample(sourceView.$, sampler.$, std.add(uv, firstOffset)), 0.316216))
+      sample = std.add(sample, std.mul(std.textureSample(sourceView.$, sampler.$, std.sub(uv, firstOffset)), 0.316216))
+      sample = std.add(sample, std.mul(std.textureSample(sourceView.$, sampler.$, std.add(uv, secondOffset)), 0.07027))
+      return std.add(sample, std.mul(std.textureSample(sourceView.$, sampler.$, std.sub(uv, secondOffset)), 0.07027))
+    },
+  })
+  const horizontalBlurPipelines = compositionSampleViews.map((view) => createBlurPipeline(view, true))
+  const verticalBlurPipeline = createBlurPipeline(blurSampleViews[0], false)
   const createBlendPipeline = (backdropIndex: number) => root.createRenderPipeline({
     vertex: common.fullScreenTriangle,
     fragment: ({ uv }) => {
@@ -210,14 +239,18 @@ export function createTypeGpuLayerCompositor(
       const one = d.vec3f(1)
 
       if (sourceKind.$ === 1) {
+        const blurredSample = std.textureSample(blurSampleViews[1].$, sampler.$, uv)
+        const adjustmentSample = std.select(blurredSample, backdropSample, adjustmentBlur.$ <= 0)
+        const adjustmentAlpha = adjustmentSample.w
+        const adjustmentBackdrop = std.div(adjustmentSample.xyz, std.max(adjustmentAlpha, 0.00001))
         source = gpuApplyAdjustment(
-          backdrop,
+          adjustmentBackdrop,
           adjustmentBrightness.$,
           adjustmentContrast.$,
           adjustmentSaturation.$,
           adjustmentHue.$,
         )
-        sourceAlpha = std.mul(backdropAlpha, adjustmentOpacity.$)
+        sourceAlpha = std.mul(adjustmentAlpha, adjustmentOpacity.$)
       }
 
       let blended = source
@@ -286,6 +319,11 @@ export function createTypeGpuLayerCompositor(
           adjustmentContrast.write(layer.contrast)
           adjustmentSaturation.write(layer.saturation)
           adjustmentHue.write(layer.hue)
+          adjustmentBlur.write(layer.blur)
+          if (layer.blur > 0) {
+            horizontalBlurPipelines[backdropIndex].withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
+            verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
+          }
         } else {
           sourceKind.write(0)
           sourceOpacity.write(layer.opacity ?? 1)
@@ -309,6 +347,7 @@ export function createTypeGpuLayerCompositor(
       maskTexture.destroy()
       clipTexture.destroy()
       compositionTextures.forEach((texture) => texture.destroy())
+      blurTextures.forEach((texture) => texture.destroy())
       blendMode.buffer.destroy()
       hasMask.buffer.destroy()
       hasClip.buffer.destroy()
@@ -319,6 +358,8 @@ export function createTypeGpuLayerCompositor(
       adjustmentContrast.buffer.destroy()
       adjustmentSaturation.buffer.destroy()
       adjustmentHue.buffer.destroy()
+      adjustmentBlur.buffer.destroy()
+      texelSize.buffer.destroy()
     },
   }
 }

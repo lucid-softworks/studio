@@ -132,7 +132,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
       continue
     }
     if (node.kind === 'adjustment') {
-      if (node.blur > 0 || !isTypeGpuBlendMode(node.blendMode)) return false
+      if (!isTypeGpuBlendMode(node.blendMode)) return false
       layers.push(node)
       continue
     }

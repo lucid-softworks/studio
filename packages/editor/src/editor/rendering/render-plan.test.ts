@@ -135,14 +135,12 @@ describe('composition render plan', () => {
     expect(plan?.layers.map((node) => node.kind === 'group' ? node.groupId : node.layerId)).toEqual(['first', 'second'])
   })
 
-  it('keeps unsupported filters and blur adjustments on the compatibility renderer', () => {
+  it('keeps unsupported layer filters on the compatibility renderer', () => {
     const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
-    const blurredAdjustment = { ...createAdjustmentLayer(0), id: 'blurred', blur: 4 }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
     const filteredChild = { ...filtered, groupId: isolated.id }
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
-    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [blurredAdjustment] })).toBeNull()
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated], layers: [filteredChild] })).toBeNull()
   })
 
@@ -168,6 +166,13 @@ describe('composition render plan', () => {
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjustment] })?.layers[0])
       .toMatchObject({ kind: 'adjustment', layerId: 'color-adjustment', opacity: 72, brightness: 115, hue: 24 })
+  })
+
+  it('keeps blur adjustments in the native composition plan', () => {
+    const adjustment = { ...createAdjustmentLayer(0), id: 'blurred', blur: 7 }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjustment] })?.layers[0])
+      .toMatchObject({ kind: 'adjustment', layerId: 'blurred', blur: 7 })
   })
 
   it('keeps raster masks in the native composition plan', () => {
