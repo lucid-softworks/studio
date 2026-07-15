@@ -129,6 +129,28 @@ Mesh 1 12
     renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 10, height: 10 }, layers: [shape, adjustment] }, {})
     expect([...canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data]).toEqual([0, 0, 0, 255])
   })
+
+  it('evaluates embedded Iridas .look LUTs entirely on-device', () => {
+    const encodeFloat = (value: number) => {
+      const bytes = new Uint8Array(4)
+      new DataView(bytes.buffer).setFloat32(0, value, true)
+      return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+    }
+    const values = [
+      [1, 1, 1], [0, 1, 1], [1, 0, 1], [0, 0, 1],
+      [1, 1, 0], [0, 1, 0], [1, 0, 0], [0, 0, 0],
+    ]
+    const look = `<?xml version="1.0"?><look><shaders /><LUT><size>"2"</size><data>"${values.flat().map(encodeFloat).join('')}"</data></LUT></look>`
+    const shape = { ...createShapeLayer('rectangle', 0), id: 'source', width: 100, height: 100, fill: '#ff0000', stackOrder: 0 }
+    const adjustment = {
+      id: 'lookup', type: 'adjustment' as const, name: 'Lookup', visible: true, locked: false, opacity: 100,
+      position: { x: 0, y: 0 }, rotation: 0, brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, stackOrder: 1,
+      adjustment: { type: 'color lookup' as const, dither: false, lutFormat: 'look' as const, lut3DFileData: [...new TextEncoder().encode(look)] },
+    }
+    const canvas = createCanvas(10, 10) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 10, height: 10 }, layers: [shape, adjustment] }, {})
+    expect([...canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data]).toEqual([0, 255, 255, 255])
+  })
 })
 
 describe('filled layer-effect strokes', () => {

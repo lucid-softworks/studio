@@ -1020,8 +1020,33 @@ function parse3dlLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lo
   return { size, values, domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'blue-fastest', shaper }
 }
 
+function parseLookLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>): CubeLut | null {
+  if (adjustment.lutFormat !== 'look') return null
+  const text = decodeLutText(adjustment)
+  if (!text) return null
+  const sizeMatch = text.match(/<size>\s*["']?(\d+)["']?\s*<\/size>/i)
+  const dataMatch = text.match(/<data>([\s\S]*?)<\/data>/i)
+  const size = Number(sizeMatch?.[1] ?? 0)
+  const hex = dataMatch?.[1].replace(/[\s"']/g, '') ?? ''
+  const valueCount = size ** 3 * 3
+  if (size < 2 || hex.length !== valueCount * 8 || !/^[0-9a-f]+$/i.test(hex)) return null
+  const values: Array<[number, number, number]> = []
+  const bytes = new Uint8Array(4)
+  const view = new DataView(bytes.buffer)
+  for (let valueIndex = 0; valueIndex < valueCount; valueIndex += 3) {
+    const value: number[] = []
+    for (let channel = 0; channel < 3; channel += 1) {
+      const offset = (valueIndex + channel) * 8
+      for (let byte = 0; byte < 4; byte += 1) bytes[byte] = Number.parseInt(hex.slice(offset + byte * 2, offset + byte * 2 + 2), 16)
+      value.push(view.getFloat32(0, true))
+    }
+    values.push(value as [number, number, number])
+  }
+  return { size, values, domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'red-fastest' }
+}
+
 export function parseColorLookupLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>) {
-  return parseCubeLut(adjustment) ?? parse3dlLut(adjustment)
+  return parseCubeLut(adjustment) ?? parse3dlLut(adjustment) ?? parseLookLut(adjustment)
 }
 
 function sampleCubeLut(lut: CubeLut, red: number, green: number, blue: number) {
