@@ -4,6 +4,7 @@ import { getDescendantLayers, getStackChildren } from '../editor/stack'
 import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
+import { LayerEffectsControl } from './LayerEffectsControl'
 
 type InspectorProps = {
   document: EditorDocument
@@ -231,6 +232,8 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
             <RangeControl label="Invert" value={filters.invert} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, invert: value } }, `invert-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
           </ControlSection>}
+
+          {selected.type !== 'adjustment' && <LayerEffectsControl layer={selected} onUpdate={(patch, groupKey) => updateLayer(selected, patch, groupKey)} onChangeEnd={endHistoryGroup} />}
 
           {selected.type === 'adjustment' && (
             <ControlSection title="Adjustment layer">

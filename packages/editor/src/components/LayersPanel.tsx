@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react'
+import { hasEnabledLayerEffects } from '../editor/effects'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
 import type { EditorDispatch, EditorDocument, EditorLayer, LayerGroup } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
@@ -67,6 +68,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
         <button type="button" onClick={(event) => dispatch({ type: 'select-layer', id: layer.id, mode: event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace' }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-violet-400">
           <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${active ? 'bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/30' : selected ? 'bg-violet-400/10 text-violet-400' : 'bg-white/[0.04]'}`}><LayerTypeIcon layer={layer} /></span>
           <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{layer.clipToBelow && <span className="mr-1 text-violet-300/60">↳</span>}{layer.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{layer.type}</span></span>
+          {hasEnabledLayerEffects(layer.effects) && <span title="Layer effects enabled" className="font-serif text-[10px] italic text-violet-300/70">fx</span>}
           {!layer.visible && <span className="size-1.5 rounded-full bg-zinc-700" />}
         </button>
         <div className={`flex shrink-0 items-center ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}>

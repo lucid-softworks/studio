@@ -17,6 +17,7 @@ type MenuBarProps = {
   onNewGroup: () => void
   onDuplicateLayer: () => void
   onRasterizeLayer: () => void
+  onClearLayerEffects: () => void
   onDeleteLayer: () => void
   onSelectAll: () => void
   onDeselect: () => void
@@ -30,6 +31,7 @@ type MenuBarProps = {
   canRedo: boolean
   hasLayerSelection: boolean
   canRasterize: boolean
+  hasLayerEffects: boolean
   hasPixelSelection: boolean
   hasFilterTarget: boolean
   saving: boolean
@@ -132,6 +134,7 @@ export function MenuBar(props: MenuBarProps) {
         <Separator />
         <MenuItem shortcut="⌘J" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
         <MenuItem disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
+        <MenuItem disabled={!props.hasLayerEffects} onSelect={() => select(props.onClearLayerEffects)}>Clear layer effects</MenuItem>
         <Separator />
         <MenuItem shortcut="⌫" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDeleteLayer)}>Delete layer or group</MenuItem>
       </>, 'w-60')}

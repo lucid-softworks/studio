@@ -7,6 +7,7 @@ import { MenuBar } from './components/MenuBar'
 import { ToolRail, type EditorTool } from './components/ToolRail'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
+import { hasEnabledLayerEffects } from './editor/effects'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
@@ -712,6 +713,7 @@ function App({ onExit }: AppProps) {
             onNewGroup={addLayerGroup}
             onDuplicateLayer={duplicateSelection}
             onRasterizeLayer={rasterizeSelectedLayer}
+            onClearLayerEffects={() => dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { effects: null } })) })}
             onDeleteLayer={deleteSelection}
             onSelectAll={applySelectAll}
             onDeselect={() => setSelection(null)}
@@ -732,6 +734,7 @@ function App({ onExit }: AppProps) {
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
             canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
+            hasLayerEffects={selectedLayers.some((layer) => hasEnabledLayerEffects(layer.effects))}
             hasPixelSelection={Boolean(selection?.bounds)}
             hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
             saving={isProjectSaving}

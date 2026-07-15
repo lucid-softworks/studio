@@ -1,5 +1,6 @@
 import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
+import { hasEnabledLayerEffects, normalizeLayerEffects } from './effects'
 import { flattenStackLayers, getStackChildren, layerIsLocked, layerIsVisible, type StackItem } from './stack'
 import type { AdjustmentLayer, AssetMap, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
@@ -302,12 +303,89 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
 let clippedLayerCanvas: HTMLCanvasElement | null = null
 let clippingBaseCanvas: HTMLCanvasElement | null = null
 let adjustmentCanvas: HTMLCanvasElement | null = null
+let layerEffectsCanvas: HTMLCanvasElement | null = null
+let layerEffectPassCanvas: HTMLCanvasElement | null = null
+let colorOverlayCanvas: HTMLCanvasElement | null = null
 
 function prepareScratchCanvas(current: HTMLCanvasElement | null, canvas: HTMLCanvasElement) {
   const scratch = current ?? document.createElement('canvas')
   if (scratch.width !== canvas.width) scratch.width = canvas.width
   if (scratch.height !== canvas.height) scratch.height = canvas.height
   return scratch
+}
+
+function drawTintedEffect(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  source: HTMLCanvasElement,
+  color: string,
+  opacity: number,
+  blur: number,
+  offsetX = 0,
+  offsetY = 0,
+) {
+  layerEffectPassCanvas = prepareScratchCanvas(layerEffectPassCanvas, canvas)
+  const effectContext = layerEffectPassCanvas.getContext('2d')
+  if (!effectContext) return
+  effectContext.clearRect(0, 0, canvas.width, canvas.height)
+  effectContext.save()
+  effectContext.filter = blur > 0 ? `blur(${blur}px)` : 'none'
+  effectContext.drawImage(source, offsetX, offsetY)
+  effectContext.restore()
+  effectContext.save()
+  effectContext.globalCompositeOperation = 'source-in'
+  effectContext.globalAlpha = opacity / 100
+  effectContext.fillStyle = color
+  effectContext.fillRect(0, 0, canvas.width, canvas.height)
+  effectContext.restore()
+  context.drawImage(layerEffectPassCanvas, 0, 0)
+}
+
+function drawLayerWithEffects(
+  context: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  layer: EditorLayer,
+  draw: (target: CanvasRenderingContext2D) => void,
+) {
+  if (!hasEnabledLayerEffects(layer.effects)) {
+    draw(context)
+    return
+  }
+  layerEffectsCanvas = prepareScratchCanvas(layerEffectsCanvas, canvas)
+  const layerContext = layerEffectsCanvas.getContext('2d')
+  if (!layerContext) return
+  layerContext.clearRect(0, 0, canvas.width, canvas.height)
+  draw(layerContext)
+
+  const effects = normalizeLayerEffects(layer.effects)
+  if (effects.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, effects.outerGlow.color, effects.outerGlow.opacity, effects.outerGlow.size)
+  if (effects.dropShadow.enabled) {
+    const angle = effects.dropShadow.angle * Math.PI / 180
+    drawTintedEffect(
+      context,
+      canvas,
+      layerEffectsCanvas,
+      effects.dropShadow.color,
+      effects.dropShadow.opacity,
+      effects.dropShadow.blur,
+      Math.cos(angle) * effects.dropShadow.distance,
+      Math.sin(angle) * effects.dropShadow.distance,
+    )
+  }
+  if (effects.colorOverlay.enabled) {
+    colorOverlayCanvas = prepareScratchCanvas(colorOverlayCanvas, canvas)
+    const overlayContext = colorOverlayCanvas.getContext('2d')
+    if (!overlayContext) return
+    overlayContext.clearRect(0, 0, canvas.width, canvas.height)
+    overlayContext.drawImage(layerEffectsCanvas, 0, 0)
+    overlayContext.save()
+    overlayContext.globalCompositeOperation = 'source-atop'
+    overlayContext.globalAlpha = effects.colorOverlay.opacity / 100
+    overlayContext.fillStyle = effects.colorOverlay.color
+    overlayContext.fillRect(0, 0, canvas.width, canvas.height)
+    overlayContext.restore()
+    context.drawImage(colorOverlayCanvas, 0, 0)
+  } else context.drawImage(layerEffectsCanvas, 0, 0)
 }
 
 function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, base: EditorLayer, assets: AssetMap) {
@@ -398,8 +476,8 @@ function drawDocumentStack(
     context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
     if (layer.filters) context.filter = layerFilterCss(layer.filters)
     const clippingBase = layer.clipToBelow ? clippingBaseFor(items, index) : null
-    if (clippingBase?.visible) drawClippedLayer(context, canvas, layer, clippingBase, assets)
-    else if (!clippingBase) drawMaskedLayer(context, canvas, layer, assets)
+    if (clippingBase?.visible) drawLayerWithEffects(context, canvas, layer, (target) => drawClippedLayer(target, canvas, layer, clippingBase, assets))
+    else if (!clippingBase) drawLayerWithEffects(context, canvas, layer, (target) => drawMaskedLayer(target, canvas, layer, assets))
     context.restore()
   }
 }

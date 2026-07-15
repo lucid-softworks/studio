@@ -4,6 +4,11 @@ export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
 export type ShapeKind = 'rectangle' | 'ellipse'
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity'
 export type LayerFilters = { brightness: number; contrast: number; saturation: number; hue: number; grayscale: number; sepia: number; invert: number; blur: number }
+export type LayerEffects = {
+  dropShadow: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; blur: number }
+  outerGlow: { enabled: boolean; color: string; opacity: number; size: number }
+  colorOverlay: { enabled: boolean; color: string; opacity: number }
+}
 
 export type SourceImage = {
   element: HTMLImageElement
@@ -29,6 +34,7 @@ export type BaseLayer = {
   flipY?: boolean
   blendMode?: BlendMode
   filters?: LayerFilters
+  effects?: LayerEffects | null
   maskAssetId?: string | null
   clipToBelow?: boolean
   groupId?: string | null
@@ -137,6 +143,7 @@ export type LayerPatch = Partial<{
   rotation: number
   blendMode: BlendMode
   filters: LayerFilters
+  effects: LayerEffects | null
   maskAssetId: string | null
   clipToBelow: boolean
   groupId: string | null
