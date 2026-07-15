@@ -464,17 +464,13 @@ function App({ onExit }: AppProps) {
 
   return (
     <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
-      <header className="flex h-[65px] items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-3 sm:px-5">
+      <header className="flex h-12 items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-2.5 sm:px-3">
         <div className="flex h-full items-center gap-2.5">
-          <button type="button" title={onExit ? 'Back to Studio home' : undefined} onClick={onExit} className={`flex items-center gap-2.5 rounded-lg text-left ${onExit ? 'focus-visible:outline-2 focus-visible:outline-violet-400' : 'cursor-default'}`}>
-            <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-lg bg-violet-500 shadow-[0_0_24px_rgba(139,92,246,0.25)]">
+          <button type="button" aria-label={onExit ? 'Back to Studio home' : 'Studio'} title={onExit ? 'Back to Studio home' : undefined} onClick={onExit} className={`flex items-center rounded-lg text-left ${onExit ? 'focus-visible:outline-2 focus-visible:outline-violet-400' : 'cursor-default'}`}>
+            <span className="relative flex size-7 items-center justify-center overflow-hidden rounded-md bg-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.22)]">
               <span className="absolute -top-3 -left-2 size-7 rounded-full bg-fuchsia-400/80 blur-[5px]" />
               <span className="absolute -right-2 -bottom-3 size-8 rounded-full bg-cyan-300/70 blur-[6px]" />
-              <span className="relative text-xs font-black tracking-tighter text-white">S</span>
-            </span>
-            <span className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold tracking-tight text-white">Studio</span>
-              <span className="hidden text-[10px] font-medium tracking-wide text-zinc-600 uppercase md:inline">Composition editor</span>
+              <span className="relative text-[10px] font-black tracking-tighter text-white">S</span>
             </span>
           </button>
           <MenuBar

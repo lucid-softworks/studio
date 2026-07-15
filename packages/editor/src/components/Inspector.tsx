@@ -48,7 +48,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const filters = selected?.filters ?? { brightness: 100, contrast: 100, saturation: 100, blur: 0 }
 
   return (
-    <aside className="order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:order-1 lg:h-[calc(100vh-65px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 lg:border-r">
+    <aside className="order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:order-1 lg:h-[calc(100vh-48px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 lg:border-r">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
         <div>
           <h1 className="text-sm font-semibold text-zinc-100">Properties</h1>

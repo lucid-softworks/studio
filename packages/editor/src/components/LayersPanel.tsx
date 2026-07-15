@@ -113,7 +113,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const rootItems = getStackChildren(document, null)
 
   return (
-    <aside className="order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-65px)] lg:w-[258px] lg:border-t-0 lg:border-l">
+    <aside className="order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:w-[258px] lg:border-t-0 lg:border-l">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
         <div><h2 className="text-sm font-semibold text-zinc-100">Layers</h2><p className="mt-0.5 text-[10px] text-zinc-600">{document.layers.length} object{document.layers.length === 1 ? '' : 's'} · {document.groups.length} folder{document.groups.length === 1 ? '' : 's'}</p></div>
         <div className="flex items-center gap-0.5"><button type="button" title="Group selected layers or nest a folder" aria-label="New layer group" onClick={onAddGroup} className="flex size-7 items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200"><FolderIcon /></button><button type="button" title="New adjustment layer" aria-label="New adjustment layer" onClick={onAddAdjustment} className="flex size-7 items-center justify-center rounded-md text-sm text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">◐</button><button type="button" title="New empty raster layer" aria-label="New layer" onClick={onAddLayer} className="flex size-7 items-center justify-center rounded-md text-lg font-light text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button></div>
