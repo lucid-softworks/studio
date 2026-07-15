@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdTextLayer } from './psd'
+import { psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdShapeLayer, psdTextLayer } from './psd'
 import type { Layer, Psd } from 'ag-psd'
 
 describe('PSD layer ordering', () => {
@@ -66,6 +66,42 @@ describe('PSD layer ordering', () => {
       dropShadow: { enabled: true, color: '#0a141e', opacity: 50, angle: 45, distance: 12, blur: 8 },
       outerGlow: { enabled: true, color: '#c86432', opacity: 25, size: 16 },
     })
+  })
+
+  it('preserves basic vector rectangles and ellipses as editable shapes', () => {
+    const rectangle: Layer = {
+      name: 'Label',
+      vectorFill: { type: 'color', color: { r: 120, g: 80, b: 240 } },
+      vectorOrigination: { keyDescriptorList: [{
+        keyOriginShapeBoundingBox: {
+          left: { units: 'Pixels', value: 40 }, top: { units: 'Pixels', value: 20 },
+          right: { units: 'Pixels', value: 240 }, bottom: { units: 'Pixels', value: 100 },
+        },
+        keyOriginRRectRadii: {
+          topLeft: { units: 'Pixels', value: 12 }, topRight: { units: 'Pixels', value: 12 },
+          bottomLeft: { units: 'Pixels', value: 12 }, bottomRight: { units: 'Pixels', value: 12 },
+        },
+      }] },
+    }
+    const ellipse: Layer = {
+      name: 'Ellipse',
+      vectorFill: { type: 'color', color: { r: 20, g: 180, b: 120 } },
+      vectorOrigination: { keyDescriptorList: [{ keyOriginShapeBoundingBox: {
+        left: { units: 'Pixels', value: 100 }, top: { units: 'Pixels', value: 50 },
+        right: { units: 'Pixels', value: 300 }, bottom: { units: 'Pixels', value: 150 },
+      } }] },
+      vectorMask: { paths: [{ open: false, fillRule: 'non-zero', knots: [
+        { linked: true, points: [100, 80, 100, 100, 100, 120] },
+        { linked: true, points: [160, 150, 200, 150, 240, 150] },
+        { linked: true, points: [300, 120, 300, 100, 300, 80] },
+        { linked: true, points: [240, 50, 200, 50, 160, 50] },
+      ] }] },
+    }
+
+    expect(psdShapeLayer(rectangle, 400, 200)).toMatchObject({ shape: 'rectangle', fill: '#7850f0', width: 50, height: 40, cornerRadius: 12 })
+    expect(psdShapeLayer(ellipse, 400, 200)).toMatchObject({ shape: 'ellipse', fill: '#14b478', width: 50, height: 50 })
+    expect(psdImportWarnings({ width: 400, height: 200, children: [rectangle, ellipse] }))
+      .not.toEqual(expect.arrayContaining([expect.stringMatching(/vector|mask/i)]))
   })
 
   it('preserves simple single-style text and ignores default blending ranges', () => {

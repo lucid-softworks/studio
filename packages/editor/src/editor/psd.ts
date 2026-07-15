@@ -3,7 +3,7 @@ import { defaultLayerEffects } from './effects'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createId, createRasterLayer, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
-import type { BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, TextLayer } from './types'
+import type { BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, ShapeLayer, TextLayer } from './types'
 
 let initialized = false
 
@@ -172,6 +172,66 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
   }
 }
 
+function psdShapeGeometry(layer: Layer) {
+  if (!layer.vectorFill || layer.vectorFill.type !== 'color') return null
+  const origin = layer.vectorOrigination?.keyDescriptorList.find((item) => item.keyOriginShapeBoundingBox)
+  const path = layer.vectorMask?.paths.length === 1 ? layer.vectorMask.paths[0] : undefined
+  if (!origin && (!path || path.open || path.knots.length !== 4 || path.operation === 'subtract' || path.operation === 'intersect')) return null
+  const anchors = path?.knots.map((knot) => ({ x: knot.points[2], y: knot.points[3] })) ?? []
+  const box = origin?.keyOriginShapeBoundingBox
+  const left = box?.left.value ?? Math.min(...anchors.map((point) => point.x))
+  const top = box?.top.value ?? Math.min(...anchors.map((point) => point.y))
+  const right = box?.right.value ?? Math.max(...anchors.map((point) => point.x))
+  const bottom = box?.bottom.value ?? Math.max(...anchors.map((point) => point.y))
+  if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) return null
+  const rounded = origin?.keyOriginRRectRadii
+  const curved = path?.knots.some((knot) => (
+    Math.abs(knot.points[0] - knot.points[2]) > 0.01
+    || Math.abs(knot.points[1] - knot.points[3]) > 0.01
+    || Math.abs(knot.points[4] - knot.points[2]) > 0.01
+    || Math.abs(knot.points[5] - knot.points[3]) > 0.01
+  ))
+  const cornerRadius = rounded
+    ? Math.max(rounded.topLeft.value, rounded.topRight.value, rounded.bottomLeft.value, rounded.bottomRight.value)
+    : 0
+  return { left, top, right, bottom, shape: curved && !rounded ? 'ellipse' as const : 'rectangle' as const, cornerRadius, transform: origin?.transform }
+}
+
+export function canImportPsdShape(layer: Layer) {
+  return Boolean(psdShapeGeometry(layer))
+}
+
+export function psdShapeLayer(layer: Layer, documentWidth: number, documentHeight: number): ShapeLayer | null {
+  const geometry = psdShapeGeometry(layer)
+  if (!geometry || !layer.vectorFill || layer.vectorFill.type !== 'color') return null
+  const stroke = layer.vectorStroke
+  const strokeColor = stroke?.content?.type === 'color' ? stroke.content.color : undefined
+  const transform = geometry.transform ?? [1, 0, 0, 1, 0, 0]
+  return {
+    id: createId(),
+    type: 'shape',
+    name: layer.name?.trim() || (geometry.shape === 'ellipse' ? 'Ellipse' : 'Rectangle'),
+    shape: geometry.shape,
+    visible: !layer.hidden,
+    locked: Boolean(layer.protected?.position || layer.protected?.composite),
+    opacity: Math.round((layer.opacity ?? 1) * 100),
+    position: {
+      x: ((geometry.left + geometry.right) / 2 - documentWidth / 2) / documentWidth,
+      y: ((geometry.top + geometry.bottom) / 2 - documentHeight / 2) / documentHeight,
+    },
+    rotation: Math.atan2(transform[1] ?? 0, transform[0] ?? 1) * 180 / Math.PI,
+    blendMode: psdBlendMode(layer.blendMode),
+    clipToBelow: Boolean(layer.clipping),
+    width: (geometry.right - geometry.left) / documentWidth * 100,
+    height: (geometry.bottom - geometry.top) / documentHeight * 100,
+    fill: colorHex(layer.vectorFill.color),
+    stroke: colorHex(strokeColor),
+    strokeWidth: stroke?.strokeEnabled ? stroke.lineWidth?.value ?? 1 : 0,
+    cornerRadius: geometry.cornerRadius,
+    effects: psdLayerEffects(layer),
+  }
+}
+
 function hasUnsupportedEffects(layer: Layer) {
   const effects = layer.effects
   if (!effects || effects.disabled) return false
@@ -251,8 +311,9 @@ export function psdImportWarnings(psd: Psd) {
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.text && !canImportPsdText(layer)) add('text', 'Complex text was rasterized', path)
       if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
-      if (layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) add('vector', 'Vector shapes were rasterized', path)
-      if ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
+      const editableShape = canImportPsdShape(layer)
+      if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
+      if ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || (layer.vectorMask && !editableShape)) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment) add('adjustment', 'Adjustment layers were not preserved as editable adjustments', path)
       if (hasCustomBlending(layer)) add('advanced-blending', 'Advanced blending settings were not preserved', path)
@@ -392,6 +453,22 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
           }
         }
         layers.push(editableText)
+        continue
+      }
+      const editableShape = psdShapeLayer(layer, psd.width, psd.height)
+      if (editableShape) {
+        editableShape.groupId = parentId
+        editableShape.stackOrder = stackOrder
+        const mask = layer.realMask ?? layer.mask
+        if (mask && !mask.disabled) {
+          const maskAssetId = createId()
+          const maskSource = await sourceFromMask(mask, psd.width, psd.height, `${path} mask`)
+          if (maskSource) {
+            assets[maskAssetId] = maskSource
+            editableShape.maskAssetId = maskAssetId
+          }
+        }
+        layers.push(editableShape)
         continue
       }
       const canvas = layerCanvas(layer)

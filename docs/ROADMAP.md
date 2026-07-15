@@ -54,9 +54,12 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Preserve single-style horizontal text, font, color, alignment, tracking, rotation, and bounds
   - [ ] Preserve mixed style runs, paragraph boxes, vertical text, warps, and missing-font metadata
 - [ ] Preserve vector shape layers and paths on import
+  - [x] Import solid rectangles, rounded rectangles, ellipses, and basic strokes as editable shapes
+  - [ ] Preserve compound/custom paths, gradient and pattern fills, and complete stroke metadata
 - [ ] Preserve raster and vector masks, clipping groups, channels, and blend-if data
   - [x] Import PSD raster masks as editable Studio masks
-  - [ ] Preserve vector masks, channels, mask density/feather, and non-default blend-if data
+  - [x] Consume basic shape vector masks as editable rectangle and ellipse geometry
+  - [ ] Preserve independent/compound vector masks, channels, mask density/feather, and non-default blend-if data
 - [ ] Preserve adjustment layers and layer styles as editable Studio properties
   - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
   - [ ] Preserve the remaining Photoshop layer styles and editable adjustment-layer types
