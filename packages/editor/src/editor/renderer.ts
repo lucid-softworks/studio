@@ -1,9 +1,9 @@
 import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
-import { hasEnabledLayerEffects, normalizeLayerEffects } from './effects'
 import type { AssetMap } from './runtime-assets'
-import { flattenStackLayers, getStackChildren, layerIsLocked, layerIsVisible, type StackItem } from './stack'
-import type { AdjustmentLayer, EditorDocument, EditorLayer, ImageLayer, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
+import { buildCompositionRenderPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
+import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
+import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -279,8 +279,8 @@ function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
 
 let maskCompositionCanvas: HTMLCanvasElement | null = null
 
-function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, assets: AssetMap) {
-  const mask = layer.maskAssetId ? assets[layer.maskAssetId] : null
+function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap) {
+  const mask = maskAssetId ? assets[maskAssetId] : null
   const maskSource = mask?.surface ?? mask?.element
   if (!maskSource) {
     drawEditorLayer(context, canvas, layer, assets)
@@ -347,10 +347,10 @@ function drawTintedEffect(
 function drawLayerWithEffects(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
-  layer: EditorLayer,
+  effects: LayerEffects | null,
   draw: (target: CanvasRenderingContext2D) => void,
 ) {
-  if (!hasEnabledLayerEffects(layer.effects)) {
+  if (!effects) {
     draw(context)
     return
   }
@@ -360,7 +360,6 @@ function drawLayerWithEffects(
   layerContext.clearRect(0, 0, canvas.width, canvas.height)
   draw(layerContext)
 
-  const effects = normalizeLayerEffects(layer.effects)
   if (effects.outerGlow.enabled) drawTintedEffect(context, canvas, layerEffectsCanvas, effects.outerGlow.color, effects.outerGlow.opacity, effects.outerGlow.size)
   if (effects.dropShadow.enabled) {
     const angle = effects.dropShadow.angle * Math.PI / 180
@@ -391,7 +390,7 @@ function drawLayerWithEffects(
   } else context.drawImage(layerEffectsCanvas, 0, 0)
 }
 
-function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, base: EditorLayer, assets: AssetMap) {
+function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, base: EditorLayer, assets: AssetMap) {
   clippedLayerCanvas = prepareScratchCanvas(clippedLayerCanvas, canvas)
   clippingBaseCanvas = prepareScratchCanvas(clippingBaseCanvas, canvas)
   const layerContext = clippedLayerCanvas.getContext('2d')
@@ -399,8 +398,8 @@ function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasE
   if (!layerContext || !baseContext) return
   layerContext.clearRect(0, 0, canvas.width, canvas.height)
   baseContext.clearRect(0, 0, canvas.width, canvas.height)
-  drawMaskedLayer(layerContext, clippedLayerCanvas, layer, assets)
-  drawMaskedLayer(baseContext, clippingBaseCanvas, base, assets)
+  drawMaskedLayer(layerContext, clippedLayerCanvas, layer, maskAssetId, assets)
+  drawMaskedLayer(baseContext, clippingBaseCanvas, base, base.maskAssetId ?? null, assets)
   layerContext.save()
   layerContext.globalAlpha = 1
   layerContext.globalCompositeOperation = 'destination-in'
@@ -409,50 +408,35 @@ function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasE
   context.drawImage(clippedLayerCanvas, 0, 0)
 }
 
-function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: AdjustmentLayer) {
+function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, adjustment: AdjustmentRenderNode) {
   adjustmentCanvas = prepareScratchCanvas(adjustmentCanvas, canvas)
   const adjustmentContext = adjustmentCanvas.getContext('2d')
   if (!adjustmentContext) return
   adjustmentContext.clearRect(0, 0, canvas.width, canvas.height)
   adjustmentContext.drawImage(canvas, 0, 0)
   context.save()
-  context.globalAlpha = layer.opacity / 100
-  context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
-  context.filter = `brightness(${layer.brightness}%) contrast(${layer.contrast}%) saturate(${layer.saturation}%) hue-rotate(${layer.hue}deg) blur(${layer.blur}px)`
+  context.globalAlpha = adjustment.opacity / 100
+  context.globalCompositeOperation = adjustment.blendMode === 'normal' ? 'source-over' : adjustment.blendMode
+  context.filter = `brightness(${adjustment.brightness}%) contrast(${adjustment.contrast}%) saturate(${adjustment.saturation}%) hue-rotate(${adjustment.hue}deg) blur(${adjustment.blur}px)`
   context.drawImage(adjustmentCanvas, 0, 0)
   context.restore()
 }
 
 const groupCompositionCanvases: HTMLCanvasElement[] = []
 
-function clippingBaseFor(items: StackItem[], index: number) {
-  for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
-    const item = items[candidateIndex]
-    if (item.type === 'group') return null
-    if (item.layer.type === 'adjustment' || item.layer.clipToBelow) continue
-    return item.layer
-  }
-  return null
-}
-
-function drawDocumentStack(
+function drawRenderPlan(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   documentState: EditorDocument,
   assets: AssetMap,
-  parentId: string | null = null,
+  nodes: RenderPlanNode[],
   depth = 0,
-  seen = new Set<string>(),
 ) {
-  const items = getStackChildren(documentState, parentId)
-  for (const [index, item] of items.entries()) {
-    if (item.type === 'group') {
-      const group = item.group
-      if (!group.visible || seen.has(group.id)) continue
-      const nextSeen = new Set(seen)
-      nextSeen.add(group.id)
-      if (group.passThrough && group.opacity === 100) {
-        drawDocumentStack(context, canvas, documentState, assets, group.id, depth, nextSeen)
+  const layers = new Map(documentState.layers.map((layer) => [layer.id, layer]))
+  for (const node of nodes) {
+    if (node.kind === 'group') {
+      if (!node.isolated) {
+        drawRenderPlan(context, canvas, documentState, assets, node.children, depth)
         continue
       }
       const groupCanvas = prepareScratchCanvas(groupCompositionCanvases[depth] ?? null, canvas)
@@ -460,27 +444,28 @@ function drawDocumentStack(
       const groupContext = groupCanvas.getContext('2d')
       if (!groupContext) continue
       groupContext.clearRect(0, 0, canvas.width, canvas.height)
-      drawDocumentStack(groupContext, groupCanvas, documentState, assets, group.id, depth + 1, nextSeen)
+      drawRenderPlan(groupContext, groupCanvas, documentState, assets, node.children, depth + 1)
       context.save()
-      context.globalAlpha = group.opacity / 100
-      context.globalCompositeOperation = group.blendMode === 'normal' ? 'source-over' : group.blendMode
+      context.globalAlpha = node.opacity / 100
+      context.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode
       context.drawImage(groupCanvas, 0, 0)
       context.restore()
       continue
     }
 
-    const layer = item.layer
-    if (!layer.visible) continue
-    if (layer.type === 'adjustment') {
-      drawAdjustmentLayer(context, canvas, layer)
+    const layer = layers.get(node.layerId)
+    if (!layer) continue
+    if (node.kind === 'adjustment' && layer.type === 'adjustment') {
+      drawAdjustmentLayer(context, canvas, node)
       continue
     }
+    if (node.kind !== 'layer' || layer.type === 'adjustment') continue
     context.save()
-    context.globalCompositeOperation = layer.blendMode === 'normal' || !layer.blendMode ? 'source-over' : layer.blendMode
-    if (layer.filters) context.filter = layerFilterCss(layer.filters)
-    const clippingBase = layer.clipToBelow ? clippingBaseFor(items, index) : null
-    if (clippingBase?.visible) drawLayerWithEffects(context, canvas, layer, (target) => drawClippedLayer(target, canvas, layer, clippingBase, assets))
-    else if (!clippingBase) drawLayerWithEffects(context, canvas, layer, (target) => drawMaskedLayer(target, canvas, layer, assets))
+    context.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode
+    if (node.filters) context.filter = layerFilterCss(node.filters)
+    const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
+    if (clippingBase) drawLayerWithEffects(context, canvas, node.effects, (target) => drawClippedLayer(target, canvas, layer, node.maskAssetId, clippingBase, assets))
+    else drawLayerWithEffects(context, canvas, node.effects, (target) => drawMaskedLayer(target, canvas, layer, node.maskAssetId, assets))
     context.restore()
   }
 }
@@ -605,7 +590,7 @@ export function renderComposition(
   drawBackground(context, canvas.width, canvas.height, document, assets)
   drawPattern(context, canvas.width, canvas.height, document)
 
-  drawDocumentStack(context, canvas, document, assets)
+  drawRenderPlan(context, canvas, document, assets, buildCompositionRenderPlan(document).nodes)
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)

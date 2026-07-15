@@ -38,7 +38,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching
 - [ ] Move rendering and heavy pixel operations to a Worker with OffscreenCanvas where supported
 - [ ] Add GPU device-loss recovery and automatic Canvas2D fallback
-- [ ] Add deterministic renderer fixtures for blend modes, masks, effects, and color transforms
+- [x] Add deterministic renderer fixtures for blend modes, masks, effects, and color transforms
 
 ## M1 — PSD fidelity and round-tripping
 
