@@ -34,8 +34,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Keep a Canvas2D compatibility renderer
 - [x] Add lazy TypeGPU capability detection and runtime lifecycle management
 - [ ] Implement the TypeGPU compositor with parity snapshots against Canvas2D
-  - [x] Present native per-layer textures with normal and separable blend modes
-  - [ ] Add native masks, isolated groups, adjustments, filters, effects, and non-separable blends
+  - [x] Present native per-layer textures with normal/separable blends and raster masks
+  - [ ] Add native isolated groups, adjustments, filters, effects, and non-separable blends
   - [ ] Add GPU/Canvas pixel-parity snapshots
 - [x] Move layer surfaces to a shared texture/resource registry
 - [ ] Add dirty rectangles, tile invalidation, mipmaps, and render caching

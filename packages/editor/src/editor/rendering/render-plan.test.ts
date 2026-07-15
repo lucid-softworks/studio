@@ -145,6 +145,13 @@ describe('composition render plan', () => {
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
   })
 
+  it('keeps raster masks in the native composition plan', () => {
+    const masked = { ...createShapeLayer('rectangle', 0), id: 'masked', maskAssetId: 'mask' }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [masked] })?.layers[0])
+      .toMatchObject({ layerId: 'masked', maskAssetId: 'mask' })
+  })
+
   it('keeps separable blend modes in the native composition plan', () => {
     const blendModes = Object.keys(typeGpuBlendModeCodes) as Array<keyof typeof typeGpuBlendModeCodes>
     const layers = blendModes.map((blendMode, index) => ({

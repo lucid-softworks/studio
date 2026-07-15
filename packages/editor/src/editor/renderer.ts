@@ -10,7 +10,11 @@ import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, R
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RenderCompositionOptions = { showSelection?: boolean }
-export type NativeLayerPass = { source: HTMLCanvasElement; blendMode: TypeGpuBlendMode }
+export type NativeLayerPass = {
+  source: HTMLCanvasElement
+  maskSource?: HTMLCanvasElement | HTMLImageElement
+  blendMode: TypeGpuBlendMode
+}
 export type NativeLayerPasses = { width: number; height: number; layers: NativeLayerPass[] }
 
 export function calculateImageRect(
@@ -38,7 +42,7 @@ export function calculateImageRect(
   }
 }
 
-type CanvasImageResource = { source: CanvasImageSource; width: number; height: number }
+type CanvasImageResource = { source: HTMLCanvasElement | HTMLImageElement; width: number; height: number }
 
 function canvasImageResource(resources: RenderResourceRegistry, assets: AssetMap, assetId: string): CanvasImageResource | null {
   const asset = assets[assetId]
@@ -665,7 +669,14 @@ export function renderNativeLayerPasses(
 
   const compositionLayers: NativeLayerPass[] = [{ source: passCanvases[0], blendMode: 'normal' }]
   plan.layers.forEach((node, index) => {
-    compositionLayers.push({ source: passCanvases[index + 1], blendMode: node.blendMode as TypeGpuBlendMode })
+    const maskSource = node.maskAssetId
+      ? canvasImageResource(resources, assets, node.maskAssetId)?.source
+      : undefined
+    compositionLayers.push({
+      source: passCanvases[index + 1],
+      maskSource,
+      blendMode: node.blendMode as TypeGpuBlendMode,
+    })
   })
   if (passCount > plan.layers.length + 1) {
     compositionLayers.push({ source: passCanvases[passCount - 1], blendMode: 'normal' })
