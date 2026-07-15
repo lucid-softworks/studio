@@ -14,6 +14,13 @@ export type SourceImage = {
   dirtyRegions?: Array<{ revision: number; region: RasterRegion }>
   objectUrl?: string
   isDemo?: boolean
+  precision?: {
+    bitDepth: 16 | 32
+    width: number
+    height: number
+    data: Uint16Array | Float32Array
+    revision: number
+  }
 }
 
 export type AssetMap = Record<string, SourceImage>

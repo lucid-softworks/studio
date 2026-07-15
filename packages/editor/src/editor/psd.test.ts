@@ -9,6 +9,32 @@ Object.assign(globalThis, {
   document: { createElement: () => createCanvas(1, 1) },
 })
 
+function highDepthComposite(bitDepth: 16 | 32, samples: [number, number, number], psb = false) {
+  const sampleBytes = bitDepth / 8
+  const layerLengthBytes = psb ? 8 : 4
+  const buffer = new ArrayBuffer(26 + 4 + 4 + layerLengthBytes + 2 + sampleBytes * 3)
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+  bytes.set(new TextEncoder().encode('8BPS'), 0)
+  view.setUint16(4, psb ? 2 : 1)
+  view.setUint16(12, 3)
+  view.setUint32(14, 1)
+  view.setUint32(18, 1)
+  view.setUint16(22, bitDepth)
+  view.setUint16(24, 3)
+  let offset = 26
+  view.setUint32(offset, 0); offset += 4
+  view.setUint32(offset, 0); offset += 4
+  if (psb) { view.setBigUint64(offset, 0n); offset += 8 } else { view.setUint32(offset, 0); offset += 4 }
+  view.setUint16(offset, 0); offset += 2
+  for (const sample of samples) {
+    if (bitDepth === 16) view.setUint16(offset, sample)
+    else view.setFloat32(offset, sample)
+    offset += sampleBytes
+  }
+  return buffer
+}
+
 describe('PSD layer ordering', () => {
   it('writes layered PSD files with groups, vector metadata, and composite pixels', async () => {
     const group = { ...createLayerGroup(0), id: 'group', name: 'Artwork' }
@@ -71,12 +97,27 @@ describe('PSD layer ordering', () => {
     }
 
     expect(psdImportWarnings(psd)).toEqual(expect.arrayContaining([
-      '16-bit channels were converted to 8-bit raster data',
+      '16-bit source samples were preserved; the canvas preview uses an 8-bit display conversion',
       'The source color mode was converted to RGB',
       'Complex text was rasterized: Artwork / Heading',
       'Some Photoshop-only layer effects were not preserved: Artwork / Glow',
       'Unsupported “linear light” blending was changed to normal: Artwork / Blend',
     ]))
+  })
+
+  it.each([
+    { bitDepth: 16 as const, psb: false, samples: [0x1234, 0x8000, 0xffff] as [number, number, number], preview: [18, 128, 255], precision: [0x1234, 0x8000, 0xffff, 0xffff] },
+    { bitDepth: 32 as const, psb: true, samples: [0.25, 0.5, 1] as [number, number, number], preview: [136, 186, 255], precision: [0.25, 0.5, 1, 1] },
+  ])('preserves $bitDepth-bit samples while creating an 8-bit PSD/PSB preview', async ({ bitDepth, psb, samples, preview, precision }) => {
+    const imported = await importPsdBuffer(highDepthComposite(bitDepth, samples, psb), psb ? 'precision.psb' : 'precision.psd')
+    const raster = imported.document.layers[0]
+    expect(imported.document.bitDepth).toBe(bitDepth)
+    expect(raster.type).toBe('raster')
+    if (raster.type !== 'raster') return
+    const asset = imported.assets[raster.assetId]
+    expect(asset.precision?.bitDepth).toBe(bitDepth)
+    expect(Array.from(asset.precision?.data ?? [])).toEqual(precision)
+    expect(Array.from(asset.surface!.getContext('2d')!.getImageData(0, 0, 1, 1).data).slice(0, 3)).toEqual(preview)
   })
 
   it('maps common Photoshop effects onto editable Studio effects', () => {

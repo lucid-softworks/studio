@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { initialDocument } from './presets'
 import { migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION } from './project'
+import type { AssetMap } from './runtime-assets'
 
 function legacyDocument() {
   const document = structuredClone(initialDocument) as unknown as Record<string, unknown>
@@ -34,7 +35,8 @@ describe('Studio project migrations', () => {
 
     const migrated = migrateDocument(document, 1)
 
-    expect(migrated.schemaVersion).toBe(2)
+    expect(migrated.schemaVersion).toBe(3)
+    expect(migrated.bitDepth).toBe(8)
     expect(migrated.groups).toEqual([])
     expect(migrated.selectedLayerIds).toEqual(['heading'])
     expect(migrated.selectedGroupId).toBeNull()
@@ -78,7 +80,7 @@ describe('Studio project migrations', () => {
 
     const loaded = await parseProjectFile(file)
 
-    expect(loaded.document.schemaVersion).toBe(2)
+    expect(loaded.document.schemaVersion).toBe(3)
     expect(loaded.savedAt).toBe('2025-01-01T00:00:00.000Z')
     expect(loaded.assets).toEqual({})
   })
@@ -91,6 +93,30 @@ describe('Studio project migrations', () => {
 
     expect(serialized.version).toBe(STUDIO_PROJECT_VERSION)
     expect(serialized.document.schemaVersion).toBe(initialDocument.schemaVersion)
+  })
+
+  it('serializes high-precision raster samples with the local project', async () => {
+    const assetId = 'precision-raster'
+    const document = {
+      ...initialDocument,
+      bitDepth: 16 as const,
+      layers: [{
+        id: 'pixels', type: 'raster' as const, name: 'Pixels', visible: true, locked: false, opacity: 100,
+        position: { x: 0, y: 0 }, rotation: 0, assetId, width: 1, height: 1, scale: 100, stackOrder: 0,
+      }],
+    }
+    const assets: AssetMap = {
+      [assetId]: {
+        element: {} as HTMLImageElement,
+        name: 'Pixels',
+        blob: new Blob([Uint8Array.from([1])], { type: 'image/png' }),
+        precision: { bitDepth: 16, width: 1, height: 1, data: Uint16Array.from([1, 32768, 65535, 65535]), revision: 0 },
+      },
+    }
+    const serialized = JSON.parse(await serializeProject(document, assets)) as { assets: Array<Record<string, unknown>> }
+
+    expect(serialized.assets[0]).toMatchObject({ bitDepth: 16, precisionWidth: 1, precisionHeight: 1, precisionRevision: 0 })
+    expect(String(serialized.assets[0].precision)).toMatch(/^data:/)
   })
 
   it('rejects unknown future document schemas', () => {

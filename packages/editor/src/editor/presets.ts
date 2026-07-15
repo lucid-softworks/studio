@@ -18,6 +18,7 @@ export const backgroundPresets = [
 
 export const initialDocument: EditorDocument = {
   schemaVersion: EDITOR_DOCUMENT_SCHEMA_VERSION,
+  bitDepth: 8,
   canvasPreset: 'landscape',
   canvasSize: { width: 1600, height: 1000 },
   background: {

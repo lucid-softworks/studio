@@ -1,5 +1,5 @@
 export type Position = { x: number; y: number }
-export const EDITOR_DOCUMENT_SCHEMA_VERSION = 2 as const
+export const EDITOR_DOCUMENT_SCHEMA_VERSION = 3 as const
 export type BackgroundKind = 'gradient' | 'solid' | 'image' | 'transparent'
 export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
 export type ShapeKind = 'rectangle' | 'ellipse' | 'path'
@@ -250,6 +250,7 @@ export type DocumentChannel = {
 
 export type EditorDocument = {
   schemaVersion: typeof EDITOR_DOCUMENT_SCHEMA_VERSION
+  bitDepth: 8 | 16 | 32
   canvasPreset: string
   canvasSize: { width: number; height: number }
   background: BackgroundSettings

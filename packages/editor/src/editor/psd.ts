@@ -3,7 +3,7 @@ import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
-import type { AssetMap } from './runtime-assets'
+import type { AssetMap, SourceImage } from './runtime-assets'
 import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, TextLayer, VectorMask } from './types'
 
 let initialized = false
@@ -172,8 +172,18 @@ export function psdLayerNamesInEditorOrder(layers: Layer[], parent = '', sourceI
   })
 }
 
-async function sourceFromCanvas(canvas: HTMLCanvasElement, name: string) {
-  return { element: canvas as unknown as HTMLImageElement, name, surface: canvas, revision: 0 }
+function precisionFromImageData(imageData: Layer['imageData'] | Psd['imageData'], bitsPerChannel: number): SourceImage['precision'] {
+  if (bitsPerChannel === 16 && imageData?.data instanceof Uint16Array) {
+    return { bitDepth: 16, width: imageData.width, height: imageData.height, data: imageData.data.slice(), revision: 0 }
+  }
+  if (bitsPerChannel === 32 && imageData?.data instanceof Float32Array) {
+    return { bitDepth: 32, width: imageData.width, height: imageData.height, data: imageData.data.slice(), revision: 0 }
+  }
+  return undefined
+}
+
+async function sourceFromCanvas(canvas: HTMLCanvasElement, name: string, precision?: SourceImage['precision']) {
+  return { element: canvas as unknown as HTMLImageElement, name, surface: canvas, revision: 0, precision }
 }
 
 async function sourceFromMask(mask: LayerMaskData, width: number, height: number, name: string) {
@@ -223,7 +233,23 @@ function layerCanvas(layer: Pick<Layer | Psd | LayerMaskData, 'imageData' | 'can
     canvas.height = layer.imageData.height
     const context = canvas.getContext('2d')
     if (!context) return null
-    const pixels = new ImageData(new Uint8ClampedArray(layer.imageData.data), layer.imageData.width, layer.imageData.height)
+    const source = layer.imageData.data
+    let data: Uint8ClampedArray
+    if (source instanceof Uint16Array) {
+      data = new Uint8ClampedArray(source.length)
+      for (let index = 0; index < source.length; index += 1) data[index] = source[index] >>> 8
+    } else if (source instanceof Float32Array) {
+      data = new Uint8ClampedArray(source.length)
+      for (let index = 0; index < source.length; index += 4) {
+        data[index] = Math.round(Math.pow(Math.max(0, source[index]), 1 / 2.2) * 255)
+        data[index + 1] = Math.round(Math.pow(Math.max(0, source[index + 1]), 1 / 2.2) * 255)
+        data[index + 2] = Math.round(Math.pow(Math.max(0, source[index + 2]), 1 / 2.2) * 255)
+        data[index + 3] = Math.round(Math.max(0, Math.min(1, source[index + 3])) * 255)
+      }
+    } else data = new Uint8ClampedArray(source)
+    const imageBytes = new Uint8ClampedArray(data.length)
+    imageBytes.set(data)
+    const pixels = new ImageData(imageBytes, layer.imageData.width, layer.imageData.height)
     context.putImageData(pixels, 0, 0)
     return canvas
   }
@@ -752,7 +778,7 @@ export function psdImportWarnings(psd: Psd) {
     })
   }
 
-  if (psd.bitsPerChannel && psd.bitsPerChannel !== 8) add('depth', `${psd.bitsPerChannel}-bit channels were converted to 8-bit raster data`)
+  if (psd.bitsPerChannel && psd.bitsPerChannel !== 8) add('depth', `${psd.bitsPerChannel}-bit source samples were preserved; the canvas preview uses an 8-bit display conversion`)
   if (psd.colorMode !== undefined && psd.colorMode !== 3) add('color-mode', 'The source color mode was converted to RGB')
   visit(psd.children ?? [])
 
@@ -907,7 +933,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       const canvas = layerCanvas(layer)
       if (!canvas || canvas.width === 0 || canvas.height === 0) continue
       const assetId = createId()
-      assets[assetId] = await sourceFromCanvas(canvas, path)
+      assets[assetId] = await sourceFromCanvas(canvas, path, precisionFromImageData(layer.imageData, psd.bitsPerChannel ?? 8))
       const left = layer.left ?? 0
       const top = layer.top ?? 0
       const centerX = left + canvas.width / 2
@@ -958,7 +984,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   const composite = layerCanvas(psd)
   if (layers.length === 0 && composite) {
     const assetId = createId()
-    assets[assetId] = await sourceFromCanvas(composite, name)
+    assets[assetId] = await sourceFromCanvas(composite, name, precisionFromImageData(psd.imageData, psd.bitsPerChannel ?? 8))
     layers.push(createRasterLayer(assetId, name.replace(/\.psb?$/i, ''), psd.width, psd.height))
   }
   if (layers.length === 0) throw new Error('The PSD did not contain any rasterizable layer data.')
@@ -969,6 +995,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
     warnings: psdImportWarnings(psd),
     document: {
       ...initialDocument,
+      bitDepth: psd.bitsPerChannel === 16 || psd.bitsPerChannel === 32 ? psd.bitsPerChannel : 8,
       canvasPreset: 'custom',
       canvasSize: { width: psd.width, height: psd.height },
       background: { ...initialDocument.background, kind: 'transparent' },

@@ -4,14 +4,14 @@ import type { AssetMap } from './runtime-assets'
 import { flattenStackLayers, getStackChildren } from './stack'
 import { EDITOR_DOCUMENT_SCHEMA_VERSION, type EditorDocument } from './types'
 
-export const STUDIO_PROJECT_VERSION = 2 as const
+export const STUDIO_PROJECT_VERSION = 3 as const
 const DATABASE_NAME = 'studio-client-projects'
 const STORE_NAME = 'recovery'
 const RECOVERY_KEY = 'current-document'
 
-type StoredAsset = { id: string; name: string; blob: Blob }
+type StoredAsset = { id: string; name: string; blob: Blob; precision?: Blob; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
 type StoredProject = { version: number; savedAt: string; document: unknown; assets: StoredAsset[] }
-type PortableAsset = { id: string; name: string; data: string }
+type PortableAsset = { id: string; name: string; data: string; precision?: string; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
 type PortableProject = { app: 'studio'; version: number; savedAt: string; document: unknown; assets: PortableAsset[] }
 
 export type LoadedProject = { document: EditorDocument; assets: AssetMap; savedAt?: string }
@@ -27,6 +27,11 @@ const documentMigrations = new Map<number, DocumentMigration>([
     groups: document.groups ?? [],
     selectedLayerIds: document.selectedLayerIds ?? (typeof document.selectedLayerId === 'string' ? [document.selectedLayerId] : []),
     selectedGroupId: document.selectedGroupId ?? null,
+  })],
+  [2, (document) => ({
+    ...document,
+    schemaVersion: 3,
+    bitDepth: 8,
   })],
 ])
 
@@ -72,6 +77,7 @@ export function migrateDocument(value: unknown, projectVersion: number): EditorD
 }
 
 function normalizeDocument(value: EditorDocument): EditorDocument {
+  const bitDepth: EditorDocument['bitDepth'] = value.bitDepth === 16 || value.bitDepth === 32 ? value.bitDepth : 8
   const selectedLayerId = value.selectedLayerId && value.layers.some((layer) => layer.id === value.selectedLayerId) ? value.selectedLayerId : null
   const selectedLayerIds = Array.isArray(value.selectedLayerIds)
     ? value.selectedLayerIds.filter((id) => value.layers.some((layer) => layer.id === id))
@@ -101,7 +107,7 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     return normalizedLayer.groupId && !groupIds.has(normalizedLayer.groupId) ? { ...normalizedLayer, groupId: null } : normalizedLayer
   })
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
-  let normalized = { ...value, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
+  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {
     const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
     normalized = {
@@ -143,7 +149,18 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
   ])
   const entries = await Promise.all(assets.map(async (asset) => {
     const source = await loadImageBlob(asset.blob, asset.name)
-    return [asset.id, rasterAssetIds.has(asset.id) ? createRasterSurface(source) : source] as const
+    const hydrated = rasterAssetIds.has(asset.id) ? createRasterSurface(source) : source
+    if (asset.precision && (asset.bitDepth === 16 || asset.bitDepth === 32) && asset.precisionWidth && asset.precisionHeight) {
+      const buffer = await asset.precision.arrayBuffer()
+      hydrated.precision = {
+        bitDepth: asset.bitDepth,
+        width: asset.precisionWidth,
+        height: asset.precisionHeight,
+        data: asset.bitDepth === 16 ? new Uint16Array(buffer) : new Float32Array(buffer),
+        revision: asset.precisionRevision ?? 0,
+      }
+    }
+    return [asset.id, hydrated] as const
   }))
   return Object.fromEntries(entries)
 }
@@ -157,9 +174,22 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
     ...(document.background.imageAssetId ? [document.background.imageAssetId] : []),
     ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
   ])
-  const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]) => {
+  const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]): Promise<StoredAsset | null> => {
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
-    return blob ? { id, name: asset.name, blob } : null
+    const precision = asset.precision
+    const precisionBytes = precision ? new Uint8Array(precision.data.byteLength) : undefined
+    if (precisionBytes && precision) precisionBytes.set(new Uint8Array(precision.data.buffer, precision.data.byteOffset, precision.data.byteLength))
+    const precisionBlob = precisionBytes ? new Blob([precisionBytes]) : undefined
+    return blob ? {
+      id,
+      name: asset.name,
+      blob,
+      precision: precisionBlob,
+      bitDepth: precision?.bitDepth,
+      precisionWidth: precision?.width,
+      precisionHeight: precision?.height,
+      precisionRevision: precision?.revision,
+    } : null
   }))
   return entries.filter((asset): asset is StoredAsset => asset !== null)
 }
@@ -176,17 +206,24 @@ export async function loadRecoveryProject(): Promise<LoadedProject | null> {
   return { document, assets: await hydrateAssets(project.assets, document), savedAt: project.savedAt }
 }
 
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error ?? new Error('An image asset could not be encoded.'))
-    reader.readAsDataURL(blob)
-  })
+async function blobToDataUrl(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 32_768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768))
+  return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`
 }
 
 export async function serializeProject(document: EditorDocument, assets: AssetMap) {
-  const portableAssets = await Promise.all((await storedAssets(document, assets)).map(async (asset): Promise<PortableAsset> => ({ id: asset.id, name: asset.name, data: await blobToDataUrl(asset.blob) })))
+  const portableAssets = await Promise.all((await storedAssets(document, assets)).map(async (asset): Promise<PortableAsset> => ({
+    id: asset.id,
+    name: asset.name,
+    data: await blobToDataUrl(asset.blob),
+    precision: asset.precision ? await blobToDataUrl(asset.precision) : undefined,
+    bitDepth: asset.bitDepth,
+    precisionWidth: asset.precisionWidth,
+    precisionHeight: asset.precisionHeight,
+    precisionRevision: asset.precisionRevision,
+  })))
   const project: PortableProject = { app: 'studio', version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: portableAssets }
   return JSON.stringify(project)
 }
@@ -210,7 +247,17 @@ export async function parseProjectFile(file: File): Promise<LoadedProject> {
   if (!portableAssets) throw new Error('The Studio project contains invalid asset data.')
   const stored = await Promise.all(portableAssets.map(async (asset): Promise<StoredAsset> => {
     const response = await fetch(asset.data)
-    return { id: asset.id, name: asset.name, blob: await response.blob() }
+    const precisionResponse = asset.precision ? await fetch(asset.precision) : undefined
+    return {
+      id: asset.id,
+      name: asset.name,
+      blob: await response.blob(),
+      precision: precisionResponse ? await precisionResponse.blob() : undefined,
+      bitDepth: asset.bitDepth,
+      precisionWidth: asset.precisionWidth,
+      precisionHeight: asset.precisionHeight,
+      precisionRevision: asset.precisionRevision,
+    }
   }))
   const document = migrateDocument(parsed.document, parsed.version)
   return { document, assets: await hydrateAssets(stored, document), savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : undefined }
