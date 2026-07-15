@@ -58,7 +58,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [ ] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
 - [ ] Write layered PSD files from Studio documents
 - [ ] Add import → export → import structural and pixel-diff tests
-- [ ] Warn precisely when an unsupported PSD feature must be flattened
+- [x] Warn precisely when an unsupported PSD feature must be flattened
 
 ## M2 — smart objects and non-destructive filters
 

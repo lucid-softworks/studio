@@ -46,13 +46,68 @@ function layerCanvas(layer: Layer | Psd) {
   return layer.canvas ?? null
 }
 
-const supportedBlendModes = new Set<BlendMode>([
-  'normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn',
-  'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity',
-])
+const psdBlendModes: Partial<Record<NonNullable<Layer['blendMode']>, BlendMode>> = {
+  normal: 'normal',
+  multiply: 'multiply',
+  screen: 'screen',
+  overlay: 'overlay',
+  darken: 'darken',
+  lighten: 'lighten',
+  'color dodge': 'color-dodge',
+  'color burn': 'color-burn',
+  'hard light': 'hard-light',
+  'soft light': 'soft-light',
+  difference: 'difference',
+  exclusion: 'exclusion',
+  hue: 'hue',
+  saturation: 'saturation',
+  color: 'color',
+  luminosity: 'luminosity',
+}
 
-function blendMode(value: Layer['blendMode']): BlendMode {
-  return value && supportedBlendModes.has(value as BlendMode) ? value as BlendMode : 'normal'
+export function psdBlendMode(value: Layer['blendMode']): BlendMode {
+  return value ? psdBlendModes[value] ?? 'normal' : 'normal'
+}
+
+export function psdImportWarnings(psd: Psd) {
+  const warnings = new Map<string, { message: string; paths: Set<string> }>()
+  const add = (code: string, message: string, path?: string) => {
+    const warning = warnings.get(code) ?? { message, paths: new Set<string>() }
+    if (path) warning.paths.add(path)
+    warnings.set(code, warning)
+  }
+  const visit = (layers: Layer[], parentPath = '') => {
+    layers.forEach((layer, index) => {
+      const name = layer.name?.trim() || `Layer ${index + 1}`
+      const path = parentPath ? `${parentPath} / ${name}` : name
+      if (layer.text) add('text', 'Editable text was rasterized', path)
+      if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
+      if (layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) add('vector', 'Vector shapes were rasterized', path)
+      if (layer.mask || layer.realMask || layer.vectorMask) add('mask', 'Layer masks were not preserved as editable masks', path)
+      if (layer.effects) add('effects', 'Layer effects were not preserved as editable effects', path)
+      if (layer.adjustment) add('adjustment', 'Adjustment layers were not preserved as editable adjustments', path)
+      if (layer.blendingRanges || layer.knockout) add('advanced-blending', 'Advanced blending settings were not preserved', path)
+      if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
+        add(`blend:${layer.blendMode}`, `Unsupported “${layer.blendMode}” blending was changed to normal`, path)
+      }
+      if (layer.animationFrames?.length || layer.timeline) add('animation', 'Layer animation data was not imported', path)
+      if (layer.children) visit(layer.children, path)
+    })
+  }
+
+  if (psd.bitsPerChannel && psd.bitsPerChannel !== 8) add('depth', `${psd.bitsPerChannel}-bit channels were converted to 8-bit raster data`)
+  if (psd.colorMode !== undefined && psd.colorMode !== 3) add('color-mode', 'The source color mode was converted to RGB')
+  if (psd.imageResources?.gridAndGuidesInformation?.guides?.length) add('guides', 'PSD guides were not imported')
+  if (psd.imageResources?.layerComps?.list.length) add('layer-comps', 'Layer comps were not imported')
+  if (psd.linkedFiles?.length) add('linked-files', 'Linked file metadata was not preserved')
+  visit(psd.children ?? [])
+
+  return [...warnings.values()].map(({ message, paths }) => {
+    const names = [...paths]
+    if (!names.length) return message
+    const visible = names.slice(0, 3).join(', ')
+    return `${message}: ${visible}${names.length > 3 ? `, and ${names.length - 3} more` : ''}`
+  })
 }
 
 type PreviewLayer = { layer: Layer; hidden: boolean; opacity: number }
@@ -83,7 +138,7 @@ function renderOrderPreview(psd: Psd, layers: PreviewLayer[], sourceIsTopToBotto
     if (!source) continue
     context.save()
     context.globalAlpha = opacity
-    const mode = blendMode(layer.blendMode)
+    const mode = psdBlendMode(layer.blendMode)
     context.globalCompositeOperation = mode === 'normal' ? 'source-over' : mode
     context.drawImage(source, layer.left ?? 0, layer.top ?? 0)
     context.restore()
@@ -117,7 +172,7 @@ function detectSourceTopToBottom(psd: Psd) {
   return imageDifference(topToBottom, reference) <= imageDifference(bottomToTop, reference)
 }
 
-export async function importPsdFile(file: File): Promise<{ document: EditorDocument; assets: AssetMap }> {
+export async function importPsdFile(file: File): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
   initializeBrowserCanvas()
   let psd
   try {
@@ -144,7 +199,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
           visible: !layer.hidden,
           locked: Boolean(layer.protected?.position || layer.protected?.composite),
           opacity: Math.round((layer.opacity ?? 1) * 100),
-          blendMode: blendMode(layer.blendMode),
+          blendMode: psdBlendMode(layer.blendMode),
           passThrough: layer.blendMode === 'pass through',
           collapsed: layer.opened === false,
           parentId,
@@ -168,7 +223,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
       raster.visible = !layer.hidden
       raster.locked = Boolean(layer.protected?.position || layer.protected?.composite)
       raster.opacity = Math.round((layer.opacity ?? 1) * 100)
-      raster.blendMode = blendMode(layer.blendMode)
+      raster.blendMode = psdBlendMode(layer.blendMode)
       raster.clipToBelow = Boolean(layer.clipping)
       raster.groupId = parentId
       raster.stackOrder = stackOrder
@@ -189,6 +244,7 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
   const selectedLayerId = layers.at(-1)?.id ?? null
   return {
     assets,
+    warnings: psdImportWarnings(psd),
     document: {
       ...initialDocument,
       canvasPreset: 'custom',

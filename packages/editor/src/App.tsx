@@ -71,7 +71,8 @@ function App({ onExit }: AppProps) {
 
   useEffect(() => {
     if (!notice) return
-    const timer = window.setTimeout(() => setNoticeState(null), notice.tone === 'error' ? 8000 : 5000)
+    const duration = notice.tone === 'warning' ? 12000 : notice.tone === 'error' ? 8000 : 5000
+    const timer = window.setTimeout(() => setNoticeState(null), duration)
     return () => window.clearTimeout(timer)
   }, [notice])
 
@@ -699,9 +700,12 @@ function App({ onExit }: AppProps) {
     setNotice(null)
     try {
       let loaded: { document: typeof document; assets: AssetMap }
+      let importWarnings: string[] = []
       if (extension === 'psd' || file.type === 'image/vnd.adobe.photoshop') {
         const { importPsdFile } = await import('./editor/psd')
-        loaded = await importPsdFile(file)
+        const imported = await importPsdFile(file)
+        loaded = imported
+        importWarnings = imported.warnings
       } else {
         const source = createRasterSurface(await loadImageFile(file))
         const assetId = createId()
@@ -726,7 +730,11 @@ function App({ onExit }: AppProps) {
       bumpRasterHistory()
       historyDispatch({ type: 'replace', document: loaded.document })
       setSelection(null)
-      setNotice(`Opened ${file.name} locally.`, 'success')
+      if (importWarnings.length) {
+        setNotice(`Opened ${file.name} with compatibility changes:\n• ${importWarnings.join('\n• ')}`, 'warning')
+      } else {
+        setNotice(`Opened ${file.name} locally.`, 'success')
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That file could not be opened.')
     } finally {
