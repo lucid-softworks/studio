@@ -17,4 +17,9 @@ describe('PSD layer ordering', () => {
       'Top',
     ])
   })
+
+  it('keeps bottom-to-top children in compositor order for nonstandard PSD writers', () => {
+    const children: Layer[] = [{ name: 'Background' }, { name: 'Artwork' }]
+    expect(psdLayerNamesInEditorOrder(children, '', false)).toEqual(['Background', 'Artwork'])
+  })
 })

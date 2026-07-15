@@ -1,4 +1,4 @@
-import { initializeCanvas, readPsd, type Layer } from 'ag-psd'
+import { initializeCanvas, readPsd, type Layer, type Psd } from 'ag-psd'
 import { loadImageBlob, surfaceToBlob } from './image'
 import { createId, createRasterLayer, initialDocument } from './presets'
 import type { AssetMap, BlendMode, EditorDocument, LayerGroup, RasterLayer } from './types'
@@ -16,11 +16,12 @@ function initializeBrowserCanvas() {
   initialized = true
 }
 
-export function psdLayerNamesInEditorOrder(layers: Layer[], parent = ''): string[] {
-  return [...layers].reverse().flatMap((layer, reverseIndex) => {
-    const name = layer.name?.trim() || `Layer ${layers.length - reverseIndex}`
+export function psdLayerNamesInEditorOrder(layers: Layer[], parent = '', sourceIsTopToBottom = true): string[] {
+  const editorOrder = sourceIsTopToBottom ? [...layers].reverse() : layers
+  return editorOrder.flatMap((layer, editorIndex) => {
+    const name = layer.name?.trim() || `Layer ${sourceIsTopToBottom ? layers.length - editorIndex : editorIndex + 1}`
     const path = parent ? `${parent} / ${name}` : name
-    return layer.children ? psdLayerNamesInEditorOrder(layer.children, path) : [path]
+    return layer.children ? psdLayerNamesInEditorOrder(layer.children, path, sourceIsTopToBottom) : [path]
   })
 }
 
@@ -30,7 +31,7 @@ async function sourceFromCanvas(canvas: HTMLCanvasElement, name: string) {
   return { ...source, surface: canvas, revision: 0 }
 }
 
-function layerCanvas(layer: Layer) {
+function layerCanvas(layer: Layer | Psd) {
   if (layer.imageData) {
     const canvas = document.createElement('canvas')
     canvas.width = layer.imageData.width
@@ -53,6 +54,68 @@ function blendMode(value: Layer['blendMode']): BlendMode {
   return value && supportedBlendModes.has(value as BlendMode) ? value as BlendMode : 'normal'
 }
 
+type PreviewLayer = { layer: Layer; hidden: boolean; opacity: number }
+
+function previewLayers(layers: Layer[], parentHidden = false, parentOpacity = 1): PreviewLayer[] {
+  return layers.flatMap((layer) => {
+    const hidden = parentHidden || Boolean(layer.hidden)
+    const opacity = parentOpacity * (layer.opacity ?? 1)
+    return layer.children ? previewLayers(layer.children, hidden, opacity) : [{ layer, hidden, opacity }]
+  })
+}
+
+function renderOrderPreview(psd: Psd, layers: PreviewLayer[], sourceIsTopToBottom: boolean, canvasCache: WeakMap<Layer, HTMLCanvasElement>) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 96
+  canvas.height = 96
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+  context.setTransform(canvas.width / psd.width, 0, 0, canvas.height / psd.height, 0, 0)
+  const drawOrder = sourceIsTopToBottom ? [...layers].reverse() : layers
+  for (const { layer, hidden, opacity } of drawOrder) {
+    if (hidden) continue
+    let source = canvasCache.get(layer)
+    if (!source) {
+      source = layerCanvas(layer) ?? undefined
+      if (source) canvasCache.set(layer, source)
+    }
+    if (!source) continue
+    context.save()
+    context.globalAlpha = opacity
+    const mode = blendMode(layer.blendMode)
+    context.globalCompositeOperation = mode === 'normal' ? 'source-over' : mode
+    context.drawImage(source, layer.left ?? 0, layer.top ?? 0)
+    context.restore()
+  }
+  context.setTransform(1, 0, 0, 1, 0, 0)
+  return context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function imageDifference(left: ImageData, right: ImageData) {
+  let score = 0
+  for (let index = 0; index < left.data.length; index += 1) score += Math.abs(left.data[index] - right.data[index])
+  return score
+}
+
+function detectSourceTopToBottom(psd: Psd) {
+  const composite = layerCanvas(psd)
+  const children = psd.children ?? []
+  if (!composite || children.length < 2) return true
+  const referenceCanvas = document.createElement('canvas')
+  referenceCanvas.width = 96
+  referenceCanvas.height = 96
+  const referenceContext = referenceCanvas.getContext('2d', { willReadFrequently: true })
+  if (!referenceContext) return true
+  referenceContext.drawImage(composite, 0, 0, referenceCanvas.width, referenceCanvas.height)
+  const reference = referenceContext.getImageData(0, 0, referenceCanvas.width, referenceCanvas.height)
+  const leaves = previewLayers(children)
+  const canvasCache = new WeakMap<Layer, HTMLCanvasElement>()
+  const topToBottom = renderOrderPreview(psd, leaves, true, canvasCache)
+  const bottomToTop = renderOrderPreview(psd, leaves, false, canvasCache)
+  if (!topToBottom || !bottomToTop) return true
+  return imageDifference(topToBottom, reference) <= imageDifference(bottomToTop, reference)
+}
+
 export async function importPsdFile(file: File): Promise<{ document: EditorDocument; assets: AssetMap }> {
   initializeBrowserCanvas()
   let psd
@@ -65,11 +128,12 @@ export async function importPsdFile(file: File): Promise<{ document: EditorDocum
   const assets: AssetMap = {}
   const layers: RasterLayer[] = []
   const groups: LayerGroup[] = []
+  const sourceIsTopToBottom = detectSourceTopToBottom(psd)
 
   const importChildren = async (children: Layer[], parentId: string | null, parentPath = '') => {
-    const editorOrder = [...children].reverse()
+    const editorOrder = sourceIsTopToBottom ? [...children].reverse() : children
     for (const [stackOrder, layer] of editorOrder.entries()) {
-      const name = layer.name?.trim() || `Layer ${children.length - stackOrder}`
+      const name = layer.name?.trim() || `Layer ${sourceIsTopToBottom ? children.length - stackOrder : stackOrder + 1}`
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.children) {
         const id = createId()

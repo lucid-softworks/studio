@@ -69,7 +69,7 @@ All image decoding, editing, autosave, project serialization, and export remain 
 - Editable layer masks, clipping masks, blend modes, stack-based adjustment layers, and non-destructive per-layer filters
 - Transform handles, rotation, multi-selection, alignment, visibility, locking, ordering, and recursively composited nested layer folders
 - Folder drag-and-drop reparenting, inherited locks/visibility, pass-through blending, and hierarchy-aware duplication
-- PNG, JPEG, WebP, and layered PSD opening with Photoshop stack order and folder hierarchy preservation
+- PNG, JPEG, WebP, and layered PSD opening with composite-verified stack direction and folder hierarchy preservation
 - PNG, JPEG, and WebP export
 - Portable `.studio` projects and IndexedDB recovery
 - Dirty-region raster undo/redo
