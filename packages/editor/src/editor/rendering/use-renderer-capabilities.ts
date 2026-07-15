@@ -4,11 +4,13 @@ import {
   initializeTypeGpuRuntime,
   subscribeToTypeGpuRuntime,
 } from './typegpu-runtime'
+import { buildNativeLayerCompositionPlan } from './render-plan'
+import type { EditorDocument } from '../types'
 
 const idleStatus = { state: 'idle' as const }
 const serverSnapshot = () => idleStatus
 
-export function useRendererCapabilities() {
+export function useRendererCapabilities(document: EditorDocument) {
   const typegpu = useSyncExternalStore(
     subscribeToTypeGpuRuntime,
     getTypeGpuRuntimeStatus,
@@ -19,8 +21,12 @@ export function useRendererCapabilities() {
     void initializeTypeGpuRuntime()
   }, [])
 
+  const supportsNativeLayers = buildNativeLayerCompositionPlan(document) !== null
+  const activeRenderer: 'webgpu' | 'canvas2d' = typegpu.state === 'ready' && supportsNativeLayers ? 'webgpu' : 'canvas2d'
+
   return {
-    activeRenderer: 'canvas2d' as const,
+    activeRenderer,
+    supportsNativeLayers,
     typegpu,
   }
 }

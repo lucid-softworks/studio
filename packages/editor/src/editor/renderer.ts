@@ -1,7 +1,7 @@
 import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
-import { buildCompositionRenderPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
+import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, RasterLayer, ShapeLayer, TextLayer } from './types'
@@ -9,6 +9,7 @@ import type { EditorDocument, EditorLayer, ImageLayer, LayerEffects, Position, R
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 export type RenderCompositionOptions = { showSelection?: boolean }
+export type NativeLayerPasses = { width: number; height: number; sources: HTMLCanvasElement[] }
 
 export function calculateImageRect(
   canvasWidth: number,
@@ -614,4 +615,51 @@ export function renderComposition(
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
     if (selected?.visible) drawSelection(context, canvas, selected, assets)
   }
+}
+
+export function renderNativeLayerPasses(
+  passCanvases: HTMLCanvasElement[],
+  documentState: EditorDocument,
+  assets: AssetMap,
+  resources: RenderResourceRegistry,
+  options: RenderCompositionOptions = {},
+): NativeLayerPasses | null {
+  const plan = buildNativeLayerCompositionPlan(documentState)
+  if (!plan) return null
+
+  const size = getDocumentSize(documentState)
+  const passCount = 1 + plan.layers.length + (options.showSelection && documentState.selectedLayerId ? 1 : 0)
+  while (passCanvases.length < passCount) passCanvases.push(globalThis.document.createElement('canvas'))
+  resources.prune('canvas2d', new Set(Object.keys(assets)))
+
+  const preparePass = (index: number) => {
+    const canvas = passCanvases[index]
+    if (canvas.width !== size.width) canvas.width = size.width
+    if (canvas.height !== size.height) canvas.height = size.height
+    const context = canvas.getContext('2d')
+    context?.clearRect(0, 0, size.width, size.height)
+    return { canvas, context }
+  }
+
+  const background = preparePass(0)
+  if (!background.context) return null
+  drawBackground(background.context, size.width, size.height, documentState, assets, resources)
+  drawPattern(background.context, size.width, size.height, documentState)
+
+  const layers = new Map(documentState.layers.map((layer) => [layer.id, layer]))
+  plan.layers.forEach((node, index) => {
+    const pass = preparePass(index + 1)
+    const layer = layers.get(node.layerId)
+    if (pass.context && layer && layer.type !== 'adjustment') {
+      drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
+    }
+  })
+
+  if (passCount > plan.layers.length + 1 && documentState.selectedLayerId) {
+    const selection = preparePass(passCount - 1)
+    const selected = layers.get(documentState.selectedLayerId)
+    if (selection.context && selected?.visible) drawSelection(selection.context, selection.canvas, selected, assets)
+  }
+
+  return { width: size.width, height: size.height, sources: passCanvases.slice(0, passCount) }
 }

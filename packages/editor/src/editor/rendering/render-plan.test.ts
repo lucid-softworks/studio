@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultLayerEffects, normalizeLayerEffects } from '../effects'
 import { defaultLayerFilters } from '../filters'
 import { createAdjustmentLayer, createLayerGroup, createRasterLayer, createShapeLayer, initialDocument } from '../presets'
-import { buildCompositionRenderPlan } from './render-plan'
+import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan } from './render-plan'
 
 describe('composition render plan', () => {
   it('captures masks, clipping, blend modes, filters, and effects deterministically', () => {
@@ -118,5 +118,29 @@ describe('composition render plan', () => {
       hue: -14,
       blur: 3,
     }])
+  })
+
+  it('flattens pass-through groups into native layer composition order', () => {
+    const group = { ...createLayerGroup(0), id: 'pass', passThrough: true, stackOrder: 0 }
+    const first = { ...createShapeLayer('rectangle', 0), id: 'first', groupId: group.id, stackOrder: 0 }
+    const second = { ...createShapeLayer('ellipse', 1), id: 'second', groupId: group.id, stackOrder: 1 }
+
+    const plan = buildNativeLayerCompositionPlan({
+      ...initialDocument,
+      groups: [group],
+      layers: [first, second],
+    })
+
+    expect(plan?.layers.map((layer) => layer.layerId)).toEqual(['first', 'second'])
+  })
+
+  it('keeps unsupported composition features on the compatibility renderer', () => {
+    const adjusted = { ...createShapeLayer('rectangle', 0), id: 'adjusted', blendMode: 'multiply' as const }
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: defaultLayerFilters }
+    const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 2 }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [adjusted] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })).toBeNull()
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, groups: [isolated] })).toBeNull()
   })
 })

@@ -55,10 +55,10 @@ function App({ onExit }: AppProps) {
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const assetsRef = useRef(assets)
   const document = history.present
-  const rendererCapabilities = useRendererCapabilities()
+  const rendererCapabilities = useRendererCapabilities(document)
 
   assetsRef.current = assets
-  useCanvasRenderer(canvasRef, document, assets, resourceRevision)
+  useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
 
   useEffect(() => {
     let cancelled = false
@@ -794,9 +794,9 @@ function App({ onExit }: AppProps) {
         <div className="hidden items-center gap-3 text-[9px] font-medium text-zinc-700 sm:flex">
           <span
             className="text-zinc-600"
-            title={rendererCapabilities.typegpu.state === 'unavailable' || rendererCapabilities.typegpu.state === 'lost' ? rendererCapabilities.typegpu.reason : 'The editor currently renders with Canvas2D while the TypeGPU compositor is built.'}
+            title={rendererCapabilities.typegpu.state === 'unavailable' || rendererCapabilities.typegpu.state === 'lost' ? rendererCapabilities.typegpu.reason : rendererCapabilities.activeRenderer === 'webgpu' ? 'TypeGPU is compositing this document from native per-layer textures.' : 'This document uses composition features that currently require the Canvas2D compatibility renderer.'}
           >
-            Canvas2D · {rendererCapabilities.typegpu.state === 'ready' ? 'TypeGPU ready' : rendererCapabilities.typegpu.state === 'initializing' ? 'Checking WebGPU…' : 'WebGPU fallback'}
+            {rendererCapabilities.activeRenderer === 'webgpu' ? 'TypeGPU · native layers' : `Canvas2D · ${rendererCapabilities.typegpu.state === 'ready' ? 'compatibility' : rendererCapabilities.typegpu.state === 'initializing' ? 'Checking WebGPU…' : 'WebGPU fallback'}`}
           </span>
           <span className="flex items-center gap-2"><span className={`size-1.5 rounded-full ${saveStatus === 'saving' ? 'bg-amber-400' : saveStatus === 'saved' ? 'bg-emerald-400/70' : 'bg-zinc-700'}`} /><span>{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span></span>
         </div>
