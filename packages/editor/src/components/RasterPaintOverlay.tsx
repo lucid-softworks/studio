@@ -4,6 +4,7 @@ import { extractImageData, type RasterEdit } from '../editor/raster'
 import { selectionAlphaAt, type SelectionState } from '../editor/selection'
 import type { AssetMap, EditorDocument, Position, RasterLayer } from '../editor/types'
 import type { BrushPreset } from '../editor/resources'
+import { brushStampAlpha, brushStampRadius, interpolateBrushStamps, normalizePointerPressure } from '../editor/brush-engine'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -13,7 +14,11 @@ type Props = {
   brush: BrushPreset
   size: number
   color: string
+  hardness: number
   opacity: number
+  flow: number
+  pressureSize: boolean
+  pressureOpacity: boolean
   selection: SelectionState | null
   maskAssetId?: string
   maskLocked?: boolean
@@ -27,6 +32,7 @@ type Stroke = {
   layer: RasterLayer
   before: ImageData
   last: Position
+  lastPressure: number
   minX: number
   minY: number
   maxX: number
@@ -36,10 +42,11 @@ type Stroke = {
   selectionData: ImageData | null
 }
 
-export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, opacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
+export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, hardness, opacity, flow, pressureSize, pressureOpacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const strokeRef = useRef<Stroke | null>(null)
-  const tintedTipRef = useRef<{ brushId: string; color: string; surface: HTMLCanvasElement } | null>(null)
+  const roundTipRef = useRef<{ hardness: number; surface: HTMLCanvasElement } | null>(null)
+  const tintedTipRef = useRef<{ tipId: string; color: string; surface: HTMLCanvasElement } | null>(null)
   const canvas = canvasRef.current
   const selectedRasterLayer = document.layers.find((candidate) => candidate.id === document.selectedLayerId && candidate.type === 'raster') as RasterLayer | undefined
   const maskSurface = maskAssetId ? assets[maskAssetId]?.surface : undefined
@@ -83,61 +90,64 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     return {
       point: { x: (localX / bounds.width + 0.5) * surface.width, y: (localY / bounds.height + 0.5) * surface.height },
       radius: Math.max(0.5, size / (bounds.width / surface.width) / 2),
+      pressure: normalizePointerPressure(event.pointerType, event.pressure),
       bounds,
     }
   }
 
-  const draw = (from: Position, to: Position, radius: number) => {
+  const roundTip = () => {
+    const cached = roundTipRef.current
+    if (cached?.hardness === hardness) return cached.surface
+    const tip = globalThis.document.createElement('canvas')
+    tip.width = 128
+    tip.height = 128
+    const tipContext = tip.getContext('2d')
+    if (!tipContext) return null
+    const gradient = tipContext.createRadialGradient(64, 64, 0, 64, 64, 64)
+    gradient.addColorStop(0, '#ffffff')
+    if (hardness > 0) gradient.addColorStop(Math.min(0.99, hardness / 100), '#ffffff')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    tipContext.fillStyle = gradient
+    tipContext.fillRect(0, 0, 128, 128)
+    roundTipRef.current = { hardness, surface: tip }
+    return tip
+  }
+
+  const draw = (from: Position, to: Position, radius: number, fromPressure: number, toPressure: number) => {
     if (!surface) return
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     context.save()
     context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : tool === 'dodge' || tool === 'burn' ? 'soft-light' : 'source-over'
-    context.globalAlpha = opacity / 100
     const strokeColor = tool === 'dodge' ? '#ffffff' : tool === 'burn' ? '#000000' : maskAssetId ? '#ffffff' : color
     context.strokeStyle = strokeColor
     context.fillStyle = strokeColor
-    if (brush.tip) {
-      let tip: HTMLCanvasElement = brush.tip
-      if (tool !== 'eraser') {
-        const cached = tintedTipRef.current
-        if (cached?.brushId === brush.id && cached.color === strokeColor) tip = cached.surface
-        else {
-          const tinted = globalThis.document.createElement('canvas')
-          tinted.width = brush.tip.width
-          tinted.height = brush.tip.height
-          const tintedContext = tinted.getContext('2d')
-          if (!tintedContext) { context.restore(); return }
-          tintedContext.drawImage(brush.tip, 0, 0)
-          tintedContext.globalCompositeOperation = 'source-in'
-          tintedContext.fillStyle = strokeColor
-          tintedContext.fillRect(0, 0, tinted.width, tinted.height)
-          tintedTipRef.current = { brushId: brush.id, color: strokeColor, surface: tinted }
-          tip = tinted
-        }
+    const sourceTip = brush.tip ?? roundTip()
+    if (!sourceTip) { context.restore(); return }
+    const tipId = brush.tip ? brush.id : `${brush.id}:${hardness}`
+    let tip = sourceTip
+    if (tool !== 'eraser') {
+      const cached = tintedTipRef.current
+      if (cached?.tipId === tipId && cached.color === strokeColor) tip = cached.surface
+      else {
+        const tinted = globalThis.document.createElement('canvas')
+        tinted.width = sourceTip.width
+        tinted.height = sourceTip.height
+        const tintedContext = tinted.getContext('2d')
+        if (!tintedContext) { context.restore(); return }
+        tintedContext.drawImage(sourceTip, 0, 0)
+        tintedContext.globalCompositeOperation = 'source-in'
+        tintedContext.fillStyle = strokeColor
+        tintedContext.fillRect(0, 0, tinted.width, tinted.height)
+        tintedTipRef.current = { tipId, color: strokeColor, surface: tinted }
+        tip = tinted
       }
-      const distance = Math.hypot(to.x - from.x, to.y - from.y)
-      const spacing = Math.max(1, radius * 2 * brush.spacing / 100)
-      const steps = Math.max(1, Math.ceil(distance / spacing))
-      for (let step = 1; step <= steps; step += 1) {
-        const progress = distance === 0 ? 0 : step / steps
-        const x = from.x + (to.x - from.x) * progress
-        const y = from.y + (to.y - from.y) * progress
-        context.drawImage(tip, x - radius, y - radius, radius * 2, radius * 2)
-      }
-      context.restore()
-      return
     }
-    context.lineWidth = radius * 2
-    context.lineCap = 'round'
-    context.lineJoin = 'round'
-    context.beginPath()
-    context.moveTo(from.x, from.y)
-    context.lineTo(to.x, to.y)
-    context.stroke()
-    context.beginPath()
-    context.arc(to.x, to.y, radius, 0, Math.PI * 2)
-    context.fill()
+    for (const stamp of interpolateBrushStamps(from, to, fromPressure, toPressure, radius * 2, brush.spacing)) {
+      const stampRadius = brushStampRadius(radius, stamp.pressure, pressureSize)
+      context.globalAlpha = brushStampAlpha(opacity, flow, stamp.pressure, pressureOpacity)
+      context.drawImage(tip, stamp.x - stampRadius, stamp.y - stampRadius, stampRadius * 2, stampRadius * 2)
+    }
     context.restore()
   }
 
@@ -148,13 +158,14 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!mapped || !context) return
     event.preventDefault()
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
-    const { point, radius, bounds } = mapped
+    const { point, radius, pressure, bounds } = mapped
     const selectionContext = selection?.mask.getContext('2d', { willReadFrequently: true })
     strokeRef.current = {
       pointerId: event.pointerId,
       layer,
       before: context.getImageData(0, 0, surface.width, surface.height),
       last: point,
+      lastPressure: pressure,
       minX: point.x - radius,
       minY: point.y - radius,
       maxX: point.x + radius,
@@ -163,7 +174,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       bounds,
       selectionData: selectionContext && selection?.bounds ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null,
     }
-    draw(point, point, radius)
+    draw(point, point, radius, pressure, pressure)
     onChange(layer.assetId)
   }
 
@@ -172,8 +183,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!stroke || stroke.pointerId !== event.pointerId) return
     const mapped = sourcePoint(event)
     if (!mapped) return
-    draw(stroke.last, mapped.point, stroke.radius)
+    draw(stroke.last, mapped.point, stroke.radius, stroke.lastPressure, mapped.pressure)
     stroke.last = mapped.point
+    stroke.lastPressure = mapped.pressure
     stroke.minX = Math.min(stroke.minX, mapped.point.x - stroke.radius)
     stroke.minY = Math.min(stroke.minY, mapped.point.y - stroke.radius)
     stroke.maxX = Math.max(stroke.maxX, mapped.point.x + stroke.radius)
