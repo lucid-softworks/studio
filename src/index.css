@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "SF Pro Display", "Segoe UI", sans-serif;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    background: #0b0b0c;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: #0b0b0c;
+    color: #f7f7f8;
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .stage-grid {
+    background-color: #0b0b0c;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .transparency-grid {
+    background-color: #f4f4f5;
+    background-image:
+      linear-gradient(45deg, #d4d4d8 25%, transparent 25%),
+      linear-gradient(-45deg, #d4d4d8 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #d4d4d8 75%),
+      linear-gradient(-45deg, transparent 75%, #d4d4d8 75%);
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+  }
+
+  .studio-range {
+    height: 16px;
+    cursor: pointer;
+    appearance: none;
+    background: transparent;
+  }
+
+  .studio-range::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 999px;
+    background: #27272a;
+  }
+
+  .studio-range::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    margin-top: -5.5px;
+    appearance: none;
+    border: 2px solid #18181b;
+    border-radius: 999px;
+    background: #e4e4e7;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  }
+
+  .studio-range::-moz-range-track {
+    height: 3px;
+    border-radius: 999px;
+    background: #27272a;
+  }
+
+  .studio-range::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #18181b;
+    border-radius: 999px;
+    background: #e4e4e7;
+  }
+
+  .studio-range:focus-visible {
+    outline: 2px solid #a78bfa;
+    outline-offset: 4px;
+    border-radius: 999px;
+  }
+
+  input[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  input[type='color']::-webkit-color-swatch {
+    border: 0;
+    border-radius: 5px;
+  }
+
+  input[type='color']::-moz-color-swatch {
+    border: 0;
+    border-radius: 5px;
+  }
+}
+
+@media (max-width: 1023px) {
+  canvas {
+    max-height: 480px;
+  }
+}

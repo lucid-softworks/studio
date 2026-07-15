@@ -1,0 +1,263 @@
+import { backgroundPresets, canvasPresets } from '../editor/presets'
+import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
+import { ControlSection, RangeControl } from './Control'
+import { ImageIcon, ResetIcon } from './Icons'
+
+type InspectorProps = {
+  document: EditorDocument
+  dispatch: EditorDispatch
+  endHistoryGroup: () => void
+  onBackgroundImage: () => void
+  backgroundImageName?: string
+}
+
+const tabClass = (active: boolean) =>
+  `flex-1 rounded-md px-2 py-2 text-[11px] font-medium transition ${
+    active ? 'bg-zinc-700 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+  }`
+
+const fieldClass = 'w-full rounded-lg border border-white/[0.08] bg-black/25 px-3 py-2 text-xs text-zinc-200 outline-none transition placeholder:text-zinc-700 focus:border-violet-400/50'
+
+const blendModes: Array<{ value: BlendMode; label: string }> = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'screen', label: 'Screen' },
+  { value: 'overlay', label: 'Overlay' },
+  { value: 'darken', label: 'Darken' },
+  { value: 'lighten', label: 'Lighten' },
+  { value: 'color-dodge', label: 'Color Dodge' },
+  { value: 'color-burn', label: 'Color Burn' },
+  { value: 'hard-light', label: 'Hard Light' },
+  { value: 'soft-light', label: 'Soft Light' },
+  { value: 'difference', label: 'Difference' },
+  { value: 'exclusion', label: 'Exclusion' },
+  { value: 'hue', label: 'Hue' },
+  { value: 'saturation', label: 'Saturation' },
+  { value: 'color', label: 'Color' },
+  { value: 'luminosity', label: 'Luminosity' },
+]
+
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName }: InspectorProps) {
+  const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
+  const updateLayer = (layer: EditorLayer, patch: LayerPatch, groupKey?: string) => {
+    dispatch({ type: 'update-layer', id: layer.id, patch }, groupKey ? { groupKey } : undefined)
+  }
+  const filters = selected?.filters ?? { brightness: 100, contrast: 100, saturation: 100, blur: 0 }
+
+  return (
+    <aside className="order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:order-1 lg:h-[calc(100vh-65px)] lg:w-[310px] lg:overflow-y-auto lg:border-t-0 lg:border-r">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
+        <div>
+          <h1 className="text-sm font-semibold text-zinc-100">Properties</h1>
+          <p className="mt-0.5 max-w-44 truncate text-[11px] text-zinc-600">{document.selectedLayerIds.length > 1 ? `${document.selectedLayerIds.length} layers selected` : selected?.name ?? 'Document settings'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'reset-document' })}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400"
+        >
+          <ResetIcon className="size-3.5" /> Reset
+        </button>
+      </div>
+
+      {!selected ? (
+        <>
+          <ControlSection title="Canvas">
+            <div className="grid grid-cols-4 gap-1 rounded-lg bg-black/30 p-1">
+              {canvasPresets.map((preset) => (
+                <button
+                  type="button"
+                  key={preset.id}
+                  title={preset.label}
+                  aria-pressed={document.canvasPreset === preset.id}
+                  onClick={() => dispatch({ type: 'set-canvas-preset', value: preset.id })}
+                  className={`rounded-md py-2 text-[10px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 ${document.canvasPreset === preset.id ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'}`}
+                >{preset.shortLabel}</button>
+              ))}
+            </div>
+          </ControlSection>
+
+          <ControlSection title="Background">
+            <div className="mb-4 grid grid-cols-4 rounded-lg bg-black/30 p-1">
+              {(['gradient', 'solid', 'transparent', 'image'] as const).map((kind) => (
+                <button
+                  type="button"
+                  key={kind}
+                  aria-pressed={document.background.kind === kind}
+                  className={tabClass(document.background.kind === kind)}
+                  onClick={() => kind === 'image' && !document.background.imageAssetId ? onBackgroundImage() : dispatch({ type: 'set-background', patch: { kind } })}
+                >{kind[0].toUpperCase() + kind.slice(1)}</button>
+              ))}
+            </div>
+
+            {document.background.kind === 'gradient' && (
+              <>
+                <div className="grid grid-cols-6 gap-2">
+                  {backgroundPresets.map((preset) => {
+                    const active = preset.colors[0] === document.background.gradient[0] && preset.colors[1] === document.background.gradient[1]
+                    return (
+                      <button
+                        type="button"
+                        key={preset.id}
+                        title={preset.name}
+                        aria-label={`${preset.name} gradient`}
+                        aria-pressed={active}
+                        onClick={() => dispatch({ type: 'set-background', patch: { gradient: [...preset.colors], kind: 'gradient' } })}
+                        className={`aspect-square rounded-lg border transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400 ${active ? 'border-white ring-2 ring-white/20' : 'border-white/10'}`}
+                        style={{ backgroundImage: `linear-gradient(135deg, ${preset.colors[0]}, ${preset.colors[1]})` }}
+                      />
+                    )
+                  })}
+                </div>
+                <div className="mt-4 flex items-center gap-2">
+                  {document.background.gradient.map((color, index) => (
+                    <label key={index} className="flex flex-1 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] p-2 text-[10px] text-zinc-500">
+                      <input
+                        type="color"
+                        value={color}
+                        aria-label={`Gradient color ${index + 1}`}
+                        className="size-5 cursor-pointer rounded border-0 bg-transparent p-0"
+                        onChange={(event) => {
+                          const colors = [...document.background.gradient] as [string, string]
+                          colors[index] = event.target.value
+                          dispatch({ type: 'set-background', patch: { gradient: colors } }, { groupKey: `gradient-${index}` })
+                        }}
+                        onBlur={endHistoryGroup}
+                      />
+                      {color.toUpperCase()}
+                    </label>
+                  ))}
+                </div>
+                <RangeControl label="Direction" value={document.background.gradientAngle} min={0} max={360} suffix="°" onChange={(value) => dispatch({ type: 'set-background', patch: { gradientAngle: value } }, { groupKey: 'gradient-angle' })} onChangeEnd={endHistoryGroup} />
+              </>
+            )}
+
+            {document.background.kind === 'solid' && (
+              <label className="flex items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.03] p-3">
+                <input type="color" value={document.background.solidColor} aria-label="Background color" className="size-8 cursor-pointer rounded-md border-0 bg-transparent p-0" onChange={(event) => dispatch({ type: 'set-background', patch: { solidColor: event.target.value } }, { groupKey: 'solid-color' })} onBlur={endHistoryGroup} />
+                <span className="font-mono text-xs text-zinc-400">{document.background.solidColor.toUpperCase()}</span>
+              </label>
+            )}
+
+            {document.background.kind === 'image' && (
+              <div className="space-y-3">
+                <button type="button" onClick={onBackgroundImage} className="flex w-full items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.03] p-3 text-left text-xs text-zinc-400 transition hover:bg-white/[0.06]">
+                  <span className="flex size-8 items-center justify-center rounded-md bg-white/[0.05]"><ImageIcon className="size-4" /></span>
+                  <span className="min-w-0 flex-1 truncate">{backgroundImageName ?? 'Choose background image'}</span>
+                  <span className="text-[10px] text-zinc-600">Change</span>
+                </button>
+                <RangeControl label="Blur" value={document.background.imageBlur} min={0} max={40} suffix="px" onChange={(value) => dispatch({ type: 'set-background', patch: { imageBlur: value } }, { groupKey: 'background-blur' })} onChangeEnd={endHistoryGroup} />
+                <RangeControl label="Darken" value={document.background.imageOverlay} min={0} max={80} suffix="%" onChange={(value) => dispatch({ type: 'set-background', patch: { imageOverlay: value } }, { groupKey: 'background-overlay' })} onChangeEnd={endHistoryGroup} />
+              </div>
+            )}
+          </ControlSection>
+
+          <ControlSection title="Pattern">
+            <div className="grid grid-cols-4 gap-1 rounded-lg bg-black/30 p-1">
+              {(['none', 'grid', 'dots', 'waves'] as PatternKind[]).map((kind) => (
+                <button key={kind} type="button" aria-pressed={document.pattern.kind === kind} onClick={() => dispatch({ type: 'set-pattern', patch: { kind } })} className={`rounded-md py-2 text-[10px] font-medium capitalize transition ${document.pattern.kind === kind ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'}`}>{kind}</button>
+              ))}
+            </div>
+            {document.pattern.kind !== 'none' && (
+              <>
+                <div className="mt-3 flex items-center gap-3">
+                  <input type="color" aria-label="Pattern color" value={document.pattern.color} onChange={(event) => dispatch({ type: 'set-pattern', patch: { color: event.target.value } }, { groupKey: 'pattern-color' })} onBlur={endHistoryGroup} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" />
+                  <span className="font-mono text-[10px] text-zinc-500">{document.pattern.color.toUpperCase()}</span>
+                </div>
+                <RangeControl label="Opacity" value={document.pattern.opacity} min={2} max={60} suffix="%" onChange={(value) => dispatch({ type: 'set-pattern', patch: { opacity: value } }, { groupKey: 'pattern-opacity' })} onChangeEnd={endHistoryGroup} />
+                <RangeControl label="Spacing" value={document.pattern.size} min={16} max={100} suffix="px" onChange={(value) => dispatch({ type: 'set-pattern', patch: { size: value } }, { groupKey: 'pattern-size' })} onChangeEnd={endHistoryGroup} />
+              </>
+            )}
+          </ControlSection>
+        </>
+      ) : (
+        <>
+          <ControlSection title="Layer">
+            <label className="block">
+              <span className="mb-2 block text-[11px] font-medium text-zinc-500">Name</span>
+              <input className={fieldClass} value={selected.name} onChange={(event) => updateLayer(selected, { name: event.target.value }, `name-${selected.id}`)} onBlur={endHistoryGroup} />
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-2 block text-[11px] font-medium text-zinc-500">Blend mode</span>
+              <select aria-label="Blend mode" value={selected.blendMode ?? 'normal'} onChange={(event) => updateLayer(selected, { blendMode: event.target.value as BlendMode })} className={fieldClass}>
+                {blendModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+              </select>
+            </label>
+            <RangeControl label="Opacity" value={selected.opacity} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { opacity: value }, `opacity-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Rotation" value={selected.rotation} min={-180} max={180} suffix="°" onChange={(value) => updateLayer(selected, { rotation: value }, `rotation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+          </ControlSection>
+
+          <ControlSection title="Adjustments">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[10px] leading-relaxed text-zinc-600">Non-destructive layer filters</p>
+              <button type="button" onClick={() => updateLayer(selected, { filters: { brightness: 100, contrast: 100, saturation: 100, blur: 0 } })} className="rounded px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">Reset</button>
+            </div>
+            <RangeControl label="Brightness" value={filters.brightness} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, brightness: value } }, `brightness-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Contrast" value={filters.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, contrast: value } }, `contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Saturation" value={filters.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, saturation: value } }, `saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+          </ControlSection>
+
+          {selected.type === 'image' && (
+            <ControlSection title="Image">
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => updateLayer(selected, { flipX: !selected.flipX })} className={`rounded-lg border px-3 py-2 text-xs transition ${selected.flipX ? 'border-violet-400/40 bg-violet-400/10 text-violet-200' : 'border-white/[0.08] text-zinc-500 hover:text-zinc-200'}`}>Flip horizontal</button>
+                <button type="button" onClick={() => updateLayer(selected, { flipY: !selected.flipY })} className={`rounded-lg border px-3 py-2 text-xs transition ${selected.flipY ? 'border-violet-400/40 bg-violet-400/10 text-violet-200' : 'border-white/[0.08] text-zinc-500 hover:text-zinc-200'}`}>Flip vertical</button>
+              </div>
+              <RangeControl label="Padding" value={selected.padding} min={2} max={32} suffix="%" onChange={(value) => updateLayer(selected, { padding: value }, `padding-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Scale" value={selected.scale} min={20} max={180} suffix="%" onChange={(value) => updateLayer(selected, { scale: value }, `scale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Corners" value={selected.cornerRadius} min={0} max={96} suffix="px" onChange={(value) => updateLayer(selected, { cornerRadius: value }, `corners-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Shadow" value={selected.shadow} min={0} max={100} onChange={(value) => updateLayer(selected, { shadow: value }, `shadow-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            </ControlSection>
+          )}
+
+          {selected.type === 'raster' && (
+            <ControlSection title="Raster layer">
+              <div className="rounded-lg border border-violet-400/15 bg-violet-400/[0.06] p-3 text-[10px] leading-relaxed text-violet-200/70">Use the Brush or Eraser tool above the canvas to edit this layer’s pixels.</div>
+              <RangeControl label="Scale" value={selected.scale} min={10} max={300} suffix="%" onChange={(value) => updateLayer(selected, { scale: value }, `scale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <p className="mt-2 font-mono text-[9px] text-zinc-700">{selected.width} × {selected.height} px</p>
+            </ControlSection>
+          )}
+
+          {selected.type === 'text' && (
+            <ControlSection title="Text">
+              <label className="block">
+                <span className="mb-2 block text-[11px] font-medium text-zinc-500">Content</span>
+                <textarea className={`${fieldClass} min-h-24 resize-y leading-relaxed`} value={selected.text} onChange={(event) => updateLayer(selected, { text: event.target.value }, `text-${selected.id}`)} onBlur={endHistoryGroup} />
+              </label>
+              <div className="mt-3 flex gap-2">
+                <label className="flex flex-1 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] text-zinc-500">
+                  <input type="color" aria-label="Text color" value={selected.color} onChange={(event) => updateLayer(selected, { color: event.target.value }, `text-color-${selected.id}`)} onBlur={endHistoryGroup} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />
+                  {selected.color.toUpperCase()}
+                </label>
+                <select aria-label="Font weight" value={selected.fontWeight} onChange={(event) => updateLayer(selected, { fontWeight: Number(event.target.value) as 400 | 600 | 700 })} className={`${fieldClass} w-24`}>
+                  <option value="400">Regular</option><option value="600">Semibold</option><option value="700">Bold</option>
+                </select>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-black/30 p-1">
+                {(['left', 'center', 'right'] as const).map((align) => <button type="button" key={align} onClick={() => updateLayer(selected, { textAlign: align })} className={`rounded-md py-2 text-[10px] capitalize ${selected.textAlign === align ? 'bg-zinc-700 text-white' : 'text-zinc-600'}`}>{align}</button>)}
+              </div>
+              <RangeControl label="Size" value={selected.fontSize} min={18} max={180} suffix="px" onChange={(value) => updateLayer(selected, { fontSize: value }, `font-size-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Tracking" value={selected.letterSpacing} min={-4} max={24} suffix="px" onChange={(value) => updateLayer(selected, { letterSpacing: value }, `tracking-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            </ControlSection>
+          )}
+
+          {selected.type === 'shape' && (
+            <ControlSection title="Shape">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] text-zinc-500">Fill<input type="color" aria-label="Shape fill" value={selected.fill} onChange={(event) => updateLayer(selected, { fill: event.target.value }, `fill-${selected.id}`)} onBlur={endHistoryGroup} className="mt-2 h-7 w-full cursor-pointer rounded border-0 bg-transparent p-0" /></label>
+                <label className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] text-zinc-500">Stroke<input type="color" aria-label="Shape stroke" value={selected.stroke} onChange={(event) => updateLayer(selected, { stroke: event.target.value }, `stroke-${selected.id}`)} onBlur={endHistoryGroup} className="mt-2 h-7 w-full cursor-pointer rounded border-0 bg-transparent p-0" /></label>
+              </div>
+              <RangeControl label="Width" value={selected.width} min={4} max={90} suffix="%" onChange={(value) => updateLayer(selected, { width: value }, `width-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Height" value={selected.height} min={4} max={90} suffix="%" onChange={(value) => updateLayer(selected, { height: value }, `height-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              {selected.shape === 'rectangle' && <RangeControl label="Corners" value={selected.cornerRadius} min={0} max={100} suffix="px" onChange={(value) => updateLayer(selected, { cornerRadius: value }, `shape-corners-${selected.id}`)} onChangeEnd={endHistoryGroup} />}
+              <RangeControl label="Stroke" value={selected.strokeWidth} min={0} max={24} suffix="px" onChange={(value) => updateLayer(selected, { strokeWidth: value }, `stroke-width-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            </ControlSection>
+          )}
+
+          <button type="button" onClick={() => dispatch({ type: 'select-layer', id: null }, { record: false })} className="mx-5 my-4 rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Back to document settings</button>
+        </>
+      )}
+    </aside>
+  )
+}

@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest'
+import { documentReducer, historyReducer, initialHistoryState } from './editor.reducer'
+import { initialDocument } from './presets'
+import type { TextLayer } from './types'
+
+const textLayer: TextLayer = {
+  id: 'text-1',
+  type: 'text',
+  name: 'Heading',
+  visible: true,
+  locked: false,
+  opacity: 100,
+  position: { x: 0, y: 0 },
+  rotation: 0,
+  text: 'Hello',
+  color: '#ffffff',
+  fontSize: 72,
+  fontWeight: 700,
+  textAlign: 'center',
+  letterSpacing: 0,
+}
+
+describe('documentReducer', () => {
+  it('adds and selects a typed layer', () => {
+    const next = documentReducer(initialDocument, { type: 'add-layer', layer: textLayer })
+    expect(next.layers).toEqual([textLayer])
+    expect(next.selectedLayerId).toBe(textLayer.id)
+  })
+
+  it('updates nested background settings without replacing the rest', () => {
+    const next = documentReducer(initialDocument, { type: 'set-background', patch: { imageBlur: 20 } })
+    expect(next.background.imageBlur).toBe(20)
+    expect(next.background.gradient).toEqual(initialDocument.background.gradient)
+  })
+
+  it('supports custom document dimensions for opened image files', () => {
+    const next = documentReducer(initialDocument, { type: 'set-canvas-size', width: 2048, height: 1365 })
+    expect(next.canvasPreset).toBe('custom')
+    expect(next.canvasSize).toEqual({ width: 2048, height: 1365 })
+  })
+
+  it('supports additive and toggle layer selection', () => {
+    const second = { ...textLayer, id: 'text-2', name: 'Second' }
+    const withLayers = { ...initialDocument, layers: [textLayer, second] }
+    const firstSelected = documentReducer(withLayers, { type: 'select-layer', id: textLayer.id })
+    const bothSelected = documentReducer(firstSelected, { type: 'select-layer', id: second.id, mode: 'add' })
+    const toggled = documentReducer(bothSelected, { type: 'select-layer', id: textLayer.id, mode: 'toggle' })
+    expect(bothSelected.selectedLayerIds).toEqual([textLayer.id, second.id])
+    expect(toggled.selectedLayerIds).toEqual([second.id])
+    expect(toggled.selectedLayerId).toBe(second.id)
+  })
+
+  it('updates multiple selected layers in one operation', () => {
+    const second = { ...textLayer, id: 'text-2', name: 'Second' }
+    const withLayers = { ...initialDocument, layers: [textLayer, second] }
+    const next = documentReducer(withLayers, { type: 'update-layers', changes: [
+      { id: textLayer.id, patch: { opacity: 50 } },
+      { id: second.id, patch: { opacity: 75 } },
+    ] })
+    expect(next.layers.map((layer) => layer.opacity)).toEqual([50, 75])
+  })
+})
+
+describe('historyReducer', () => {
+  it('groups continuous changes into one undo step', () => {
+    const added = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'add-layer', layer: textLayer } })
+    const first = historyReducer(added, { type: 'apply', action: { type: 'update-layer', id: textLayer.id, patch: { fontSize: 80 } }, groupKey: 'font-size' })
+    const second = historyReducer(first, { type: 'apply', action: { type: 'update-layer', id: textLayer.id, patch: { fontSize: 96 } }, groupKey: 'font-size' })
+    const undone = historyReducer(second, { type: 'undo' })
+
+    expect(second.past).toHaveLength(2)
+    expect((undone.present.layers[0] as TextLayer).fontSize).toBe(72)
+  })
+
+  it('supports redo after undo', () => {
+    const changed = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'set-canvas-preset', value: 'square' } })
+    const undone = historyReducer(changed, { type: 'undo' })
+    const redone = historyReducer(undone, { type: 'redo' })
+    expect(redone.present.canvasPreset).toBe('square')
+  })
+})
