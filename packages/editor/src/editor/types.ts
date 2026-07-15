@@ -2,7 +2,7 @@ export type Position = { x: number; y: number }
 export const EDITOR_DOCUMENT_SCHEMA_VERSION = 2 as const
 export type BackgroundKind = 'gradient' | 'solid' | 'image' | 'transparent'
 export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
-export type ShapeKind = 'rectangle' | 'ellipse'
+export type ShapeKind = 'rectangle' | 'ellipse' | 'path'
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity'
 export type LayerFilters = { brightness: number; contrast: number; saturation: number; hue: number; grayscale: number; sepia: number; invert: number; blur: number }
 export type LayerEffects = {
@@ -125,6 +125,26 @@ export type ShapeLayer = BaseLayer & {
   stroke: string
   strokeWidth: number
   cornerRadius: number
+  vectorPaths?: Array<{
+    closed: boolean
+    operation: 'exclude' | 'combine' | 'subtract' | 'intersect'
+    fillRule: 'even-odd' | 'non-zero'
+    knots: Array<{ linked: boolean; in: Position; anchor: Position; out: Position }>
+  }>
+  fillStyle?:
+    | { type: 'color'; color: string }
+    | { type: 'gradient'; name: string; style: 'linear' | 'radial' | 'angle' | 'reflected' | 'diamond'; angle: number; scale: number; colorStops: Array<{ color: string; position: number }>; opacityStops: Array<{ opacity: number; position: number }> }
+    | { type: 'pattern'; id: string; name: string; scale: number; linked: boolean; phase: Position }
+  strokeStyle?: {
+    alignment: 'inside' | 'center' | 'outside'
+    cap: 'butt' | 'round' | 'square'
+    join: 'miter' | 'round' | 'bevel'
+    miterLimit: number
+    dashOffset: number
+    dashes: number[]
+    opacity: number
+    blendMode: BlendMode
+  }
 }
 
 export type AdjustmentLayer = BaseLayer & {
@@ -186,6 +206,9 @@ export type LayerPatch = Partial<{
   padding: number
   scale: number
   cornerRadius: number
+  vectorPaths: NonNullable<ShapeLayer['vectorPaths']>
+  fillStyle: NonNullable<ShapeLayer['fillStyle']> | null
+  strokeStyle: NonNullable<ShapeLayer['strokeStyle']> | null
   shadow: number
   flipX: boolean
   flipY: boolean

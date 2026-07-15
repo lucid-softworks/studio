@@ -455,13 +455,50 @@ function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
     const x = -bounds.width / 2
     const y = -bounds.height / 2
     context.beginPath()
-    if (layer.shape === 'ellipse') context.ellipse(0, 0, bounds.width / 2, bounds.height / 2, 0, 0, Math.PI * 2)
+    if (layer.shape === 'path' && layer.vectorPaths?.length) {
+      for (const path of layer.vectorPaths) {
+        const first = path.knots[0]
+        if (!first) continue
+        const point = (position: Position) => ({ x: x + position.x * bounds.width, y: y + position.y * bounds.height })
+        const firstAnchor = point(first.anchor)
+        context.moveTo(firstAnchor.x, firstAnchor.y)
+        for (let index = 1; index < path.knots.length; index += 1) {
+          const previous = path.knots[index - 1]
+          const current = path.knots[index]
+          const controlA = point(previous.out)
+          const controlB = point(current.in)
+          const anchor = point(current.anchor)
+          context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, anchor.x, anchor.y)
+        }
+        if (path.closed) {
+          const previous = path.knots.at(-1)!
+          const controlA = point(previous.out)
+          const controlB = point(first.in)
+          context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, firstAnchor.x, firstAnchor.y)
+          context.closePath()
+        }
+      }
+    } else if (layer.shape === 'ellipse') context.ellipse(0, 0, bounds.width / 2, bounds.height / 2, 0, 0, Math.PI * 2)
     else context.roundRect(x, y, bounds.width, bounds.height, Math.min(layer.cornerRadius, bounds.width / 2, bounds.height / 2))
-    context.fillStyle = layer.fill
-    context.fill()
+    if (layer.fillStyle?.type === 'gradient') {
+      const angle = layer.fillStyle.angle * Math.PI / 180
+      const radius = Math.abs(bounds.width * Math.cos(angle)) / 2 + Math.abs(bounds.height * Math.sin(angle)) / 2
+      const gradient = layer.fillStyle.style === 'radial'
+        ? context.createRadialGradient(0, 0, 0, 0, 0, Math.max(bounds.width, bounds.height) / 2 * layer.fillStyle.scale / 100)
+        : context.createLinearGradient(-Math.cos(angle) * radius, -Math.sin(angle) * radius, Math.cos(angle) * radius, Math.sin(angle) * radius)
+      for (const stop of layer.fillStyle.colorStops) gradient.addColorStop(Math.max(0, Math.min(1, stop.position)), stop.color)
+      context.fillStyle = gradient
+    } else context.fillStyle = layer.fillStyle?.type === 'color' ? layer.fillStyle.color : layer.fill
+    context.fill(layer.vectorPaths?.some((path) => path.fillRule === 'even-odd' || path.operation !== 'combine') ? 'evenodd' : 'nonzero')
     if (layer.strokeWidth > 0) {
       context.strokeStyle = layer.stroke
       context.lineWidth = layer.strokeWidth
+      context.lineCap = layer.strokeStyle?.cap ?? 'butt'
+      context.lineJoin = layer.strokeStyle?.join ?? 'miter'
+      context.miterLimit = layer.strokeStyle?.miterLimit ?? 10
+      context.setLineDash(layer.strokeStyle?.dashes ?? [])
+      context.lineDashOffset = layer.strokeStyle?.dashOffset ?? 0
+      context.globalAlpha *= layer.strokeStyle?.opacity ?? 1
       context.stroke()
     }
   })

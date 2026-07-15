@@ -5,7 +5,7 @@ import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, in
 import { renderComposition, getLayerBounds } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
-import type { AdjustmentLayer, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, ShapeLayer, TextLayer } from './types'
+import type { AdjustmentLayer, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, Position, ShapeLayer, TextLayer } from './types'
 
 let initialized = false
 
@@ -174,12 +174,13 @@ export function psdLayerEffects(layer: Layer): LayerEffects | null {
   }
 }
 
-function psdShapeGeometry(layer: Layer) {
-  if (!layer.vectorFill || layer.vectorFill.type !== 'color') return null
+function psdShapeGeometry(layer: Layer, documentWidth = 1, documentHeight = 1) {
+  if (!layer.vectorFill) return null
   const origin = layer.vectorOrigination?.keyDescriptorList.find((item) => item.keyOriginShapeBoundingBox)
-  const path = layer.vectorMask?.paths.length === 1 ? layer.vectorMask.paths[0] : undefined
-  if (!origin && (!path || path.open || path.knots.length !== 4 || path.operation === 'subtract' || path.operation === 'intersect')) return null
-  const anchors = path?.knots.map((knot) => ({ x: knot.points[2], y: knot.points[3] })) ?? []
+  const paths = layer.vectorMask?.paths.filter((path) => path.knots.length > 0) ?? []
+  if (!origin && paths.length === 0) return null
+  const coordinate = (value: number, size: number) => Math.abs(value) <= 2 && size > 2 ? value * size : value
+  const anchors = paths.flatMap((path) => path.knots.map((knot) => ({ x: coordinate(knot.points[2], documentWidth), y: coordinate(knot.points[3], documentHeight) })))
   const box = origin?.keyOriginShapeBoundingBox
   const left = box?.left.value ?? Math.min(...anchors.map((point) => point.x))
   const top = box?.top.value ?? Math.min(...anchors.map((point) => point.y))
@@ -187,7 +188,7 @@ function psdShapeGeometry(layer: Layer) {
   const bottom = box?.bottom.value ?? Math.max(...anchors.map((point) => point.y))
   if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) return null
   const rounded = origin?.keyOriginRRectRadii
-  const curved = path?.knots.some((knot) => (
+  const curved = paths[0]?.knots.some((knot) => (
     Math.abs(knot.points[0] - knot.points[2]) > 0.01
     || Math.abs(knot.points[1] - knot.points[3]) > 0.01
     || Math.abs(knot.points[4] - knot.points[2]) > 0.01
@@ -196,19 +197,32 @@ function psdShapeGeometry(layer: Layer) {
   const cornerRadius = rounded
     ? Math.max(rounded.topLeft.value, rounded.topRight.value, rounded.bottomLeft.value, rounded.bottomRight.value)
     : 0
-  return { left, top, right, bottom, shape: curved && !rounded ? 'ellipse' as const : 'rectangle' as const, cornerRadius, transform: origin?.transform }
+  const custom = paths.length > 1 || (paths.length === 1 && (paths[0].knots.length !== 4 || paths[0].open || paths[0].operation === 'subtract' || paths[0].operation === 'intersect'))
+  return { left, top, right, bottom, shape: custom ? 'path' as const : curved && !rounded ? 'ellipse' as const : 'rectangle' as const, cornerRadius, transform: origin?.transform, paths, coordinate }
 }
 
-export function canImportPsdShape(layer: Layer) {
-  return Boolean(psdShapeGeometry(layer))
+export function canImportPsdShape(layer: Layer, documentWidth?: number, documentHeight?: number) {
+  return Boolean(psdShapeGeometry(layer, documentWidth, documentHeight))
 }
 
 export function psdShapeLayer(layer: Layer, documentWidth: number, documentHeight: number): ShapeLayer | null {
-  const geometry = psdShapeGeometry(layer)
-  if (!geometry || !layer.vectorFill || layer.vectorFill.type !== 'color') return null
+  const geometry = psdShapeGeometry(layer, documentWidth, documentHeight)
+  if (!geometry || !layer.vectorFill) return null
   const stroke = layer.vectorStroke
   const strokeColor = stroke?.content?.type === 'color' ? stroke.content.color : undefined
   const transform = geometry.transform ?? [1, 0, 0, 1, 0, 0]
+  const fillStyle: ShapeLayer['fillStyle'] = layer.vectorFill.type === 'color'
+    ? { type: 'color', color: colorHex(layer.vectorFill.color) }
+    : layer.vectorFill.type === 'pattern'
+      ? { type: 'pattern', id: layer.vectorFill.id, name: layer.vectorFill.name, scale: 100, linked: layer.vectorFill.linked ?? true, phase: layer.vectorFill.phase ?? { x: 0, y: 0 } }
+      : layer.vectorFill.type === 'solid'
+        ? {
+            type: 'gradient', name: layer.vectorFill.name, style: layer.vectorFill.style ?? 'linear', angle: layer.vectorFill.angle ?? 0, scale: layer.vectorFill.scale ?? 100,
+            colorStops: layer.vectorFill.colorStops.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location })),
+            opacityStops: layer.vectorFill.opacityStops.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location })),
+          }
+        : undefined
+  const fallbackFill = fillStyle?.type === 'color' ? fillStyle.color : fillStyle?.type === 'gradient' ? fillStyle.colorStops[0]?.color ?? '#ffffff' : '#ffffff'
   return {
     id: createId(),
     type: 'shape',
@@ -226,10 +240,28 @@ export function psdShapeLayer(layer: Layer, documentWidth: number, documentHeigh
     clipToBelow: Boolean(layer.clipping),
     width: (geometry.right - geometry.left) / documentWidth * 100,
     height: (geometry.bottom - geometry.top) / documentHeight * 100,
-    fill: colorHex(layer.vectorFill.color),
+    fill: fallbackFill,
     stroke: colorHex(strokeColor),
     strokeWidth: stroke?.strokeEnabled ? stroke.lineWidth?.value ?? 1 : 0,
     cornerRadius: geometry.cornerRadius,
+    vectorPaths: geometry.shape === 'path' ? geometry.paths.map((path) => ({
+      closed: !path.open,
+      operation: path.operation ?? 'combine',
+      fillRule: path.fillRule,
+      knots: path.knots.map((knot) => ({
+        linked: knot.linked,
+        in: { x: (geometry.coordinate(knot.points[0], documentWidth) - geometry.left) / (geometry.right - geometry.left), y: (geometry.coordinate(knot.points[1], documentHeight) - geometry.top) / (geometry.bottom - geometry.top) },
+        anchor: { x: (geometry.coordinate(knot.points[2], documentWidth) - geometry.left) / (geometry.right - geometry.left), y: (geometry.coordinate(knot.points[3], documentHeight) - geometry.top) / (geometry.bottom - geometry.top) },
+        out: { x: (geometry.coordinate(knot.points[4], documentWidth) - geometry.left) / (geometry.right - geometry.left), y: (geometry.coordinate(knot.points[5], documentHeight) - geometry.top) / (geometry.bottom - geometry.top) },
+      })),
+    })) : undefined,
+    fillStyle,
+    strokeStyle: stroke ? {
+      alignment: stroke.lineAlignment ?? 'center', cap: stroke.lineCapType ?? 'butt', join: stroke.lineJoinType ?? 'miter',
+      miterLimit: stroke.miterLimit ?? 10, dashOffset: stroke.lineDashOffset?.value ?? 0,
+      dashes: stroke.lineDashSet?.map((dash) => dash.value) ?? [], opacity: stroke.opacity ?? 1,
+      blendMode: psdBlendMode(stroke.blendMode),
+    } : undefined,
     effects: psdLayerEffects(layer),
   }
 }
@@ -420,7 +452,7 @@ export function psdImportWarnings(psd: Psd) {
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.text && !canImportPsdText(layer)) add('text', 'Complex text was rasterized', path)
       if (layer.placedLayer) add('smart-object', 'Smart objects were rasterized', path)
-      const editableShape = canImportPsdShape(layer)
+      const editableShape = canImportPsdShape(layer, psd.width, psd.height)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
       if (!layer.adjustment && ((!importableRasterMask(layer) && (layer.mask || layer.realMask)) || (layer.vectorMask && !editableShape))) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
@@ -727,15 +759,39 @@ function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds
   }
 }
 
-function exportedShape(layer: ShapeLayer, bounds: ReturnType<typeof getLayerBounds>): Pick<Layer, 'vectorFill' | 'vectorOrigination' | 'vectorStroke'> {
+function exportedShape(layer: ShapeLayer, bounds: ReturnType<typeof getLayerBounds>): Pick<Layer, 'vectorFill' | 'vectorOrigination' | 'vectorStroke' | 'vectorMask'> {
   if (!bounds) return {}
+  const vectorFill: Layer['vectorFill'] = layer.fillStyle?.type === 'gradient'
+    ? {
+        type: 'solid', name: layer.fillStyle.name, style: layer.fillStyle.style, angle: layer.fillStyle.angle, scale: layer.fillStyle.scale,
+        colorStops: layer.fillStyle.colorStops.map((stop) => ({ color: psdColor(stop.color), location: Math.round(stop.position * 4096), midpoint: 50 })),
+        opacityStops: layer.fillStyle.opacityStops.map((stop) => ({ opacity: stop.opacity, location: Math.round(stop.position * 4096), midpoint: 50 })),
+      }
+    : layer.fillStyle?.type === 'pattern'
+      ? { type: 'pattern', id: layer.fillStyle.id, name: layer.fillStyle.name, linked: layer.fillStyle.linked, phase: layer.fillStyle.phase }
+      : { type: 'color', color: psdColor(layer.fillStyle?.type === 'color' ? layer.fillStyle.color : layer.fill) }
   return {
-    vectorFill: { type: 'color', color: psdColor(layer.fill) },
+    vectorFill,
     vectorOrigination: { keyDescriptorList: [{
       keyOriginShapeBoundingBox: { left: { units: 'Pixels', value: bounds.x }, top: { units: 'Pixels', value: bounds.y }, right: { units: 'Pixels', value: bounds.x + bounds.width }, bottom: { units: 'Pixels', value: bounds.y + bounds.height } },
       keyOriginRRectRadii: { topLeft: { units: 'Pixels', value: layer.cornerRadius }, topRight: { units: 'Pixels', value: layer.cornerRadius }, bottomLeft: { units: 'Pixels', value: layer.cornerRadius }, bottomRight: { units: 'Pixels', value: layer.cornerRadius } },
     }] },
-    vectorStroke: layer.strokeWidth > 0 ? { strokeEnabled: true, fillEnabled: true, lineWidth: { units: 'Pixels', value: layer.strokeWidth }, lineAlignment: 'center', lineCapType: 'butt', lineJoinType: 'miter', miterLimit: 10, content: { type: 'color', color: psdColor(layer.stroke) }, opacity: 1 } : undefined,
+    vectorStroke: layer.strokeWidth > 0 ? {
+      strokeEnabled: true, fillEnabled: true, lineWidth: { units: 'Pixels', value: layer.strokeWidth },
+      lineAlignment: layer.strokeStyle?.alignment ?? 'center', lineCapType: layer.strokeStyle?.cap ?? 'butt', lineJoinType: layer.strokeStyle?.join ?? 'miter',
+      miterLimit: layer.strokeStyle?.miterLimit ?? 10, lineDashOffset: { units: 'Pixels', value: layer.strokeStyle?.dashOffset ?? 0 },
+      lineDashSet: layer.strokeStyle?.dashes.map((value) => ({ units: 'Pixels' as const, value })) ?? [],
+      blendMode: studioPsdBlendModes[layer.strokeStyle?.blendMode ?? 'normal'], content: { type: 'color', color: psdColor(layer.stroke) }, opacity: layer.strokeStyle?.opacity ?? 1,
+    } : undefined,
+    vectorMask: layer.vectorPaths?.length ? {
+      paths: layer.vectorPaths.map((path) => ({
+        open: !path.closed, operation: path.operation, fillRule: path.fillRule,
+        knots: path.knots.map((knot) => {
+          const point = (position: Position) => [bounds.x + position.x * bounds.width, bounds.y + position.y * bounds.height]
+          return { linked: knot.linked, points: [...point(knot.in), ...point(knot.anchor), ...point(knot.out)] }
+        }),
+      })),
+    } : undefined,
   }
 }
 

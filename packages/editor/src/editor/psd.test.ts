@@ -128,6 +128,56 @@ describe('PSD layer ordering', () => {
       .not.toEqual(expect.arrayContaining([expect.stringMatching(/vector|mask/i)]))
   })
 
+  it('preserves compound paths, gradient fills, and complete stroke metadata', async () => {
+    const square = (left: number, top: number, right: number, bottom: number) => ({ open: false, fillRule: 'even-odd' as const, knots: [
+      { linked: false, points: [left, top, left, top, left, top] },
+      { linked: false, points: [right, top, right, top, right, top] },
+      { linked: false, points: [right, bottom, right, bottom, right, bottom] },
+      { linked: false, points: [left, bottom, left, bottom, left, bottom] },
+    ] })
+    const layer: Layer = {
+      name: 'Compound badge',
+      vectorFill: {
+        type: 'solid', name: 'Sunset', style: 'linear', angle: 35, scale: 120,
+        colorStops: [
+          { color: { r: 255, g: 40, b: 80 }, location: 0, midpoint: 50 },
+          { color: { r: 80, g: 40, b: 255 }, location: 4096, midpoint: 50 },
+        ],
+        opacityStops: [{ opacity: 1, location: 0, midpoint: 50 }, { opacity: 0.5, location: 4096, midpoint: 50 }],
+      },
+      vectorMask: { paths: [
+        { ...square(20, 20, 220, 180), operation: 'combine' },
+        { ...square(80, 60, 160, 140), operation: 'subtract' },
+      ] },
+      vectorStroke: {
+        strokeEnabled: true, fillEnabled: true, lineWidth: { units: 'Pixels', value: 6 }, lineAlignment: 'outside',
+        lineCapType: 'round', lineJoinType: 'bevel', miterLimit: 4, lineDashOffset: { units: 'Pixels', value: 2 },
+        lineDashSet: [{ units: 'Pixels', value: 12 }, { units: 'Pixels', value: 4 }], opacity: 0.75, blendMode: 'multiply',
+        content: { type: 'color', color: { r: 20, g: 30, b: 40 } },
+      },
+    }
+
+    const imported = psdShapeLayer(layer, 300, 200)
+    expect(imported).toMatchObject({
+      shape: 'path',
+      fill: '#ff2850',
+      fillStyle: { type: 'gradient', name: 'Sunset', angle: 35, scale: 120, colorStops: [{ color: '#ff2850', position: 0 }, { color: '#5028ff', position: 1 }] },
+      vectorPaths: [{ operation: 'combine' }, { operation: 'subtract' }],
+      stroke: '#141e28',
+      strokeWidth: 6,
+      strokeStyle: { alignment: 'outside', cap: 'round', join: 'bevel', miterLimit: 4, dashOffset: 2, dashes: [12, 4], opacity: 0.75, blendMode: 'multiply' },
+    })
+    expect(psdImportWarnings({ width: 300, height: 200, children: [layer] })).not.toEqual(expect.arrayContaining([expect.stringMatching(/vector|mask/i)]))
+
+    const blob = await exportPsdDocument({ ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 300, height: 200 }, layers: imported ? [imported] : [] }, {})
+    const roundTripped = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]
+    expect(roundTripped).toMatchObject({
+      vectorFill: { type: 'solid', name: 'Sunset', angle: 35, scale: 120, colorStops: [{ location: 0 }, { location: 4096 }] },
+      vectorMask: { paths: [{ operation: 'combine' }, { operation: 'subtract' }] },
+      vectorStroke: { lineAlignment: 'outside', lineCapType: 'round', lineJoinType: 'bevel', lineDashSet: [{ value: 12 }, { value: 4 }] },
+    })
+  })
+
   it('preserves supported Photoshop adjustment layers', () => {
     expect(psdAdjustmentLayer({
       name: 'Tone',
