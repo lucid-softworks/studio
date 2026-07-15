@@ -117,6 +117,7 @@ export type TypeGpuCompositionTextureLayer = {
     grayscale: number
     sepia: number
     invert: number
+    blur: number
   } | null
 }
 
@@ -228,7 +229,7 @@ export function createTypeGpuLayerCompositor(
   const adjustmentContrast = root.createUniform(d.f32, 1)
   const adjustmentSaturation = root.createUniform(d.f32, 1)
   const adjustmentHue = root.createUniform(d.f32, 0)
-  const adjustmentBlur = root.createUniform(d.f32, 0)
+  const blurRadius = root.createUniform(d.f32, 0)
   const texelSize = root.createUniform(d.vec2f, d.vec2f(1 / width, 1 / height))
   const sampler = root.createSampler({
     magFilter: 'linear',
@@ -240,7 +241,7 @@ export function createTypeGpuLayerCompositor(
     vertex: common.fullScreenTriangle,
     fragment: ({ uv }) => {
       'use gpu'
-      const scale = std.max(std.div(adjustmentBlur.$, 4), 0.25)
+      const scale = std.max(std.div(blurRadius.$, 4), 0.25)
       const firstOffset = horizontal
         ? d.vec2f(std.mul(std.mul(texelSize.$.x, scale), 1.384615), 0)
         : d.vec2f(0, std.mul(std.mul(texelSize.$.y, scale), 1.384615))
@@ -255,12 +256,16 @@ export function createTypeGpuLayerCompositor(
     },
   })
   const horizontalBlurPipelines = compositionSampleViews.map((view) => createBlurPipeline(view, true))
+  const layerHorizontalBlurPipeline = createBlurPipeline(layerView, true)
   const verticalBlurPipeline = createBlurPipeline(blurSampleViews[0], false)
   const createBlendPipeline = (backdropIndex: number) => root.createRenderPipeline({
     vertex: common.fullScreenTriangle,
     fragment: ({ uv }) => {
       'use gpu'
-      const sourceSample = std.textureSample(layerView.$, sampler.$, uv)
+      const rawSourceSample = std.textureSample(layerView.$, sampler.$, uv)
+      const blurredSourceSample = std.textureSample(blurSampleViews[1].$, sampler.$, uv)
+      const filteredSourceSample = std.select(rawSourceSample, blurredSourceSample, blurRadius.$ > 0)
+      const sourceSample = std.select(filteredSourceSample, rawSourceSample, sourceKind.$ === 1)
       const maskSample = std.textureSample(maskView.$, sampler.$, uv)
       const clipSample = std.textureSample(clipView.$, sampler.$, uv)
       const backdropSample = std.textureSample(compositionSampleViews[backdropIndex].$, sampler.$, uv)
@@ -275,7 +280,7 @@ export function createTypeGpuLayerCompositor(
 
       if (sourceKind.$ === 1) {
         const blurredSample = std.textureSample(blurSampleViews[1].$, sampler.$, uv)
-        const adjustmentSample = std.select(blurredSample, backdropSample, adjustmentBlur.$ <= 0)
+        const adjustmentSample = std.select(blurredSample, backdropSample, blurRadius.$ <= 0)
         const adjustmentAlpha = adjustmentSample.w
         const adjustmentBackdrop = std.div(adjustmentSample.xyz, std.max(adjustmentAlpha, 0.00001))
         source = gpuApplyAdjustment(
@@ -366,7 +371,7 @@ export function createTypeGpuLayerCompositor(
           adjustmentContrast.write(layer.contrast)
           adjustmentSaturation.write(layer.saturation)
           adjustmentHue.write(layer.hue)
-          adjustmentBlur.write(layer.blur)
+          blurRadius.write(layer.blur)
           if (layer.blur > 0) {
             horizontalBlurPipelines[backdropIndex].withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
             verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
@@ -384,11 +389,16 @@ export function createTypeGpuLayerCompositor(
             filterSepia.write(layer.filters.sepia / 100)
             filterInvert.write(layer.filters.invert / 100)
           }
+          blurRadius.write(layer.filters?.blur ?? 0)
           layerTexture.write(layer.source)
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
           hasMask.write(layer.maskSource ? 1 : 0)
           hasClip.write(layer.clipSource ? 1 : 0)
+          if ((layer.filters?.blur ?? 0) > 0) {
+            layerHorizontalBlurPipeline.withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
+            verticalBlurPipeline.withColorAttachment({ view: blurRenderViews[1], loadOp: 'clear' }).draw(3)
+          }
         }
         blendMode.write(typeGpuBlendModeCodes[layer.blendMode])
         blendPipelines[backdropIndex].withColorAttachment({
@@ -423,7 +433,7 @@ export function createTypeGpuLayerCompositor(
       adjustmentContrast.buffer.destroy()
       adjustmentSaturation.buffer.destroy()
       adjustmentHue.buffer.destroy()
-      adjustmentBlur.buffer.destroy()
+      blurRadius.buffer.destroy()
       texelSize.buffer.destroy()
     },
   }

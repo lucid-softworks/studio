@@ -678,11 +678,15 @@ export function renderNativeLayerPasses(
   plan.layers.forEach((node, index) => {
     const layer = node.kind === 'group' ? undefined : layers.get(node.layerId)
     const signature = node.kind === 'layer' && layer
-      ? layerPassSignature(layer, assets)
+      ? node.filters?.blur ? null : layerPassSignature(layer, assets)
       : node.kind === 'adjustment' ? `adjustment:${node.layerId}` : null
     const pass = preparePass(index + 1, signature)
     if (pass.shouldRender && node.kind === 'layer' && pass.context && layer && layer.type !== 'adjustment') {
-      drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
+      if (node.filters?.blur) {
+        const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
+        if (clippingBase && clippingBase.type !== 'adjustment') drawClippedLayer(pass.context, pass.canvas, layer, node.maskAssetId, clippingBase, assets, resources)
+        else drawMaskedLayer(pass.context, pass.canvas, layer, node.maskAssetId, assets, resources)
+      } else drawEditorLayer(pass.context, pass.canvas, layer, assets, resources)
     } else if (pass.shouldRender && node.kind === 'group' && pass.context) {
       drawRenderPlan(pass.context, pass.canvas, documentState, assets, resources, node.children)
     }
@@ -719,11 +723,11 @@ export function renderNativeLayerPasses(
       })
       return
     }
-    const maskSource = node.maskAssetId
+    const maskSource = node.maskAssetId && !node.filters?.blur
       ? canvasImageResource(resources, assets, node.maskAssetId)?.source
       : undefined
     let clipSource: HTMLCanvasElement | undefined
-    const clippingBase = node.clipBaseLayerId ? layers.get(node.clipBaseLayerId) : null
+    const clippingBase = node.clipBaseLayerId && !node.filters?.blur ? layers.get(node.clipBaseLayerId) : null
     if (clippingBase && clippingBase.type !== 'adjustment') {
       const clipPass = preparePass(clipPassIndex, maskedLayerPassSignature(clippingBase, assets))
       clipPassIndex += 1

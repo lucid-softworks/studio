@@ -135,8 +135,8 @@ describe('composition render plan', () => {
     expect(plan?.layers.map((node) => node.kind === 'group' ? node.groupId : node.layerId)).toEqual(['first', 'second'])
   })
 
-  it('keeps blur layer filters on the compatibility renderer', () => {
-    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: { ...defaultLayerFilters, blur: 4 } }
+  it('keeps layer effects on the compatibility renderer', () => {
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', effects: { ...defaultLayerEffects, colorOverlay: { ...defaultLayerEffects.colorOverlay, enabled: true } } }
     const isolated = { ...createLayerGroup(0), id: 'isolated', opacity: 75, stackOrder: 0 }
     const filteredChild = { ...filtered, groupId: isolated.id }
 
@@ -149,6 +149,13 @@ describe('composition render plan', () => {
 
     expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })?.layers[0])
       .toMatchObject({ kind: 'layer', layerId: 'filtered', filters: { contrast: 125, hue: 18, sepia: 40 } })
+  })
+
+  it('keeps blur layer filters in the native composition plan', () => {
+    const filtered = { ...createShapeLayer('ellipse', 1), id: 'filtered', filters: { ...defaultLayerFilters, blur: 8 } }
+
+    expect(buildNativeLayerCompositionPlan({ ...initialDocument, layers: [filtered] })?.layers[0])
+      .toMatchObject({ kind: 'layer', layerId: 'filtered', filters: { blur: 8 } })
   })
 
   it('keeps isolated groups as native texture composition passes', () => {
