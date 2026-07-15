@@ -71,6 +71,21 @@ describe('advanced masks', () => {
   })
 })
 
+describe('advanced adjustment layers', () => {
+  it('renders typed pixel adjustments without changing source layers', () => {
+    const shape = { ...createShapeLayer('rectangle', 0), id: 'source', width: 100, height: 100, fill: '#ff0000', stackOrder: 0 }
+    const adjustment = {
+      id: 'invert', type: 'adjustment' as const, name: 'Invert', visible: true, locked: false, opacity: 100,
+      position: { x: 0, y: 0 }, rotation: 0, brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0,
+      adjustment: { type: 'invert' as const }, stackOrder: 1,
+    }
+    const canvas = createCanvas(20, 20) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 20, height: 20 }, layers: [shape, adjustment] }, {})
+    expect([...canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data]).toEqual([0, 255, 255, 255])
+    expect(shape.fill).toBe('#ff0000')
+  })
+})
+
 describe('calculateImageRect', () => {
   it('fits and centres a landscape image inside the padded canvas', () => {
     const rect = calculateImageRect(1600, 1000, 1400, 900, imageLayer)

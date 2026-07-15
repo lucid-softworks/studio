@@ -2,12 +2,13 @@ import { getDocumentSize } from './presets'
 import { layerFilterCss } from './filters'
 import type { AssetMap } from './runtime-assets'
 import type { RasterRegion } from './raster'
+import { hexToRgba } from './raster'
 import { buildCompositionRenderPlan, buildNativeLayerCompositionPlan, type AdjustmentRenderNode, type RenderPlanNode } from './rendering/render-plan'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
-import type { BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
+import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -863,16 +864,165 @@ function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasE
   context.drawImage(clippedLayerCanvas, 0, 0)
 }
 
+function curveValue(value: number, points: Array<{ input: number; output: number }> | undefined) {
+  if (!points?.length) return value
+  const sorted = [...points].sort((left, right) => left.input - right.input)
+  if (value <= sorted[0].input) return sorted[0].output
+  for (let index = 1; index < sorted.length; index += 1) {
+    const left = sorted[index - 1]
+    const right = sorted[index]
+    if (value <= right.input) return left.output + (right.output - left.output) * (value - left.input) / Math.max(1, right.input - left.input)
+  }
+  return sorted.at(-1)!.output
+}
+
+function levelValue(value: number, channel: Extract<AdjustmentDescriptor, { type: 'levels' }>['rgb']) {
+  if (!channel) return value
+  const normalized = Math.max(0, Math.min(1, (value - channel.shadowInput) / Math.max(1, channel.highlightInput - channel.shadowInput)))
+  const gamma = Math.pow(normalized, 1 / Math.max(0.01, channel.midtoneInput))
+  return channel.shadowOutput + gamma * (channel.highlightOutput - channel.shadowOutput)
+}
+
+function adjustmentColor(value: string) {
+  return hexToRgba(value).slice(0, 3) as [number, number, number]
+}
+
+function gradientMapColor(value: number, adjustment: Extract<AdjustmentDescriptor, { type: 'gradient map' }>) {
+  const stops = adjustment.colorStops?.slice().sort((left, right) => left.position - right.position)
+  if (!stops?.length) return [value, value, value] as [number, number, number]
+  const position = adjustment.reverse ? 1 - value / 255 : value / 255
+  const rightIndex = stops.findIndex((stop) => stop.position >= position)
+  if (rightIndex <= 0) return adjustmentColor(stops[Math.max(0, rightIndex)].color)
+  const left = stops[rightIndex - 1]
+  const right = stops[rightIndex]
+  const amount = (position - left.position) / Math.max(0.0001, right.position - left.position)
+  const leftColor = adjustmentColor(left.color)
+  const rightColor = adjustmentColor(right.color)
+  return leftColor.map((channel, index) => channel + (rightColor[index] - channel) * amount) as [number, number, number]
+}
+
+function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescriptor) {
+  const clampByte = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
+  for (let index = 0; index < pixels.data.length; index += 4) {
+    let red = pixels.data[index]
+    let green = pixels.data[index + 1]
+    let blue = pixels.data[index + 2]
+    const original = [red, green, blue]
+    const luminance = red * 0.299 + green * 0.587 + blue * 0.114
+    switch (adjustment.type) {
+      case 'levels':
+        red = levelValue(levelValue(red, adjustment.rgb), adjustment.red)
+        green = levelValue(levelValue(green, adjustment.rgb), adjustment.green)
+        blue = levelValue(levelValue(blue, adjustment.rgb), adjustment.blue)
+        break
+      case 'curves':
+        red = curveValue(curveValue(red, adjustment.rgb), adjustment.red)
+        green = curveValue(curveValue(green, adjustment.rgb), adjustment.green)
+        blue = curveValue(curveValue(blue, adjustment.rgb), adjustment.blue)
+        break
+      case 'exposure': {
+        const multiplier = 2 ** adjustment.exposure
+        red = 255 * Math.pow(Math.max(0, red / 255 * multiplier + adjustment.offset), 1 / Math.max(0.01, adjustment.gamma))
+        green = 255 * Math.pow(Math.max(0, green / 255 * multiplier + adjustment.offset), 1 / Math.max(0.01, adjustment.gamma))
+        blue = 255 * Math.pow(Math.max(0, blue / 255 * multiplier + adjustment.offset), 1 / Math.max(0.01, adjustment.gamma))
+        break
+      }
+      case 'vibrance': {
+        const saturation = adjustment.saturation / 100
+        const vibrance = adjustment.vibrance / 100 * (1 - (Math.max(red, green, blue) - Math.min(red, green, blue)) / 255)
+        red = luminance + (red - luminance) * (1 + saturation + vibrance)
+        green = luminance + (green - luminance) * (1 + saturation + vibrance)
+        blue = luminance + (blue - luminance) * (1 + saturation + vibrance)
+        break
+      }
+      case 'color balance': {
+        const tone = luminance < 85 ? adjustment.shadows : luminance > 170 ? adjustment.highlights : adjustment.midtones
+        if (tone) {
+          red += tone.cyanRed * 2.55
+          green += tone.magentaGreen * 2.55
+          blue += tone.yellowBlue * 2.55
+        }
+        break
+      }
+      case 'black & white': {
+        const total = Math.max(1, adjustment.reds + adjustment.greens + adjustment.blues)
+        const gray = (red * adjustment.reds + green * adjustment.greens + blue * adjustment.blues) / total
+        if (adjustment.useTint) {
+          const tint = adjustmentColor(adjustment.tintColor)
+          red = gray * tint[0] / 255
+          green = gray * tint[1] / 255
+          blue = gray * tint[2] / 255
+        } else red = green = blue = gray
+        break
+      }
+      case 'photo filter': {
+        const filter = adjustmentColor(adjustment.color)
+        const amount = Math.max(0, Math.min(1, adjustment.density / 100))
+        red += (filter[0] - red) * amount
+        green += (filter[1] - green) * amount
+        blue += (filter[2] - blue) * amount
+        break
+      }
+      case 'channel mixer': {
+        const mix = (channel: typeof adjustment.red | undefined) => channel ? red * channel.red / 100 + green * channel.green / 100 + blue * channel.blue / 100 + channel.constant * 2.55 : 0
+        if (adjustment.monochrome && adjustment.gray) red = green = blue = mix(adjustment.gray)
+        else [red, green, blue] = [adjustment.red ? mix(adjustment.red) : red, adjustment.green ? mix(adjustment.green) : green, adjustment.blue ? mix(adjustment.blue) : blue]
+        break
+      }
+      case 'invert': red = 255 - red; green = 255 - green; blue = 255 - blue; break
+      case 'posterize': {
+        const steps = Math.max(2, adjustment.levels) - 1
+        red = Math.round(red / 255 * steps) / steps * 255
+        green = Math.round(green / 255 * steps) / steps * 255
+        blue = Math.round(blue / 255 * steps) / steps * 255
+        break
+      }
+      case 'threshold': red = green = blue = luminance >= adjustment.level ? 255 : 0; break
+      case 'gradient map': [red, green, blue] = gradientMapColor(luminance, adjustment); break
+      case 'selective color': {
+        const tone = luminance < 64 ? adjustment.blacks : luminance > 192 ? adjustment.whites : adjustment.neutrals
+        if (tone) {
+          red += (-tone.c + tone.k) * 2.55
+          green += (-tone.m + tone.k) * 2.55
+          blue += (-tone.y + tone.k) * 2.55
+        }
+        break
+      }
+      case 'brightness/contrast':
+      case 'hue/saturation':
+      case 'color lookup':
+        break
+    }
+    pixels.data[index] = clampByte(red)
+    pixels.data[index + 1] = clampByte(green)
+    pixels.data[index + 2] = clampByte(blue)
+    if (adjustment.type === 'color balance' && adjustment.preserveLuminosity) {
+      const adjustedLuminance = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114
+      const correction = luminance - adjustedLuminance
+      pixels.data[index] = clampByte(pixels.data[index] + correction)
+      pixels.data[index + 1] = clampByte(pixels.data[index + 1] + correction)
+      pixels.data[index + 2] = clampByte(pixels.data[index + 2] + correction)
+    }
+    void original
+  }
+}
+
 function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, adjustment: AdjustmentRenderNode) {
   adjustmentCanvas = prepareScratchCanvas(adjustmentCanvas, canvas)
   const adjustmentContext = adjustmentCanvas.getContext('2d')
   if (!adjustmentContext) return
   adjustmentContext.clearRect(0, 0, canvas.width, canvas.height)
   adjustmentContext.drawImage(canvas, 0, 0)
+  const advanced = adjustment.adjustment && adjustment.adjustment.type !== 'brightness/contrast' && adjustment.adjustment.type !== 'hue/saturation'
+  if (advanced) {
+    const pixels = adjustmentContext.getImageData(0, 0, canvas.width, canvas.height)
+    applyAdvancedAdjustment(pixels, adjustment.adjustment!)
+    adjustmentContext.putImageData(pixels, 0, 0)
+  }
   context.save()
   context.globalAlpha = adjustment.opacity / 100
   context.globalCompositeOperation = adjustment.blendMode === 'normal' ? 'source-over' : adjustment.blendMode
-  context.filter = `brightness(${adjustment.brightness}%) contrast(${adjustment.contrast}%) saturate(${adjustment.saturation}%) hue-rotate(${adjustment.hue}deg) blur(${adjustment.blur}px)`
+  context.filter = advanced ? `blur(${adjustment.blur}px)` : `brightness(${adjustment.brightness}%) contrast(${adjustment.contrast}%) saturate(${adjustment.saturation}%) hue-rotate(${adjustment.hue}deg) blur(${adjustment.blur}px)`
   context.drawImage(adjustmentCanvas, 0, 0)
   context.restore()
 }

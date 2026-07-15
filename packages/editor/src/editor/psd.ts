@@ -5,7 +5,7 @@ import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, in
 import { renderComposition, getLayerBounds } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap } from './runtime-assets'
-import type { AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, ShapeLayer, TextLayer, VectorMask } from './types'
+import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, ShapeLayer, TextLayer, VectorMask } from './types'
 
 let initialized = false
 
@@ -390,34 +390,50 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value))
 }
 
-function hasChannelSpecificHueAdjustment(adjustment: Extract<NonNullable<Layer['adjustment']>, { type: 'hue/saturation' }>) {
-  return [adjustment.reds, adjustment.yellows, adjustment.greens, adjustment.cyans, adjustment.blues, adjustment.magentas]
-    .some((channel) => channel && (channel.hue !== 0 || channel.saturation !== 0 || channel.lightness !== 0))
+export function canImportPsdAdjustment(layer: Layer) {
+  return Boolean(layer.adjustment)
 }
 
-export function canImportPsdAdjustment(layer: Layer) {
-  const source = layer.adjustment
-  return Boolean(
-    source
-    && ((source.type === 'brightness/contrast' && !source.labColorOnly)
-      || (source.type === 'hue/saturation' && !hasChannelSpecificHueAdjustment(source)))
-  )
+function psdAdjustmentDescriptor(source: NonNullable<Layer['adjustment']>): AdjustmentDescriptor {
+  const preset = 'presetKind' in source ? { presetKind: source.presetKind, presetFileName: source.presetFileName } : {}
+  switch (source.type) {
+    case 'brightness/contrast': return { type: source.type, brightness: source.brightness ?? 0, contrast: source.contrast ?? 0, meanValue: source.meanValue, useLegacy: source.useLegacy ?? false, labColorOnly: source.labColorOnly ?? false, auto: source.auto ?? false }
+    case 'levels': return { type: source.type, rgb: source.rgb, red: source.red, green: source.green, blue: source.blue, ...preset }
+    case 'curves': return { type: source.type, rgb: source.rgb, red: source.red, green: source.green, blue: source.blue, ...preset }
+    case 'exposure': return { type: source.type, exposure: source.exposure ?? 0, offset: source.offset ?? 0, gamma: source.gamma ?? 1, ...preset }
+    case 'vibrance': return { type: source.type, vibrance: source.vibrance ?? 0, saturation: source.saturation ?? 0 }
+    case 'hue/saturation': {
+      const channel = (value: typeof source.master) => value ? { range: [value.a, value.b, value.c, value.d] as [number, number, number, number], hue: value.hue, saturation: value.saturation, lightness: value.lightness } : undefined
+      return { type: source.type, master: channel(source.master), reds: channel(source.reds), yellows: channel(source.yellows), greens: channel(source.greens), cyans: channel(source.cyans), blues: channel(source.blues), magentas: channel(source.magentas), ...preset }
+    }
+    case 'color balance': return { type: source.type, shadows: source.shadows, midtones: source.midtones, highlights: source.highlights, preserveLuminosity: source.preserveLuminosity ?? true }
+    case 'black & white': return { type: source.type, reds: source.reds ?? 40, yellows: source.yellows ?? 60, greens: source.greens ?? 40, cyans: source.cyans ?? 60, blues: source.blues ?? 20, magentas: source.magentas ?? 80, useTint: source.useTint ?? false, tintColor: colorHex(source.tintColor), ...preset }
+    case 'photo filter': return { type: source.type, color: colorHex(source.color), density: source.density ?? 25, preserveLuminosity: source.preserveLuminosity ?? true }
+    case 'channel mixer': return { type: source.type, monochrome: source.monochrome ?? false, red: source.red, green: source.green, blue: source.blue, gray: source.gray, ...preset }
+    case 'color lookup': return { type: source.type, lookupType: source.lookupType, name: source.name, dither: source.dither ?? false, profile: source.profile ? [...source.profile] : undefined, lutFormat: source.lutFormat, dataOrder: source.dataOrder, tableOrder: source.tableOrder, lut3DFileData: source.lut3DFileData ? [...source.lut3DFileData] : undefined, lut3DFileName: source.lut3DFileName }
+    case 'invert': return { type: source.type }
+    case 'posterize': return { type: source.type, levels: source.levels ?? 4 }
+    case 'threshold': return { type: source.type, level: source.level ?? 128 }
+    case 'gradient map': return { type: source.type, name: source.name ?? 'Gradient Map', gradientType: source.gradientType, dither: source.dither ?? false, reverse: source.reverse ?? false, method: source.method, smoothness: source.smoothness, colorStops: source.colorStops?.map((stop) => ({ color: colorHex(stop.color), position: stop.location > 1 ? stop.location / 4096 : stop.location, midpoint: stop.midpoint })), opacityStops: source.opacityStops?.map((stop) => ({ opacity: stop.opacity, position: stop.location > 1 ? stop.location / 4096 : stop.location, midpoint: stop.midpoint })), roughness: source.roughness, colorModel: source.colorModel, randomSeed: source.randomSeed, restrictColors: source.restrictColors, addTransparency: source.addTransparency, min: source.min, max: source.max }
+    case 'selective color': return { type: source.type, mode: source.mode ?? 'relative', reds: source.reds, yellows: source.yellows, greens: source.greens, cyans: source.cyans, blues: source.blues, magentas: source.magentas, whites: source.whites, neutrals: source.neutrals, blacks: source.blacks }
+  }
 }
 
 export function psdAdjustmentLayer(layer: Layer, index: number): AdjustmentLayer | null {
   const source = layer.adjustment
   if (!source || !canImportPsdAdjustment(layer)) return null
   const adjustment = createAdjustmentLayer(index)
+  adjustment.adjustment = psdAdjustmentDescriptor(source)
   if (source.type === 'brightness/contrast' && !source.labColorOnly) {
     adjustment.brightness = clamp(100 + (source.brightness ?? 0), 0, 200)
     adjustment.contrast = clamp(100 + (source.contrast ?? 0), 0, 200)
-  } else if (source.type === 'hue/saturation' && !hasChannelSpecificHueAdjustment(source)) {
+  } else if (source.type === 'hue/saturation') {
     adjustment.hue = clamp(source.master?.hue ?? 0, -180, 180)
     adjustment.saturation = clamp(100 + (source.master?.saturation ?? 0), 0, 200)
     adjustment.brightness = clamp(100 + (source.master?.lightness ?? 0), 0, 200)
-  } else return null
+  }
 
-  adjustment.name = layer.name?.trim() || (source.type === 'hue/saturation' ? 'Hue / Saturation' : 'Brightness / Contrast')
+  adjustment.name = layer.name?.trim() || source.type.split(' ').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
   adjustment.visible = !layer.hidden
   adjustment.locked = Boolean(layer.protected?.position || layer.protected?.composite)
   adjustment.opacity = Math.round((layer.opacity ?? 1) * 100)
@@ -561,6 +577,7 @@ export function psdImportWarnings(psd: Psd) {
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (hasUnsupportedEffects(layer)) add('effects', 'Some Photoshop-only layer effects were not preserved', path)
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
+      if (layer.adjustment?.type === 'color lookup') add('color-lookup-preview', 'Color Lookup data was preserved, but its LUT preview is not yet rendered', path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
       if (hasUnsupportedAdvancedBlending(layer)) add('advanced-blending', 'Knockout blending was not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
@@ -957,6 +974,30 @@ function exportedShape(layer: ShapeLayer, bounds: ReturnType<typeof getLayerBoun
 }
 
 function exportedAdjustment(layer: AdjustmentLayer): Layer['adjustment'] {
+  const source = layer.adjustment
+  if (source) {
+    switch (source.type) {
+      case 'brightness/contrast': return { ...source }
+      case 'levels': return { ...source }
+      case 'curves': return { ...source }
+      case 'exposure': return { ...source }
+      case 'vibrance': return { ...source }
+      case 'hue/saturation': {
+        const channel = (value: typeof source.master) => value ? { a: value.range[0], b: value.range[1], c: value.range[2], d: value.range[3], hue: value.hue, saturation: value.saturation, lightness: value.lightness } : undefined
+        return { ...source, master: channel(source.master), reds: channel(source.reds), yellows: channel(source.yellows), greens: channel(source.greens), cyans: channel(source.cyans), blues: channel(source.blues), magentas: channel(source.magentas) }
+      }
+      case 'color balance': return { ...source }
+      case 'black & white': return { ...source, tintColor: psdColor(source.tintColor) }
+      case 'photo filter': return { ...source, color: psdColor(source.color) }
+      case 'channel mixer': return { ...source }
+      case 'color lookup': return { ...source, profile: source.profile ? Uint8Array.from(source.profile) : undefined, lut3DFileData: source.lut3DFileData ? Uint8Array.from(source.lut3DFileData) : undefined }
+      case 'invert': return { ...source }
+      case 'posterize': return { ...source }
+      case 'threshold': return { ...source }
+      case 'gradient map': return { ...source, colorStops: source.colorStops?.map((stop) => ({ color: psdColor(stop.color), location: Math.round(stop.position * 4096), midpoint: stop.midpoint })), opacityStops: source.opacityStops?.map((stop) => ({ opacity: stop.opacity, location: Math.round(stop.position * 4096), midpoint: stop.midpoint })) }
+      case 'selective color': return { ...source }
+    }
+  }
   if (layer.hue !== 0 || layer.saturation !== 100) return { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: layer.hue, saturation: layer.saturation - 100, lightness: layer.brightness - 100 } }
   return { type: 'brightness/contrast', brightness: layer.brightness - 100, contrast: layer.contrast - 100 }
 }

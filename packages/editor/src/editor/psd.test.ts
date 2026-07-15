@@ -229,7 +229,37 @@ describe('PSD layer ordering', () => {
     expect(psdAdjustmentLayer({
       adjustment: { type: 'hue/saturation', master: { a: 0, b: 0, c: 0, d: 0, hue: 24, saturation: -20, lightness: 6 } },
     }, 1)).toMatchObject({ hue: 24, saturation: 80, brightness: 106 })
-    expect(psdAdjustmentLayer({ adjustment: { type: 'curves', rgb: [{ input: 0, output: 0 }] } }, 2)).toBeNull()
+    expect(psdAdjustmentLayer({ adjustment: { type: 'curves', rgb: [{ input: 0, output: 0 }, { input: 255, output: 220 }] } }, 2))
+      .toMatchObject({ adjustment: { type: 'curves', rgb: [{ input: 0, output: 0 }, { input: 255, output: 220 }] } })
+  })
+
+  it('round-trips every Photoshop adjustment descriptor as typed Studio data', async () => {
+    const sources: NonNullable<Layer['adjustment']>[] = [
+      { type: 'levels', rgb: { shadowInput: 12, highlightInput: 240, shadowOutput: 4, highlightOutput: 250, midtoneInput: 1.2 } },
+      { type: 'curves', rgb: [{ input: 0, output: 5 }, { input: 128, output: 150 }, { input: 255, output: 250 }] },
+      { type: 'exposure', exposure: 0.7, offset: 0.02, gamma: 1.1 },
+      { type: 'vibrance', vibrance: 32, saturation: -8 },
+      { type: 'color balance', shadows: { cyanRed: 4, magentaGreen: -2, yellowBlue: 8 }, preserveLuminosity: true },
+      { type: 'black & white', reds: 42, yellows: 60, greens: 38, cyans: 58, blues: 22, magentas: 78, useTint: true, tintColor: { r: 220, g: 180, b: 140 } },
+      { type: 'photo filter', color: { r: 255, g: 170, b: 80 }, density: 35, preserveLuminosity: true },
+      { type: 'channel mixer', monochrome: false, red: { red: 110, green: -10, blue: 0, constant: 2 } },
+      { type: 'color lookup', lookupType: '3dlut', name: 'Local LUT', dither: true, lutFormat: 'cube', lut3DFileName: 'warm.cube', lut3DFileData: Uint8Array.from([1, 2, 3, 4]) },
+      { type: 'invert' },
+      { type: 'posterize', levels: 7 },
+      { type: 'threshold', level: 142 },
+      { type: 'gradient map', name: 'Duo', gradientType: 'solid', dither: true, reverse: false, colorStops: [{ color: { r: 10, g: 20, b: 30 }, location: 0, midpoint: 50 }, { color: { r: 240, g: 220, b: 180 }, location: 4096, midpoint: 50 }] },
+      { type: 'selective color', mode: 'relative', reds: { c: 4, m: -8, y: 12, k: 0 }, neutrals: { c: 0, m: 2, y: -3, k: 1 } },
+    ]
+    const layers = sources.map((source, index) => {
+      const imported = psdAdjustmentLayer({ name: source.type, adjustment: source }, index)
+      expect(imported?.adjustment?.type).toBe(source.type)
+      return { ...imported!, stackOrder: index }
+    })
+    const blob = await exportPsdDocument({ ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 32, height: 32 }, layers }, {})
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children ?? []
+    expect(decoded.map((layer) => layer.adjustment?.type).reverse()).toEqual(sources.map((source) => source.type))
+    expect(decoded.find((layer) => layer.adjustment?.type === 'color lookup')?.adjustment).toMatchObject({ name: 'Local LUT', lut3DFileName: 'warm.cube' })
+    expect(decoded.find((layer) => layer.adjustment?.type === 'gradient map')?.adjustment).toMatchObject({ name: 'Duo', colorStops: [{ location: 0 }, { location: 4096 }] })
   })
 
   it('preserves simple single-style text and ignores default blending ranges', () => {

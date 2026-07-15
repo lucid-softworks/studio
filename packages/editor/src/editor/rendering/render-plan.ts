@@ -1,7 +1,7 @@
 import { hasEnabledLayerEffects, normalizeLayerEffects } from '../effects'
 import { normalizeLayerFilters } from '../filters'
 import { getStackChildren, type StackItem } from '../stack'
-import type { BlendMode, EditorDocument, LayerEffects, LayerFilters } from '../types'
+import type { AdjustmentDescriptor, BlendMode, EditorDocument, LayerEffects, LayerFilters } from '../types'
 import { isTypeGpuBlendMode } from './typegpu-blend-modes'
 
 export type LayerRenderNode = {
@@ -26,6 +26,7 @@ export type AdjustmentRenderNode = {
   saturation: number
   hue: number
   blur: number
+  adjustment?: AdjustmentDescriptor
 }
 
 export type GroupRenderNode = {
@@ -94,6 +95,7 @@ function planNodes(
         saturation: layer.saturation,
         hue: layer.hue,
         blur: layer.blur,
+        ...(layer.adjustment ? { adjustment: layer.adjustment } : {}),
       }]
     }
 
@@ -147,6 +149,10 @@ export function buildNativeLayerCompositionPlan(document: EditorDocument): Nativ
     layer.vectorMask
     || layer.blendIf
     || (layer.maskSettings && (layer.maskSettings.density !== 100 || layer.maskSettings.feather > 0))
+  ))) return null
+  if (document.layers.some((layer) => layer.type === 'adjustment' && layer.adjustment && !(
+    layer.adjustment.type === 'brightness/contrast'
+    || (layer.adjustment.type === 'hue/saturation' && !layer.adjustment.reds && !layer.adjustment.yellows && !layer.adjustment.greens && !layer.adjustment.cyans && !layer.adjustment.blues && !layer.adjustment.magentas)
   ))) return null
   if (document.layers.some((layer) => {
     const effects = normalizeLayerEffects(layer.effects)

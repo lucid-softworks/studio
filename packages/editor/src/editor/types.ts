@@ -178,6 +178,30 @@ export type ShapeLayer = BaseLayer & {
   }
 }
 
+export type AdjustmentLevelsChannel = { shadowInput: number; highlightInput: number; shadowOutput: number; highlightOutput: number; midtoneInput: number }
+export type AdjustmentCurve = Array<{ input: number; output: number }>
+export type AdjustmentCmyk = { c: number; m: number; y: number; k: number }
+export type AdjustmentColorBalance = { cyanRed: number; magentaGreen: number; yellowBlue: number }
+export type AdjustmentMixerChannel = { red: number; green: number; blue: number; constant: number }
+export type AdjustmentHueChannel = { range: [number, number, number, number]; hue: number; saturation: number; lightness: number }
+export type AdjustmentDescriptor =
+  | { type: 'brightness/contrast'; brightness: number; contrast: number; meanValue?: number; useLegacy: boolean; labColorOnly: boolean; auto: boolean }
+  | { type: 'levels'; rgb?: AdjustmentLevelsChannel; red?: AdjustmentLevelsChannel; green?: AdjustmentLevelsChannel; blue?: AdjustmentLevelsChannel; presetKind?: number; presetFileName?: string }
+  | { type: 'curves'; rgb?: AdjustmentCurve; red?: AdjustmentCurve; green?: AdjustmentCurve; blue?: AdjustmentCurve; presetKind?: number; presetFileName?: string }
+  | { type: 'exposure'; exposure: number; offset: number; gamma: number; presetKind?: number; presetFileName?: string }
+  | { type: 'vibrance'; vibrance: number; saturation: number }
+  | { type: 'hue/saturation'; master?: AdjustmentHueChannel; reds?: AdjustmentHueChannel; yellows?: AdjustmentHueChannel; greens?: AdjustmentHueChannel; cyans?: AdjustmentHueChannel; blues?: AdjustmentHueChannel; magentas?: AdjustmentHueChannel; presetKind?: number; presetFileName?: string }
+  | { type: 'color balance'; shadows?: AdjustmentColorBalance; midtones?: AdjustmentColorBalance; highlights?: AdjustmentColorBalance; preserveLuminosity: boolean }
+  | { type: 'black & white'; reds: number; yellows: number; greens: number; cyans: number; blues: number; magentas: number; useTint: boolean; tintColor: string; presetKind?: number; presetFileName?: string }
+  | { type: 'photo filter'; color: string; density: number; preserveLuminosity: boolean }
+  | { type: 'channel mixer'; monochrome: boolean; red?: AdjustmentMixerChannel; green?: AdjustmentMixerChannel; blue?: AdjustmentMixerChannel; gray?: AdjustmentMixerChannel; presetKind?: number; presetFileName?: string }
+  | { type: 'color lookup'; lookupType?: '3dlut' | 'abstractProfile' | 'deviceLinkProfile'; name?: string; dither: boolean; profile?: number[]; lutFormat?: 'look' | 'cube' | '3dl'; dataOrder?: 'rgb' | 'bgr'; tableOrder?: 'rgb' | 'bgr'; lut3DFileData?: number[]; lut3DFileName?: string }
+  | { type: 'invert' }
+  | { type: 'posterize'; levels: number }
+  | { type: 'threshold'; level: number }
+  | { type: 'gradient map'; name: string; gradientType: 'solid' | 'noise'; dither: boolean; reverse: boolean; method?: 'classic' | 'perceptual' | 'linear' | 'smooth'; smoothness?: number; colorStops?: Array<{ color: string; position: number; midpoint: number }>; opacityStops?: Array<{ opacity: number; position: number; midpoint: number }>; roughness?: number; colorModel?: 'rgb' | 'hsb' | 'lab'; randomSeed?: number; restrictColors?: boolean; addTransparency?: boolean; min?: number[]; max?: number[] }
+  | { type: 'selective color'; mode: 'relative' | 'absolute'; reds?: AdjustmentCmyk; yellows?: AdjustmentCmyk; greens?: AdjustmentCmyk; cyans?: AdjustmentCmyk; blues?: AdjustmentCmyk; magentas?: AdjustmentCmyk; whites?: AdjustmentCmyk; neutrals?: AdjustmentCmyk; blacks?: AdjustmentCmyk }
+
 export type AdjustmentLayer = BaseLayer & {
   type: 'adjustment'
   brightness: number
@@ -185,6 +209,7 @@ export type AdjustmentLayer = BaseLayer & {
   saturation: number
   hue: number
   blur: number
+  adjustment?: AdjustmentDescriptor
 }
 
 export type EditorLayer = ImageLayer | RasterLayer | TextLayer | ShapeLayer | AdjustmentLayer
@@ -249,6 +274,7 @@ export type LayerPatch = Partial<{
   vectorPaths: NonNullable<ShapeLayer['vectorPaths']>
   fillStyle: NonNullable<ShapeLayer['fillStyle']> | null
   strokeStyle: NonNullable<ShapeLayer['strokeStyle']> | null
+  adjustment: AdjustmentDescriptor | null
   shadow: number
   flipX: boolean
   flipY: boolean

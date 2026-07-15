@@ -1,7 +1,8 @@
 import { backgroundPresets, canvasPresets } from '../editor/presets'
+import { adjustmentKinds, createAdjustmentDescriptor } from '../editor/adjustments'
 import { defaultLayerFilters, normalizeLayerFilters } from '../editor/filters'
 import { getDescendantLayers, getStackChildren } from '../editor/stack'
-import type { BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
+import type { AdjustmentDescriptor, BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
@@ -58,6 +59,20 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
   const updateLayer = (layer: EditorLayer, patch: LayerPatch, groupKey?: string) => {
     dispatch({ type: 'update-layer', id: layer.id, patch }, groupKey ? { groupKey } : undefined)
+  }
+  const updateAdjustment = (descriptor: AdjustmentDescriptor, patch: Record<string, unknown>, groupKey?: string) => {
+    if (selected?.type === 'adjustment') updateLayer(selected, { adjustment: { ...descriptor, ...patch } as AdjustmentDescriptor }, groupKey)
+  }
+  const updateLegacyAdjustment = (field: 'brightness' | 'contrast' | 'saturation' | 'hue' | 'blur', value: number, groupKey: string) => {
+    if (selected?.type !== 'adjustment') return
+    let adjustment = selected.adjustment
+    if (adjustment?.type === 'brightness/contrast' && (field === 'brightness' || field === 'contrast')) {
+      adjustment = { ...adjustment, [field]: value - 100 }
+    } else if (adjustment?.type === 'hue/saturation' && (field === 'brightness' || field === 'saturation' || field === 'hue')) {
+      const master = adjustment.master ?? { range: [0, 0, 0, 0], hue: 0, saturation: 0, lightness: 0 }
+      adjustment = { ...adjustment, master: { ...master, [field === 'brightness' ? 'lightness' : field]: field === 'hue' ? value : value - 100 } }
+    }
+    updateLayer(selected, { [field]: value, adjustment }, groupKey)
   }
   const filters = normalizeLayerFilters(selected?.filters)
 
@@ -256,12 +271,33 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
           {selected.type === 'adjustment' && (
             <ControlSection title="Adjustment layer">
               <div className="mb-2 rounded-lg border border-cyan-300/10 bg-cyan-300/[0.04] p-3 text-[10px] leading-relaxed text-cyan-100/60">Affects the complete visible stack beneath this layer without changing its pixels.</div>
-              <RangeControl label="Brightness" value={selected.brightness} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { brightness: value }, `adjustment-brightness-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <RangeControl label="Contrast" value={selected.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { contrast: value }, `adjustment-contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <RangeControl label="Saturation" value={selected.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLayer(selected, { saturation: value }, `adjustment-saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <RangeControl label="Hue" value={selected.hue} min={-180} max={180} suffix="°" onChange={(value) => updateLayer(selected, { hue: value }, `adjustment-hue-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <RangeControl label="Blur" value={selected.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { blur: value }, `adjustment-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <button type="button" onClick={() => updateLayer(selected, { brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0 })} className="mt-3 w-full rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Reset adjustment</button>
+              <label className="mb-3 block">
+                <span className="mb-2 block text-[11px] font-medium text-zinc-500">Adjustment type</span>
+                <select aria-label="Adjustment type" value={selected.adjustment?.type ?? 'brightness/contrast'} onChange={(event) => updateLayer(selected, { adjustment: createAdjustmentDescriptor(event.target.value as Parameters<typeof createAdjustmentDescriptor>[0]) })} className={fieldClass}>
+                  {adjustmentKinds.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
+                </select>
+              </label>
+              {selected.adjustment && <div className="mb-3 rounded-lg border border-white/[0.06] bg-black/15 p-3 text-[10px] text-zinc-500">Typed, PSD-safe {selected.adjustment.type} properties are preserved in Studio projects and layered PSD exports.</div>}
+              {selected.adjustment?.type === 'exposure' && <>
+                <RangeControl label="Exposure" value={selected.adjustment.exposure} min={-5} max={5} step={0.05} onChange={(exposure) => updateAdjustment(selected.adjustment!, { exposure }, `adjustment-exposure-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+                <RangeControl label="Gamma" value={selected.adjustment.gamma} min={0.1} max={3} step={0.05} onChange={(gamma) => updateAdjustment(selected.adjustment!, { gamma }, `adjustment-gamma-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              </>}
+              {selected.adjustment?.type === 'vibrance' && <>
+                <RangeControl label="Vibrance" value={selected.adjustment.vibrance} min={-100} max={100} suffix="%" onChange={(vibrance) => updateAdjustment(selected.adjustment!, { vibrance }, `adjustment-vibrance-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+                <RangeControl label="Saturation" value={selected.adjustment.saturation} min={-100} max={100} suffix="%" onChange={(saturation) => updateAdjustment(selected.adjustment!, { saturation }, `adjustment-advanced-saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              </>}
+              {selected.adjustment?.type === 'posterize' && <RangeControl label="Levels" value={selected.adjustment.levels} min={2} max={255} onChange={(levels) => updateAdjustment(selected.adjustment!, { levels }, `adjustment-posterize-${selected.id}`)} onChangeEnd={endHistoryGroup} />}
+              {selected.adjustment?.type === 'threshold' && <RangeControl label="Threshold" value={selected.adjustment.level} min={1} max={255} onChange={(level) => updateAdjustment(selected.adjustment!, { level }, `adjustment-threshold-${selected.id}`)} onChangeEnd={endHistoryGroup} />}
+              {selected.adjustment?.type === 'photo filter' && <>
+                <label className="mb-2 flex items-center justify-between text-[10px] text-zinc-500">Colour<input aria-label="Photo filter color" type="color" value={selected.adjustment.color} onChange={(event) => updateAdjustment(selected.adjustment!, { color: event.target.value }, `adjustment-photo-color-${selected.id}`)} onBlur={endHistoryGroup} /></label>
+                <RangeControl label="Density" value={selected.adjustment.density} min={1} max={100} suffix="%" onChange={(density) => updateAdjustment(selected.adjustment!, { density }, `adjustment-photo-density-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              </>}
+              <RangeControl label="Brightness" value={selected.brightness} min={0} max={200} suffix="%" onChange={(value) => updateLegacyAdjustment('brightness', value, `adjustment-brightness-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Contrast" value={selected.contrast} min={0} max={200} suffix="%" onChange={(value) => updateLegacyAdjustment('contrast', value, `adjustment-contrast-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Saturation" value={selected.saturation} min={0} max={200} suffix="%" onChange={(value) => updateLegacyAdjustment('saturation', value, `adjustment-saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Hue" value={selected.hue} min={-180} max={180} suffix="°" onChange={(value) => updateLegacyAdjustment('hue', value, `adjustment-hue-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <RangeControl label="Blur" value={selected.blur} min={0} max={40} suffix="px" onChange={(value) => updateLegacyAdjustment('blur', value, `adjustment-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <button type="button" onClick={() => updateLayer(selected, { brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, adjustment: selected.adjustment ? createAdjustmentDescriptor(selected.adjustment.type) : null })} className="mt-3 w-full rounded-lg border border-white/[0.08] px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/[0.04] hover:text-zinc-200">Reset adjustment</button>
             </ControlSection>
           )}
 
