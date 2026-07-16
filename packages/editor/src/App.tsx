@@ -96,6 +96,8 @@ function App({ onExit }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const linkedSmartObjectInputRef = useRef<HTMLInputElement>(null)
+  const replaceSmartObjectInputRef = useRef<HTMLInputElement>(null)
+  const relinkSmartObjectInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const projectInputRef = useRef<HTMLInputElement>(null)
   const fontInputRef = useRef<HTMLInputElement>(null)
@@ -811,6 +813,67 @@ function App({ onExit }: AppProps) {
     setEditingMaskLayerId(null)
   }
 
+  const replaceSmartObjectSource = async (file: File, kind: 'embedded' | 'linked') => {
+    const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
+    if (!layer || layer.type !== 'smart-object') return
+    setIsLoading(true)
+    try {
+      const loaded = await loadImageFile(file)
+      const width = loaded.element.naturalWidth || loaded.surface?.width || 1
+      const height = loaded.element.naturalHeight || loaded.surface?.height || 1
+      let embeddedDocument = layer.embeddedDocument
+      const additions: AssetMap = { [layer.assetId]: loaded }
+      if (kind === 'embedded') {
+        const contentAssetId = createId()
+        const content = createRasterSurface(loaded)
+        additions[contentAssetId] = content
+        const contentLayer = createRasterLayer(contentAssetId, file.name.replace(/\.[^.]+$/, ''), width, height)
+        embeddedDocument = {
+          ...structuredClone(initialDocument),
+          canvasPreset: 'custom',
+          canvasSize: { width, height },
+          layers: [contentLayer],
+          selectedLayerId: contentLayer.id,
+          selectedLayerIds: [contentLayer.id],
+        }
+      } else embeddedDocument = undefined
+      setAssets((current) => ({ ...current, ...additions }))
+      dispatch({
+        type: 'update-layer',
+        id: layer.id,
+        patch: {
+          width,
+          height,
+          embeddedDocument,
+          source: { kind, fileName: file.name, mimeType: file.type || undefined, lastModified: file.lastModified },
+        },
+      })
+      setNotice(`${kind === 'linked' ? 'Relinked' : 'Replaced'} ${layer.name} with ${file.name}.`, 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The smart-object source could not be replaced.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const exportSmartObjectContents = async () => {
+    const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
+    if (!layer || layer.type !== 'smart-object') return
+    try {
+      if (layer.embeddedDocument) {
+        const json = await serializeProject(layer.embeddedDocument, assets)
+        downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), layer.source.fileName.replace(/\.[^.]+$/, '') + '.studio')
+        return
+      }
+      const source = assets[layer.assetId]
+      const blob = source?.blob ?? (source?.surface ? await surfaceToBlob(source.surface) : undefined)
+      if (!blob) throw new Error('This smart object does not have exportable local contents.')
+      downloadBlob(blob, layer.source.fileName)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The smart-object contents could not be exported.')
+    }
+  }
+
   const applyFilter = (patch: Partial<LayerFilters>) => {
     const targets = selectedLayers.filter((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))
     if (!targets.length) return
@@ -1025,6 +1088,9 @@ function App({ onExit }: AppProps) {
             onDuplicateLayer={duplicateSelection}
             onRasterizeLayer={rasterizeSelectedLayer}
             onConvertToSmartObject={convertSelectedToSmartObject}
+            onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()}
+            onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()}
+            onExportSmartObject={() => void exportSmartObjectContents()}
             onClearLayerEffects={() => dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { effects: null } })) })}
             onDeleteLayer={deleteSelection}
             onSelectAll={applySelectAll}
@@ -1054,6 +1120,7 @@ function App({ onExit }: AppProps) {
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
             canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
             canConvertToSmartObject={selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type)}
+            smartObjectKind={selectedLayers.length === 1 && selectedLayers[0].type === 'smart-object' ? selectedLayers[0].source.kind : undefined}
             hasLayerEffects={selectedLayers.some((layer) => hasEnabledLayerEffects(layer.effects))}
             hasPixelSelection={Boolean(selection?.bounds)}
             hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
@@ -1077,13 +1144,15 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
       <input ref={linkedSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addLinkedSmartObjectFile(file); event.target.value = '' }} />
+      <input ref={replaceSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'embedded'); event.target.value = '' }} />
+      <input ref={relinkSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'linked'); event.target.value = '' }} />
       <input ref={backgroundInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
       <input ref={projectInputRef} type="file" className="sr-only" accept=".studio,.psd,image/png,image/jpeg,image/webp,application/json,application/x-studio+json,image/vnd.adobe.photoshop" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
       <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />

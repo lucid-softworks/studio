@@ -93,7 +93,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 - [x] Add embedded and linked smart-object layer types
 - [x] Open smart-object contents as nested documents and propagate saved edits
-- [ ] Add replace/relink/export-contents actions
+- [x] Add replace/relink/export-contents actions
 - [ ] Add non-destructive transform matrices independent of source pixels
 - [ ] Add ordered smart-filter stacks with visibility, masks, opacity, and blend modes
 - [ ] Cache smart-object and smart-filter results by content hash

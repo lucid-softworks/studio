@@ -22,6 +22,9 @@ type MenuBarProps = {
   onDuplicateLayer: () => void
   onRasterizeLayer: () => void
   onConvertToSmartObject: () => void
+  onReplaceSmartObject: () => void
+  onRelinkSmartObject: () => void
+  onExportSmartObject: () => void
   onClearLayerEffects: () => void
   onDeleteLayer: () => void
   onSelectAll: () => void
@@ -44,6 +47,7 @@ type MenuBarProps = {
   hasLayerSelection: boolean
   canRasterize: boolean
   canConvertToSmartObject: boolean
+  smartObjectKind?: 'embedded' | 'linked'
   hasLayerEffects: boolean
   hasPixelSelection: boolean
   hasFilterTarget: boolean
@@ -161,6 +165,9 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem shortcut="⌘J" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
         <MenuItem disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
         <MenuItem disabled={!props.canConvertToSmartObject} onSelect={() => select(props.onConvertToSmartObject)}>Convert to smart object</MenuItem>
+        <MenuItem disabled={props.smartObjectKind !== 'embedded'} onSelect={() => select(props.onReplaceSmartObject)}>Replace smart-object contents…</MenuItem>
+        <MenuItem disabled={props.smartObjectKind !== 'linked'} onSelect={() => select(props.onRelinkSmartObject)}>Relink smart object…</MenuItem>
+        <MenuItem disabled={!props.smartObjectKind} onSelect={() => select(props.onExportSmartObject)}>Export smart-object contents…</MenuItem>
         <MenuItem disabled={!props.hasLayerEffects} onSelect={() => select(props.onClearLayerEffects)}>Clear layer effects</MenuItem>
         <Separator />
         <MenuItem shortcut="⌫" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDeleteLayer)}>Delete layer or group</MenuItem>
