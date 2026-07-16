@@ -1,4 +1,5 @@
 import { createRasterSurface, loadImageBlob, surfaceToBlob } from './image'
+import { normalizeLayerFilters } from './filters'
 import { getCanvasPreset, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
 import { flattenStackLayers, getStackChildren } from './stack'
@@ -107,7 +108,10 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     const withContent = normalizedLayer.type === 'smart-object' && normalizedLayer.embeddedDocument
       ? { ...normalizedLayer, embeddedDocument: normalizeDocument(normalizedLayer.embeddedDocument) }
       : normalizedLayer
-    return withContent.groupId && !groupIds.has(withContent.groupId) ? { ...withContent, groupId: null } : withContent
+    const withSmartFilters = withContent.type === 'smart-object'
+      ? { ...withContent, smartFilters: (withContent.smartFilters ?? []).map((filter) => ({ ...filter, settings: normalizeLayerFilters(filter.settings) })) }
+      : withContent
+    return withSmartFilters.groupId && !groupIds.has(withSmartFilters.groupId) ? { ...withSmartFilters, groupId: null } : withSmartFilters
   })
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
   let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }

@@ -1,4 +1,4 @@
-import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsd, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { bakeIccColorLookup } from './icc'
@@ -27,6 +27,15 @@ export function psdSmartObjectSource(placedLayer: PlacedLayer, linkedFile?: Link
     path: linkedFile?.linkedFile?.fullPath || linkedFile?.linkedFile?.relativePath,
     lastModified: linkedFile?.assetModTime,
   }
+}
+
+export function psdSmartFilterSettings(filter: Filter) {
+  const settings = { ...defaultLayerFilters }
+  if (filter.type === 'blur') settings.blur = 2
+  else if (filter.type === 'blur more') settings.blur = 5
+  else if (filter.type === 'box blur' || filter.type === 'gaussian blur') settings.blur = filter.filter.radius.value
+  else if (filter.type === 'sharpen' || filter.type === 'sharpen edges' || filter.type === 'sharpen more' || filter.type === 'smart sharpen' || filter.type === 'unsharp mask') settings.contrast = 125
+  return settings
 }
 
 function revivePsdValue(value: SerializedPsdValue): unknown {
@@ -1038,6 +1047,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
           visible: filter.enabled,
           opacity: Math.round(filter.opacity * 100),
           blendMode: psdBlendMode(filter.blendMode),
+          settings: psdSmartFilterSettings(filter),
           descriptor: serializePsdValue(filter),
         }))
         if (linkedFile?.data?.length && linkedFile.type === '8BPS' && smartObjectDepth < 4) {
@@ -1404,11 +1414,26 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       const transform = quad?.flatMap((point) => [point.x, point.y])
         ?? (bounds ? [bounds.x, bounds.y, bounds.x + bounds.width, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height] : preserved?.transform)
         ?? [0, 0, layer.width, 0, layer.width, layer.height, 0, layer.height]
+      const filter = layer.smartFilters.length ? {
+        enabled: preserved?.filter?.enabled ?? true,
+        validAtPosition: preserved?.filter?.validAtPosition ?? true,
+        maskEnabled: preserved?.filter?.maskEnabled ?? true,
+        maskLinked: preserved?.filter?.maskLinked ?? true,
+        maskExtendWithWhite: preserved?.filter?.maskExtendWithWhite ?? true,
+        list: layer.smartFilters.map((smartFilter) => ({
+          ...revivePsdValue(smartFilter.descriptor) as Filter,
+          name: smartFilter.name,
+          enabled: smartFilter.visible,
+          opacity: smartFilter.opacity / 100,
+          blendMode: studioPsdBlendModes[smartFilter.blendMode],
+        })),
+      } : preserved?.filter
       return {
         ...(preserved ?? { id: layer.source.linkedFileId ?? layer.id, type: 'raster' as const }),
         width: layer.width,
         height: layer.height,
         transform,
+        filter,
       }
     })() : layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined
     const base: Layer = {

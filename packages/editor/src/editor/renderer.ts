@@ -1,5 +1,5 @@
 import { getDocumentSize } from './presets'
-import { layerFilterCss } from './filters'
+import { layerFilterCss, normalizeLayerFilters } from './filters'
 import type { AssetMap } from './runtime-assets'
 import type { RasterRegion } from './raster'
 import { hexToRgba } from './raster'
@@ -334,13 +334,57 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
 }
 
 function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: SmartObjectLayer, assets: AssetMap, resources: RenderResourceRegistry) {
-  if (!layer.transformMatrix) {
-    drawRasterLayer(context, canvas, layer, assets, resources)
-    return
-  }
   const asset = canvasImageResource(resources, assets, layer.assetId)
   const quad = smartObjectSourceQuad(layer)
-  if (!asset || !quad) return
+  if (!asset) return
+  let filteredSource = asset.source
+  for (const filter of layer.smartFilters) {
+    if (!filter.visible) continue
+    const filtered = document.createElement('canvas')
+    filtered.width = layer.width
+    filtered.height = layer.height
+    const filteredContext = filtered.getContext('2d', { willReadFrequently: true })
+    if (!filteredContext) continue
+    filteredContext.filter = layerFilterCss(normalizeLayerFilters(filter.settings))
+    filteredContext.drawImage(filteredSource, 0, 0, layer.width, layer.height)
+    filteredContext.filter = 'none'
+    const mask = filter.maskAssetId ? canvasImageResource(resources, assets, filter.maskAssetId) : null
+    if (mask) {
+      const alphaMask = document.createElement('canvas')
+      alphaMask.width = layer.width
+      alphaMask.height = layer.height
+      const maskContext = alphaMask.getContext('2d', { willReadFrequently: true })
+      if (maskContext) {
+        maskContext.drawImage(mask.source, 0, 0, layer.width, layer.height)
+        const pixels = maskContext.getImageData(0, 0, layer.width, layer.height)
+        for (let index = 0; index < pixels.data.length; index += 4) {
+          const luminance = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114
+          pixels.data[index + 3] = Math.round(luminance * pixels.data[index + 3] / 255)
+        }
+        maskContext.putImageData(pixels, 0, 0)
+        filteredContext.globalCompositeOperation = 'destination-in'
+        filteredContext.drawImage(alphaMask, 0, 0)
+        filteredContext.globalCompositeOperation = 'source-over'
+      }
+    }
+    const composited = document.createElement('canvas')
+    composited.width = layer.width
+    composited.height = layer.height
+    const compositedContext = composited.getContext('2d')
+    if (!compositedContext) continue
+    compositedContext.drawImage(filteredSource, 0, 0, layer.width, layer.height)
+    compositedContext.globalAlpha = filter.opacity / 100
+    compositedContext.globalCompositeOperation = filter.blendMode === 'normal' ? 'source-over' : filter.blendMode
+    compositedContext.drawImage(filtered, 0, 0)
+    filteredSource = composited
+  }
+  if (!layer.transformMatrix || !quad) {
+    const bounds = rasterBounds(canvas, layer)
+    context.globalAlpha = layer.opacity / 100
+    withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => context.drawImage(filteredSource, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height))
+    context.globalAlpha = 1
+    return
+  }
   const center = {
     x: quad.reduce((total, point) => total + point.x, 0) / quad.length,
     y: quad.reduce((total, point) => total + point.y, 0) / quad.length,
@@ -353,7 +397,7 @@ function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCan
   context.scale(layer.scale / 100 * (layer.flipX ? -1 : 1), layer.scale / 100 * (layer.flipY ? -1 : 1))
   context.translate(-center.x, -center.y)
   context.transform(...layer.transformMatrix)
-  context.drawImage(mipmapSource(asset, layer.width, layer.height), 0, 0, layer.width, layer.height)
+  context.drawImage(layer.smartFilters.some((filter) => filter.visible) ? filteredSource : mipmapSource(asset, layer.width, layer.height), 0, 0, layer.width, layer.height)
   context.restore()
 }
 

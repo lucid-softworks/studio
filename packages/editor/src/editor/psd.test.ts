@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { LayerCompCapturedInfo, readPsd, writePsd, type Layer, type Psd } from 'ag-psd'
 import { createLayerGroup, createShapeLayer, createTextLayer, initialDocument } from './presets'
-import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdSmartObjectSource, psdTextLayer, psdVectorMask } from './psd'
+import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdSmartFilterSettings, psdSmartObjectSource, psdTextLayer, psdVectorMask } from './psd'
 import { iccLookupProfile } from './fixtures/icc-fixtures'
 
 Object.assign(globalThis, {
@@ -616,6 +616,13 @@ describe('PSD layer ordering', () => {
       { id: linkedId, type: 'raster', transform: [0, 0, 2, 0, 2, 2, 0, 2] },
       { id: linkedId, name: 'linked.png', linkedFile: { fileSize: 128, name: 'linked.png', fullPath: '/Artwork/linked.png', originalPath: '/Artwork/linked.png', relativePath: './linked.png' } },
     )).toEqual({ kind: 'linked', fileName: 'linked.png', linkedFileId: linkedId, path: '/Artwork/linked.png', lastModified: undefined })
+  })
+
+  it('maps editable PSD smart-filter parameters to local filter settings', () => {
+    expect(psdSmartFilterSettings({
+      type: 'gaussian blur', name: 'Gaussian Blur', enabled: true, opacity: 1, blendMode: 'normal', hasOptions: true,
+      foregroundColor: { r: 0, g: 0, b: 0 }, backgroundColor: { r: 255, g: 255, b: 255 }, filter: { radius: { units: 'Pixels', value: 7 } },
+    })).toMatchObject({ blur: 7, invert: 0, contrast: 100 })
   })
 
   it('opens embedded PSB smart-object contents as a nested document', async () => {

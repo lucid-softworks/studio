@@ -35,13 +35,15 @@ export function backgroundPassSignature(document: EditorDocument, assets: AssetM
 export function layerPassSignature(layer: EditorLayer, assets: AssetMap): string | null {
   if (layer.type === 'text') return null
   const asset = layer.type === 'image' || layer.type === 'raster' || layer.type === 'smart-object' ? assets[layer.assetId] : undefined
-  return JSON.stringify([layer, assetSignature(asset)])
+  const filterMasks = layer.type === 'smart-object' ? layer.smartFilters.map((filter) => assetSignature(filter.maskAssetId ? assets[filter.maskAssetId] : undefined)) : []
+  return JSON.stringify([layer, assetSignature(asset), filterMasks])
 }
 
 export function layerPassStructureSignature(layer: EditorLayer, assets: AssetMap): string | null {
   if (layer.type === 'text') return null
   const asset = layer.type === 'image' || layer.type === 'raster' || layer.type === 'smart-object' ? assets[layer.assetId] : undefined
-  return JSON.stringify([layer, assetSignature(asset, false)])
+  const filterMasks = layer.type === 'smart-object' ? layer.smartFilters.map((filter) => assetSignature(filter.maskAssetId ? assets[filter.maskAssetId] : undefined, false)) : []
+  return JSON.stringify([layer, assetSignature(asset, false), filterMasks])
 }
 
 export function maskedLayerPassSignature(layer: EditorLayer, assets: AssetMap): string | null {

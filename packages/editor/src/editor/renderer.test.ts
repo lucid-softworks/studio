@@ -90,6 +90,34 @@ describe('smart-object rendering', () => {
     expect(canvas.getContext('2d')!.getImageData(1, 1, 1, 1).data[3]).toBe(0)
     expect(source.width).toBe(2)
   })
+
+  it('evaluates ordered smart filters through their opacity, blend, and mask settings', () => {
+    const source = createCanvas(2, 1)
+    const sourceContext = source.getContext('2d')!
+    sourceContext.fillStyle = '#ff0000'
+    sourceContext.fillRect(0, 0, 2, 1)
+    const mask = createCanvas(2, 1)
+    const maskContext = mask.getContext('2d')!
+    maskContext.fillStyle = '#ffffff'
+    maskContext.fillRect(0, 0, 1, 1)
+    maskContext.fillStyle = '#000000'
+    maskContext.fillRect(1, 0, 1, 1)
+    const layer = createSmartObjectLayer('smart-source', 'Filtered', 2, 1, { kind: 'embedded', fileName: 'filtered.psb' })
+    layer.transformMatrix = [3, 0, 0, 3, 1, 1]
+    layer.smartFilters = [{
+      id: 'invert', name: 'Invert', visible: true, opacity: 100, blendMode: 'normal', maskAssetId: 'filter-mask',
+      settings: { brightness: 100, contrast: 100, saturation: 100, hue: 0, grayscale: 0, sepia: 0, invert: 100, blur: 0 },
+      descriptor: { type: 'invert' },
+    }]
+    const canvas = createCanvas(8, 5) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 8, height: 5 }, layers: [layer] }, {
+      'smart-source': { element: source as unknown as HTMLImageElement, surface: source as unknown as HTMLCanvasElement, name: 'Filtered' },
+      'filter-mask': { element: mask as unknown as HTMLImageElement, surface: mask as unknown as HTMLCanvasElement, name: 'Mask' },
+    })
+
+    expect([...canvas.getContext('2d')!.getImageData(2, 2, 1, 1).data]).toEqual([0, 255, 255, 255])
+    expect([...canvas.getContext('2d')!.getImageData(5, 2, 1, 1).data]).toEqual([255, 0, 0, 255])
+  })
 })
 
 describe('advanced adjustment layers', () => {

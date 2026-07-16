@@ -129,6 +129,7 @@ export type SmartFilter = {
   opacity: number
   blendMode: BlendMode
   maskAssetId?: string | null
+  settings: LayerFilters
   descriptor: SerializedPsdValue
 }
 
