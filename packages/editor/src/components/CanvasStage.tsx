@@ -179,8 +179,16 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const [perspectiveCrop, setPerspectiveCrop] = useState<[Position, Position, Position, Position]>(() => [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 700 }, { x: 100, y: 700 }])
   const [measurement, setMeasurement] = useState<Measurement | null>(null)
   const [isPanning, setIsPanning] = useState(false)
+  const [splitView, setSplitView] = useState(false)
+  const [viewsLinked, setViewsLinked] = useState(true)
+  const [viewRotation, setViewRotation] = useState(0)
+  const [secondaryZoom, setSecondaryZoom] = useState(100)
+  const [secondaryRotation, setSecondaryRotation] = useState(0)
   const stageRef = useRef<HTMLDivElement>(null)
+  const secondaryCanvasRef = useRef<HTMLCanvasElement>(null)
   const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
+  const zoomScrubRef = useRef<{ pointerId: number; x: number; zoom: number; moved: boolean } | null>(null)
+  const suppressZoomResetRef = useRef(false)
   const preset = getDocumentSize(document)
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
@@ -200,6 +208,50 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   useEffect(() => { if (tool !== 'crop') setCropSelection(null) }, [tool])
   useEffect(() => { if (tool === 'perspective-crop') setPerspectiveCrop([{ x: preset.width * 0.1, y: preset.height * 0.1 }, { x: preset.width * 0.9, y: preset.height * 0.1 }, { x: preset.width * 0.9, y: preset.height * 0.9 }, { x: preset.width * 0.1, y: preset.height * 0.9 }]) }, [preset.height, preset.width, tool])
   useEffect(() => { if (editingMaskLayerId) onToolChange('brush') }, [editingMaskLayerId, onToolChange])
+
+  useEffect(() => {
+    if (!splitView) return
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const source = canvasRef.current
+        const target = secondaryCanvasRef.current
+        const context = target?.getContext('2d')
+        if (!source || !target || !context) return
+        target.width = source.width
+        target.height = source.height
+        context.clearRect(0, 0, target.width, target.height)
+        context.drawImage(source, 0, 0)
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
+    }
+  })
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const scrub = zoomScrubRef.current
+      if (!scrub || scrub.pointerId !== event.pointerId) return
+      if (Math.abs(event.clientX - scrub.x) > 2) scrub.moved = true
+      setZoom(Math.max(25, Math.min(400, Math.round(scrub.zoom + (event.clientX - scrub.x) * 1.5))))
+    }
+    const onPointerUp = (event: PointerEvent) => {
+      if (zoomScrubRef.current?.pointerId === event.pointerId) {
+        suppressZoomResetRef.current = zoomScrubRef.current.moved
+        zoomScrubRef.current = null
+      }
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+    }
+  }, [setZoom])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -414,9 +466,15 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <button type="button" disabled={!canRedo} aria-label="Redo" onClick={onRedo} className="flex size-7 items-center justify-center rounded-md text-zinc-500 hover:bg-white/[0.05] disabled:opacity-20"><RedoIcon className="size-3.5" /></button>
           </div>
           <div className="hidden font-mono text-[9px] text-zinc-700 sm:block">{preset.width} × {preset.height}</div>
+          <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 xl:flex">
+            <button type="button" aria-label="Rotate view left" title="Rotate view left" onClick={() => setViewRotation((value) => value - 15)} className="flex h-6 items-center rounded px-1.5 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">↶</button>
+            <button type="button" title="Reset view rotation" onClick={() => setViewRotation(0)} className="min-w-10 px-1 font-mono text-[9px] text-zinc-500">{viewRotation}°</button>
+            <button type="button" aria-label="Rotate view right" title="Rotate view right" onClick={() => setViewRotation((value) => value + 15)} className="flex h-6 items-center rounded px-1.5 text-[9px] text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">↷</button>
+            <button type="button" aria-pressed={splitView} onClick={() => setSplitView((value) => !value)} className={`ml-1 rounded px-1.5 py-1 text-[9px] ${splitView ? 'bg-violet-400/15 text-violet-200' : 'text-zinc-600 hover:text-zinc-300'}`}>Split</button>
+          </div>
           <div className="flex items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5">
             <button type="button" aria-label="Zoom out" onClick={() => changeZoom('out')} className="flex size-6 items-center justify-center rounded text-xs text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">−</button>
-            <button type="button" title="Reset zoom" onClick={() => setZoom(100)} className="w-10 text-center font-mono text-[9px] text-zinc-500">{zoom}%</button>
+            <button type="button" title="Drag horizontally for scrubby zoom · click to reset" onClick={() => { if (suppressZoomResetRef.current) { suppressZoomResetRef.current = false; return } setZoom(100) }} onPointerDown={(event) => { zoomScrubRef.current = { pointerId: event.pointerId, x: event.clientX, zoom, moved: false }; event.currentTarget.setPointerCapture(event.pointerId) }} className="w-10 cursor-ew-resize text-center font-mono text-[9px] text-zinc-500">{zoom}%</button>
             <button type="button" aria-label="Zoom in" onClick={() => changeZoom('in')} className="flex size-6 items-center justify-center rounded text-xs text-zinc-600 hover:bg-white/[0.05] hover:text-zinc-300">+</button>
           </div>
         </div>
@@ -432,11 +490,9 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       >
         <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} guides={document.guides} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(79,70,229,0.08),transparent_42%)]" />
-        <div
-          className="relative z-10 flex w-full max-w-full shrink-0 items-center justify-center transition-transform duration-150"
-          style={{ aspectRatio: `${preset.width} / ${preset.height}`, transform: `scale(${zoom / 100})` }}
-        >
-          <div className="transparency-grid relative inline-flex max-h-full max-w-full">
+        <div className={`relative z-10 grid w-full max-w-full shrink-0 items-center gap-3 ${splitView ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          <div className="flex min-w-0 items-center justify-center transition-transform duration-150" style={{ aspectRatio: `${preset.width} / ${preset.height}`, transform: `scale(${zoom / 100}) rotate(${viewRotation}deg)` }}>
+            <div className="transparency-grid relative inline-flex max-h-full max-w-full">
             <canvas
               ref={canvasRef}
               width={preset.width}
@@ -460,7 +516,17 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
             <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
+            </div>
           </div>
+          {splitView && <div className="relative flex min-w-0 items-center justify-center overflow-hidden rounded-md border border-white/[0.08] bg-black/20 p-3">
+            <div className="absolute top-2 left-2 z-10 flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#111113]/95 p-1 shadow-lg">
+              <button type="button" aria-pressed={viewsLinked} onClick={() => setViewsLinked((value) => !value)} className={`rounded px-1.5 py-1 text-[9px] ${viewsLinked ? 'bg-violet-400/15 text-violet-200' : 'text-zinc-500 hover:text-zinc-200'}`}>{viewsLinked ? 'Linked' : 'Unlinked'}</button>
+              {!viewsLinked && <><button type="button" aria-label="Secondary zoom out" onClick={() => setSecondaryZoom((value) => Math.max(25, value - 25))} className="rounded px-1 text-zinc-500 hover:text-zinc-200">−</button><span className="w-8 text-center font-mono text-[8px] text-zinc-500">{secondaryZoom}%</span><button type="button" aria-label="Secondary zoom in" onClick={() => setSecondaryZoom((value) => Math.min(400, value + 25))} className="rounded px-1 text-zinc-500 hover:text-zinc-200">+</button><button type="button" aria-label="Rotate secondary view" onClick={() => setSecondaryRotation((value) => value + 15)} className="rounded px-1 text-[10px] text-zinc-500 hover:text-zinc-200">↷</button></>}
+            </div>
+            <div className="transparency-grid inline-flex max-h-full max-w-full transition-transform duration-150" style={{ transform: `scale(${(viewsLinked ? zoom : secondaryZoom) / 100}) rotate(${viewsLinked ? viewRotation : secondaryRotation}deg)` }}>
+              <canvas ref={secondaryCanvasRef} width={preset.width} height={preset.height} aria-label="Linked composition view" className="block h-auto w-auto max-h-[calc(100vh-230px)] max-w-full rounded-sm shadow-[0_20px_55px_rgba(0,0,0,0.45)]" />
+            </div>
+          </div>}
         </div>
 
         {isDraggingFile && (

@@ -129,7 +129,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add transform-again, numeric reference points, and precise interpolation controls
 - [ ] Add artboards, artboard export, and per-artboard backgrounds
 - [x] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
-- [ ] Add linked views, split views, navigator, rotate view, and scrubby zoom
+- [x] Add linked views, split views, navigator, rotate view, and scrubby zoom
 - [ ] Add configurable grids, guide layouts, smart guides, and reusable workspace layouts
 
 ## M6 — adjustments, filters, and color
