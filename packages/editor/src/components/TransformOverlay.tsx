@@ -95,6 +95,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const preview = previewCanvasRef.current
     if (!canvas || !preview) return
     previewCleanupRef.current?.()
+    canvas.dispatchEvent(new CustomEvent('studio:transform-preview-start'))
     const ids = new Set(movingIds)
     const previewDocument: EditorDocument = {
       ...document,
@@ -158,6 +159,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     canvas.addEventListener('studio:canvas-rendered', rendered, { once: true })
     previewCleanupRef.current = cleanup
   }
+
+  const resumeCanvasRenderer = () => canvas?.dispatchEvent(new CustomEvent('studio:transform-preview-end'))
 
   const startResize = (event: ReactPointerEvent<SVGRectElement>, handle: ResizeHandle) => {
     if (!activeLayer || !activeBounds || layerIsLocked(document, activeLayer) || !canvas) return
@@ -295,25 +298,31 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       const dy = interaction.lastDy / (canvas?.height ?? 1)
       if (interaction.lastDx === 0 && interaction.lastDy === 0) {
         if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
         dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) })
+        resumeCanvasRenderer()
         schedulePreviewCleanup()
       }
     } else if (interaction.mode === 'resize') {
       if (Object.keys(interaction.lastPatch).length === 0) {
         if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
         dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: interaction.lastPatch })
+        resumeCanvasRenderer()
         schedulePreviewCleanup()
       }
     } else if (interaction.mode === 'rotate') {
       if (interaction.lastRotation === interaction.layer.rotation) {
         if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
         dispatch({ type: 'update-layer', id: interaction.layerId, patch: { rotation: interaction.lastRotation } })
+        resumeCanvasRenderer()
         schedulePreviewCleanup()
       }
     }

@@ -15,6 +15,7 @@ export function useCanvasRenderer(
   const typegpuRenderer = useRef<{ root: NonNullable<ReturnType<typeof getTypeGpuRoot>>; renderer: CompositionRenderer } | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const workerFailedRef = useRef(false)
+  const renderSuspendedRef = useRef(false)
   const requestRef = useRef(0)
   const latestFrameRef = useRef({ document, assets })
   latestFrameRef.current = { document, assets }
@@ -29,7 +30,7 @@ export function useCanvasRenderer(
     const worker = new Worker(new URL('./workers/composition.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = (event: MessageEvent<WorkerCompositionResponse>) => {
       const response = event.data
-      if (response.id !== requestRef.current) {
+      if (response.id !== requestRef.current || renderSuspendedRef.current) {
         response.frame.close()
         return
       }
@@ -51,7 +52,10 @@ export function useCanvasRenderer(
       worker.terminate()
       if (workerRef.current === worker) workerRef.current = null
       const canvas = canvasRef.current
-      if (canvas) { canvas2dCompositionRenderer.render(canvas, latestFrameRef.current.document, latestFrameRef.current.assets); markRendered(canvas, requestRef.current) }
+      if (canvas && !renderSuspendedRef.current) {
+        canvas2dCompositionRenderer.render(canvas, latestFrameRef.current.document, latestFrameRef.current.assets)
+        markRendered(canvas, requestRef.current)
+      }
     }
     workerRef.current = worker
     return worker
@@ -67,6 +71,22 @@ export function useCanvasRenderer(
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const suspend = () => {
+      renderSuspendedRef.current = true
+      requestRef.current += 1
+    }
+    const resume = () => { renderSuspendedRef.current = false }
+    canvas.addEventListener('studio:transform-preview-start', suspend)
+    canvas.addEventListener('studio:transform-preview-end', resume)
+    return () => {
+      canvas.removeEventListener('studio:transform-preview-start', suspend)
+      canvas.removeEventListener('studio:transform-preview-end', resume)
+    }
+  }, [canvasRef])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
     const root = activeRenderer === 'webgpu' ? getTypeGpuRoot() : null
     if (root && typegpuRenderer.current?.root !== root) {
       typegpuRenderer.current?.renderer.dispose()
@@ -77,6 +97,7 @@ export function useCanvasRenderer(
     requestRef.current = requestId
     let cancelled = false
     const frame = requestAnimationFrame(() => {
+      if (renderSuspendedRef.current) return
       const supportsWorker = !root
         && !workerFailedRef.current
         && typeof Worker !== 'undefined'
@@ -94,7 +115,7 @@ export function useCanvasRenderer(
         revision: asset.revision ?? 0,
         bitmap: await createImageBitmap(asset.surface ?? asset.element),
       }))).then((workerAssets) => {
-        if (cancelled || requestId !== requestRef.current) {
+        if (cancelled || requestId !== requestRef.current || renderSuspendedRef.current) {
           workerAssets.forEach((asset) => asset.bitmap.close())
           return
         }
@@ -108,7 +129,7 @@ export function useCanvasRenderer(
         const request: WorkerCompositionRequest = { id: requestId, document, assets: workerAssets }
         worker.postMessage(request, workerAssets.map((asset) => asset.bitmap))
       }).catch(() => {
-        if (!cancelled && requestId === requestRef.current) { renderer.render(canvas, document, assets); markRendered(canvas, requestId) }
+        if (!cancelled && requestId === requestRef.current && !renderSuspendedRef.current) { renderer.render(canvas, document, assets); markRendered(canvas, requestId) }
       })
     })
     return () => {
