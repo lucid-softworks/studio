@@ -2,6 +2,7 @@ import { createRasterSurface, loadImageBlob, surfaceToBlob } from './image'
 import { normalizeLayerFilters } from './filters'
 import { getCanvasPreset, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
+import type { RasterRegion } from './raster'
 import { flattenStackLayers, getStackChildren } from './stack'
 import { EDITOR_DOCUMENT_SCHEMA_VERSION, type EditorDocument } from './types'
 
@@ -10,9 +11,9 @@ const DATABASE_NAME = 'studio-client-projects'
 const STORE_NAME = 'recovery'
 const RECOVERY_KEY = 'current-document'
 
-type StoredAsset = { id: string; name: string; blob: Blob; precision?: Blob; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
+type StoredAsset = { id: string; name: string; blob: Blob; contentBounds?: RasterRegion | null; precision?: Blob; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
 type StoredProject = { version: number; savedAt: string; document: unknown; assets: StoredAsset[] }
-type PortableAsset = { id: string; name: string; data: string; precision?: string; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
+type PortableAsset = { id: string; name: string; data: string; contentBounds?: RasterRegion | null; precision?: string; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
 type PortableProject = { app: 'studio'; version: number; savedAt: string; document: unknown; assets: PortableAsset[] }
 
 export type LoadedProject = { document: EditorDocument; assets: AssetMap; savedAt?: string }
@@ -38,6 +39,14 @@ const documentMigrations = new Map<number, DocumentMigration>([
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isRasterRegion(value: unknown): value is RasterRegion {
+  return isRecord(value)
+    && typeof value.x === 'number' && Number.isFinite(value.x)
+    && typeof value.y === 'number' && Number.isFinite(value.y)
+    && typeof value.width === 'number' && Number.isFinite(value.width) && value.width >= 0
+    && typeof value.height === 'number' && Number.isFinite(value.height) && value.height >= 0
 }
 
 function documentVersion(value: UnknownRecord, projectVersion: number) {
@@ -176,6 +185,8 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
   const entries = await Promise.all(assets.map(async (asset) => {
     const source = await loadImageBlob(asset.blob, asset.name)
     const hydrated = rasterAssetIds.has(asset.id) ? createRasterSurface(source) : source
+    if (asset.contentBounds === null) hydrated.contentBounds = null
+    else if (isRasterRegion(asset.contentBounds)) hydrated.contentBounds = { ...asset.contentBounds }
     if (asset.precision && (asset.bitDepth === 16 || asset.bitDepth === 32) && asset.precisionWidth && asset.precisionHeight) {
       const buffer = await asset.precision.arrayBuffer()
       hydrated.precision = {
@@ -211,6 +222,7 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
       id,
       name: asset.name,
       blob,
+      contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
       precision: precisionBlob,
       bitDepth: precision?.bitDepth,
       precisionWidth: precision?.width,
@@ -245,6 +257,7 @@ export async function serializeProject(document: EditorDocument, assets: AssetMa
     id: asset.id,
     name: asset.name,
     data: await blobToDataUrl(asset.blob),
+    contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
     precision: asset.precision ? await blobToDataUrl(asset.precision) : undefined,
     bitDepth: asset.bitDepth,
     precisionWidth: asset.precisionWidth,
@@ -268,7 +281,9 @@ export async function parseProjectFile(file: File): Promise<LoadedProject> {
   if (parsed.version < 1 || parsed.version > STUDIO_PROJECT_VERSION || !Array.isArray(parsed.assets)) {
     throw new Error('That Studio project version is not supported.')
   }
-  const portableAssets = parsed.assets.every((asset) => isRecord(asset) && typeof asset.id === 'string' && typeof asset.name === 'string' && typeof asset.data === 'string')
+  const portableAssets = parsed.assets.every((asset) => isRecord(asset)
+    && typeof asset.id === 'string' && typeof asset.name === 'string' && typeof asset.data === 'string'
+    && (!('contentBounds' in asset) || asset.contentBounds === null || isRasterRegion(asset.contentBounds)))
     ? parsed.assets as PortableAsset[]
     : null
   if (!portableAssets) throw new Error('The Studio project contains invalid asset data.')
@@ -279,6 +294,7 @@ export async function parseProjectFile(file: File): Promise<LoadedProject> {
       id: asset.id,
       name: asset.name,
       blob: await response.blob(),
+      contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
       precision: precisionResponse ? await precisionResponse.blob() : undefined,
       bitDepth: asset.bitDepth,
       precisionWidth: asset.precisionWidth,

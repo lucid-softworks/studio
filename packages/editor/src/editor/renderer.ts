@@ -311,7 +311,7 @@ function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
   context.globalAlpha = 1
 }
 
-function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer | SmartObjectLayer): LayerBounds {
+export function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer | SmartObjectLayer): LayerBounds {
   const width = layer.width * layer.scale / 100
   const height = layer.height * layer.scale / 100
   return {
@@ -1769,7 +1769,23 @@ export function getLayerBounds(
     const asset = assets[layer.assetId]
     return asset ? calculateImageRect(canvas.width, canvas.height, asset.element.naturalWidth, asset.element.naturalHeight, layer) : null
   }
-  if (layer.type === 'raster') return rasterBounds(canvas, layer)
+  if (layer.type === 'raster') {
+    const asset = assets[layer.assetId]
+    if (asset?.contentBounds === null) return null
+    const bounds = rasterBounds(canvas, layer)
+    const content = asset?.contentBounds
+    const sourceWidth = asset?.surface?.width ?? 0
+    const sourceHeight = asset?.surface?.height ?? 0
+    if (!content || sourceWidth === 0 || sourceHeight === 0) return bounds
+    const localWidth = content.width / sourceWidth * bounds.width
+    const localHeight = content.height / sourceHeight * bounds.height
+    const localCenterX = ((content.x + content.width / 2) / sourceWidth - 0.5) * bounds.width * (layer.flipX ? -1 : 1)
+    const localCenterY = ((content.y + content.height / 2) / sourceHeight - 0.5) * bounds.height * (layer.flipY ? -1 : 1)
+    const angle = bounds.rotation * Math.PI / 180
+    const centerX = bounds.x + bounds.width / 2 + localCenterX * Math.cos(angle) - localCenterY * Math.sin(angle)
+    const centerY = bounds.y + bounds.height / 2 + localCenterX * Math.sin(angle) + localCenterY * Math.cos(angle)
+    return { x: centerX - localWidth / 2, y: centerY - localHeight / 2, width: localWidth, height: localHeight, rotation: bounds.rotation }
+  }
   if (layer.type === 'smart-object') {
     const quad = smartObjectDisplayQuad(layer, canvas.width, canvas.height)
     return quad ? { ...quadBounds(quad), rotation: 0 } : rasterBounds(canvas, layer)

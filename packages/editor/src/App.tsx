@@ -8,7 +8,7 @@ import { ToolRail, type EditorTool } from './components/ToolRail'
 import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
 import { hasEnabledLayerEffects } from './editor/effects'
-import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
+import { alphaBoundsInRegion, cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, mergeRasterBounds, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createSmartObjectLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { calculateImageRect, getLayerBounds } from './editor/renderer'
@@ -492,7 +492,15 @@ function App({ onExit }: AppProps) {
       const dirtyRegions = region
         ? [...(asset.dirtyRegions ?? []), { revision, region }].slice(-64)
         : asset.dirtyRegions
-      return { ...current, [assetId]: { ...asset, revision, dirtyRegions } }
+      const changedBounds = region && asset.surface ? alphaBoundsInRegion(asset.surface, region) : null
+      const coversCurrentBounds = Boolean(region && asset.contentBounds
+        && region.x <= asset.contentBounds.x && region.y <= asset.contentBounds.y
+        && region.x + region.width >= asset.contentBounds.x + asset.contentBounds.width
+        && region.y + region.height >= asset.contentBounds.y + asset.contentBounds.height)
+      const contentBounds = asset.contentBounds === undefined
+        ? undefined
+        : coversCurrentBounds ? changedBounds : mergeRasterBounds(asset.contentBounds, changedBounds)
+      return { ...current, [assetId]: { ...asset, revision, dirtyRegions, contentBounds } }
     })
   }, [])
 
@@ -774,6 +782,7 @@ function App({ onExit }: AppProps) {
           const croppedContext = cropped.surface?.getContext('2d', { willReadFrequently: true })
           if (croppedContext) {
             croppedContext.drawImage(oldSurface, left / canvas.width * oldSurface.width, top / canvas.height * oldSurface.height, width / canvas.width * oldSurface.width, height / canvas.height * oldSurface.height, 0, 0, width, height)
+            cropped.contentBounds = undefined
             nextAssets[maskAssetId] = cropped
             patch.maskAssetId = maskAssetId
           }
@@ -800,6 +809,7 @@ function App({ onExit }: AppProps) {
     const assetId = createId()
     const source = createEmptyRasterSource(width, height, 'Perspective crop pixels')
     source.surface?.getContext('2d')?.putImageData(pixels, 0, 0)
+    source.contentBounds = undefined
     const layer = createRasterLayer(assetId, 'Perspective Crop', width, height)
     setAssets((current) => ({ ...current, [assetId]: source }))
     dispatch({ type: 'replace-document', document: { ...document, canvasPreset: 'custom', canvasSize: { width, height }, background: { ...document.background, kind: 'transparent' }, groups: [], layers: [layer], selectedLayerId: layer.id, selectedLayerIds: [layer.id], selectedGroupId: null, channels: [], paths: [], selectedPathId: null } })
@@ -827,6 +837,7 @@ function App({ onExit }: AppProps) {
       const assetId = createId()
       const source = createEmptyRasterSource(output.width, output.height, `${layer.name} content-aware pixels`)
       source.surface?.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(output.data), output.width, output.height), 0, 0)
+      source.contentBounds = undefined
       setAssets((current) => ({ ...current, [assetId]: source }))
       dispatch({ type: 'update-layer', id: layer.id, patch: { assetId, width: output.width, height: output.height, scale: 100 } })
       setNotice(`Content-aware scaled ${layer.name} to ${output.width} × ${output.height}px.`, 'success')
@@ -955,6 +966,7 @@ function App({ onExit }: AppProps) {
             }
             context.drawImage(source.surface, 0, 0, oldWidth, oldHeight)
             context.restore()
+            transformed.contentBounds = undefined
             nextAssets[assetId] = transformed
             patch.maskAssetId = assetId
           }
@@ -990,6 +1002,7 @@ function App({ onExit }: AppProps) {
     const assetId = createId()
     const source = createEmptyRasterSource(width, height, `${layer.name} pixels`)
     source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
+    source.contentBounds = undefined
     const raster = {
       ...createRasterLayer(assetId, layer.name, width, height),
       id: layer.id,
@@ -1035,6 +1048,7 @@ function App({ onExit }: AppProps) {
     const assetId = createId()
     const source = createEmptyRasterSource(width, height, `${layer.name} smart-object preview`)
     source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
+    source.contentBounds = undefined
     const smartObject = {
       ...createSmartObjectLayer(assetId, layer.name, width, height, { kind: 'embedded', fileName: `${layer.name}.studio` }),
       transformMatrix: [1, 0, 0, 1, 0, 0] as [number, number, number, number, number, number],
@@ -1292,6 +1306,7 @@ function App({ onExit }: AppProps) {
       pixels.data[offset + 3] = 255
     }
     context.putImageData(pixels, 0, 0)
+    source.contentBounds = undefined
     const assetId = createId()
     const id = Math.max(1, ...((document.channels ?? []).map((channel) => channel.id ?? 0))) + 1
     setAssets((current) => ({ ...current, [assetId]: source }))
@@ -1358,6 +1373,7 @@ function App({ onExit }: AppProps) {
       context.drawImage(input, -size.width / 2, -size.height / 2, size.width, size.height)
       context.restore()
     }
+    transformed.contentBounds = undefined
     const assetId = createId()
     setAssets((current) => ({ ...current, [assetId]: transformed }))
     dispatch({ type: 'set-channels', channels: (document.channels ?? []).map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, assetId } : candidate) })

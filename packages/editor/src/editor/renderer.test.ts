@@ -1,8 +1,9 @@
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { createShapeLayer, createSmartObjectLayer, initialDocument } from './presets'
+import { createRasterLayer, createShapeLayer, createSmartObjectLayer, initialDocument } from './presets'
 import { defaultLayerEffects } from './effects'
-import { calculateImageRect, clearSmartFilterResultCache, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel, smartFilterResultCacheSize } from './renderer'
+import { calculateImageRect, clearSmartFilterResultCache, findResizeHandle, getLayerBounds, getResizeHandles, renderComposition, selectMipmapLevel, smartFilterResultCacheSize } from './renderer'
+import { resolveRasterTarget } from './raster-target'
 import type { ImageLayer } from './types'
 
 Object.assign(globalThis, {
@@ -33,6 +34,33 @@ describe('mipmap selection', () => {
     expect(selectMipmapLevel(4096, 2048, 512, 256)).toBe(3)
     expect(selectMipmapLevel(4096, 2048, 4096, 256)).toBe(0)
     expect(selectMipmapLevel(65_536, 65_536, 1, 1)).toBe(8)
+  })
+})
+
+describe('raster content bounds', () => {
+  it('does not expose transform handles for a known-empty raster layer', () => {
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const surface = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const layer = createRasterLayer('blank', 'Blank', 100, 100)
+    const asset = { element: {} as HTMLImageElement, name: 'Blank', surface, contentBounds: null }
+    expect(getLayerBounds(canvas.getContext('2d')!, canvas, layer, { blank: asset })).toBeNull()
+  })
+
+  it('keeps a known-empty raster layer available to painting tools', () => {
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const surface = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const layer = createRasterLayer('blank', 'Blank', 100, 100)
+    const asset = { element: {} as HTMLImageElement, name: 'Blank', surface, contentBounds: null }
+    const target = resolveRasterTarget(canvas, { ...initialDocument, layers: [layer], selectedLayerId: layer.id, selectedLayerIds: [layer.id] }, { blank: asset })
+    expect(target?.bounds).toEqual({ x: 0, y: 0, width: 100, height: 100, rotation: 0 })
+  })
+
+  it('maps indexed pixel bounds into the document transform', () => {
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const surface = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const layer = createRasterLayer('paint', 'Paint', 100, 100)
+    const asset = { element: {} as HTMLImageElement, name: 'Paint', surface, contentBounds: { x: 20, y: 30, width: 40, height: 20 } }
+    expect(getLayerBounds(canvas.getContext('2d')!, canvas, layer, { paint: asset })).toEqual({ x: 20, y: 30, width: 40, height: 20, rotation: 0 })
   })
 })
 

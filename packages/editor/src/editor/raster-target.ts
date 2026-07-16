@@ -1,4 +1,4 @@
-import { getLayerBounds, type LayerBounds } from './renderer'
+import { rasterBounds, type LayerBounds } from './renderer'
 import { selectionAlphaAt } from './selection'
 import type { AssetMap } from './runtime-assets'
 import type { EditorDocument, Position, RasterLayer } from './types'
@@ -28,8 +28,7 @@ export function resolveRasterTarget(canvas: HTMLCanvasElement, documentState: Ed
     scale: 100,
   } : selected
   const surface = layer ? assets[layer.assetId]?.surface : undefined
-  const context = canvas.getContext('2d')
-  const bounds = layer && context ? getLayerBounds(context, canvas, layer, assets) : null
+  const bounds = layer ? rasterBounds(canvas, layer) : null
   return layer && surface && bounds ? { layer, surface, bounds, locked: Boolean(locked || layer.locked) } : null
 }
 

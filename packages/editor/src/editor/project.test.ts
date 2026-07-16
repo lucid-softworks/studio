@@ -110,12 +110,13 @@ describe('Studio project migrations', () => {
         element: {} as HTMLImageElement,
         name: 'Pixels',
         blob: new Blob([Uint8Array.from([1])], { type: 'image/png' }),
+        contentBounds: null,
         precision: { bitDepth: 16, width: 1, height: 1, data: Uint16Array.from([1, 32768, 65535, 65535]), revision: 0 },
       },
     }
     const serialized = JSON.parse(await serializeProject(document, assets)) as { assets: Array<Record<string, unknown>> }
 
-    expect(serialized.assets[0]).toMatchObject({ bitDepth: 16, precisionWidth: 1, precisionHeight: 1, precisionRevision: 0 })
+    expect(serialized.assets[0]).toMatchObject({ contentBounds: null, bitDepth: 16, precisionWidth: 1, precisionHeight: 1, precisionRevision: 0 })
     expect(String(serialized.assets[0].precision)).toMatch(/^data:/)
   })
 

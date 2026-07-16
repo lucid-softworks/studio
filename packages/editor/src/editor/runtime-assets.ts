@@ -12,6 +12,8 @@ export type SourceImage = {
   surface?: HTMLCanvasElement
   revision?: number
   dirtyRegions?: Array<{ revision: number; region: RasterRegion }>
+  /** `null` is a known-empty surface; `undefined` means bounds have not been indexed. */
+  contentBounds?: RasterRegion | null
   objectUrl?: string
   isDemo?: boolean
   precision?: {
