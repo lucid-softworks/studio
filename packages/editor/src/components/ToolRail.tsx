@@ -184,6 +184,7 @@ export function ToolRail({ tool, onChange, shortcuts, pluginTools }: ToolRailPro
         <div key={item.id} className={`shrink-0 ${item.divider ? 'ml-1.5 border-l border-white/[0.07] pl-1.5 lg:mt-1.5 lg:ml-0 lg:border-t lg:border-l-0 lg:pt-1.5 lg:pl-0' : ''}`}>
           <button
             type="button"
+            data-tool-id={item.id}
             title={`${item.label}${binding ? ` (${shortcutLabel(binding)})` : ''}`}
             aria-label={`${item.label} tool`}
             aria-pressed={tool === item.id}
