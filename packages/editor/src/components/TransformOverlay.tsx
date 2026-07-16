@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { findLayerAtPoint, getLayerBounds, type LayerBounds, type ResizeHandle } from '../editor/renderer'
+import { canvas2dCompositionRenderer } from '../editor/rendering/composition-renderer'
 import { layerIsLocked, layerIsVisible } from '../editor/stack'
 import { calculateLayerResize, calculateRotation, normalizeGeometryTransform, type TransformResizeSnapshot } from '../editor/transform'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -16,7 +17,7 @@ type Props = {
 }
 
 type Interaction =
-  | { mode: 'move'; pointerId: number; start: Position; bounds: SnapBounds; layers: Array<{ id: string; position: Position }> }
+  | { mode: 'move'; pointerId: number; start: Position; bounds: SnapBounds; layers: Array<{ id: string; position: Position }>; xTargets: number[]; yTargets: number[]; gridSpacing?: number; lastDx: number; lastDy: number }
   | { mode: 'resize'; pointerId: number; snapshot: TransformResizeSnapshot }
   | { mode: 'rotate'; pointerId: number; layerId: string; bounds: LayerBounds; pointerOffset: number }
   | { mode: 'distort'; pointerId: number; layerId: string; bounds: LayerBounds; cornerIndex: number; source: ReturnType<typeof normalizeGeometryTransform>; perspective: boolean }
@@ -34,8 +35,12 @@ const handles: Array<{ id: ResizeHandle; x: number; y: number; cursor: string }>
 
 export function TransformOverlay({ canvasRef, document, assets, dispatch, endHistoryGroup, enabled = true }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null)
+  const movingSelectionRef = useRef<SVGGElement>(null)
+  const xGuideRef = useRef<SVGLineElement>(null)
+  const yGuideRef = useRef<SVGLineElement>(null)
+  const previewCleanupRef = useRef<(() => void) | null>(null)
   const [displayWidth, setDisplayWidth] = useState(0)
-  const [smartGuides, setSmartGuides] = useState<{ x?: number; y?: number }>({})
   const interactionRef = useRef<Interaction | null>(null)
   const canvas = canvasRef.current
   const context = canvas?.getContext('2d') ?? null
@@ -69,6 +74,62 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
 
   const capture = (event: ReactPointerEvent<SVGElement>) => {
     try { svgRef.current?.setPointerCapture(event.pointerId) } catch { /* Synthetic browser events do not expose pointer capture. */ }
+  }
+
+  const updateSmartGuides = (x?: number, y?: number) => {
+    const xGuide = xGuideRef.current
+    const yGuide = yGuideRef.current
+    if (xGuide) {
+      xGuide.style.display = x === undefined ? 'none' : 'block'
+      if (x !== undefined) { xGuide.setAttribute('x1', String(x)); xGuide.setAttribute('x2', String(x)) }
+    }
+    if (yGuide) {
+      yGuide.style.display = y === undefined ? 'none' : 'block'
+      if (y !== undefined) { yGuide.setAttribute('y1', String(y)); yGuide.setAttribute('y2', String(y)) }
+    }
+  }
+
+  const prepareMovePreview = (movingIds: string[]) => {
+    const preview = previewCanvasRef.current
+    if (!canvas || !preview) return
+    previewCleanupRef.current?.()
+    const ids = new Set(movingIds)
+    const previewDocument: EditorDocument = {
+      ...document,
+      background: { ...document.background, kind: 'transparent', imageAssetId: null },
+      pattern: { ...document.pattern, kind: 'none' },
+      layers: document.layers.map((layer) => ids.has(layer.id) ? layer : { ...layer, visible: false }),
+      selectedLayerId: null,
+      selectedLayerIds: [],
+      selectedGroupId: null,
+    }
+    const baseDocument: EditorDocument = {
+      ...document,
+      layers: document.layers.map((layer) => ids.has(layer.id) ? { ...layer, visible: false } : layer),
+      selectedLayerId: null,
+      selectedLayerIds: [],
+      selectedGroupId: null,
+    }
+    canvas2dCompositionRenderer.render(preview, previewDocument, assets)
+    preview.style.display = 'block'
+    preview.style.transform = 'translate3d(0, 0, 0)'
+    canvas2dCompositionRenderer.render(canvas, baseDocument, assets)
+  }
+
+  const schedulePreviewCleanup = () => {
+    if (!canvas) return
+    const preview = previewCanvasRef.current
+    const cleanup = () => {
+      canvas.removeEventListener('studio:canvas-rendered', rendered)
+      window.clearTimeout(timeout)
+      if (preview) { preview.style.display = 'none'; preview.style.transform = 'none'; preview.width = 1; preview.height = 1 }
+      if (movingSelectionRef.current) movingSelectionRef.current.removeAttribute('transform')
+      previewCleanupRef.current = null
+    }
+    const rendered = () => cleanup()
+    const timeout = window.setTimeout(cleanup, 2_000)
+    canvas.addEventListener('studio:canvas-rendered', rendered, { once: true })
+    previewCleanupRef.current = cleanup
   }
 
   const startResize = (event: ReactPointerEvent<SVGRectElement>, handle: ResizeHandle) => {
@@ -117,10 +178,26 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       .filter((candidate) => movingIds.includes(candidate.id) && !layerIsLocked(document, candidate))
       .map((candidate) => ({ id: candidate.id, position: candidate.position }))
     if (layers.length === 0) return
-    const movingBounds = selectedBounds.filter(({ layer: candidate }) => movingIds.includes(candidate.id)).map(({ bounds }) => bounds)
+    const movingIdSet = new Set(movingIds)
+    const movingBounds = document.layers.filter((candidate) => movingIdSet.has(candidate.id)).flatMap((candidate) => {
+      const candidateBounds = getLayerBounds(context, canvas, candidate, assets)
+      return candidateBounds ? [candidateBounds] : []
+    })
     const bounds = movingBounds.reduce<SnapBounds>((result, candidate) => ({ x: Math.min(result.x, candidate.x), y: Math.min(result.y, candidate.y), width: Math.max(result.x + result.width, candidate.x + candidate.width) - Math.min(result.x, candidate.x), height: Math.max(result.y + result.height, candidate.y + candidate.height) - Math.min(result.y, candidate.y) }), movingBounds[0] ?? { x: 0, y: 0, width: 0, height: 0 })
-    interactionRef.current = { mode: 'move', pointerId: event.pointerId, start: cursor, bounds, layers }
-    setSmartGuides({})
+    const otherBounds = document.layers.filter((candidate) => !movingIdSet.has(candidate.id) && layerIsVisible(document, candidate)).flatMap((candidate) => {
+      const candidateBounds = getLayerBounds(context, canvas, candidate, assets)
+      return candidateBounds ? [candidateBounds] : []
+    })
+    interactionRef.current = {
+      mode: 'move', pointerId: event.pointerId, start: cursor, bounds, layers,
+      xTargets: [0, canvas.width / 2, canvas.width, ...(document.guides ?? []).filter((guide) => guide.direction === 'vertical').map((guide) => guide.position), ...otherBounds.flatMap((candidate) => [candidate.x, candidate.x + candidate.width / 2, candidate.x + candidate.width])],
+      yTargets: [0, canvas.height / 2, canvas.height, ...(document.guides ?? []).filter((guide) => guide.direction === 'horizontal').map((guide) => guide.position), ...otherBounds.flatMap((candidate) => [candidate.y, candidate.y + candidate.height / 2, candidate.y + candidate.height])],
+      gridSpacing: document.grid?.visible ? document.grid.spacing / Math.max(1, document.grid.subdivisions) : undefined,
+      lastDx: 0,
+      lastDy: 0,
+    }
+    updateSmartGuides()
+    prepareMovePreview(layers.map((candidate) => candidate.id))
     capture(event)
   }
 
@@ -132,27 +209,24 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       let pixelDx = cursor.x - interaction.start.x
       let pixelDy = cursor.y - interaction.start.y
       if (document.grid?.snap !== false && context) {
-        const movingIds = new Set(interaction.layers.map((layer) => layer.id))
-        const otherBounds = document.layers.filter((layer) => !movingIds.has(layer.id) && layerIsVisible(document, layer)).flatMap((layer) => {
-          const bounds = getLayerBounds(context, canvas, layer, assets)
-          return bounds ? [bounds] : []
-        })
         const snapped = snapTranslation(
           interaction.bounds,
           pixelDx,
           pixelDy,
-          [0, canvas.width / 2, canvas.width, ...(document.guides ?? []).filter((guide) => guide.direction === 'vertical').map((guide) => guide.position), ...otherBounds.flatMap((bounds) => [bounds.x, bounds.x + bounds.width / 2, bounds.x + bounds.width])],
-          [0, canvas.height / 2, canvas.height, ...(document.guides ?? []).filter((guide) => guide.direction === 'horizontal').map((guide) => guide.position), ...otherBounds.flatMap((bounds) => [bounds.y, bounds.y + bounds.height / 2, bounds.y + bounds.height])],
-          document.grid?.visible ? document.grid.spacing / Math.max(1, document.grid.subdivisions) : undefined,
+          interaction.xTargets,
+          interaction.yTargets,
+          interaction.gridSpacing,
           Math.max(3, canvas.width / Math.max(1, displayWidth) * 7),
         )
         pixelDx = snapped.dx
         pixelDy = snapped.dy
-        setSmartGuides({ x: snapped.xGuide, y: snapped.yGuide })
+        updateSmartGuides(snapped.xGuide, snapped.yGuide)
       }
-      const dx = pixelDx / canvas.width
-      const dy = pixelDy / canvas.height
-      dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) }, { groupKey: 'move-selection' })
+      interaction.lastDx = pixelDx
+      interaction.lastDy = pixelDy
+      const transform = `translate(${pixelDx / canvas.width * 100}% , ${pixelDy / canvas.height * 100}%)`
+      if (previewCanvasRef.current) previewCanvasRef.current.style.transform = transform
+      movingSelectionRef.current?.setAttribute('transform', `translate(${pixelDx} ${pixelDy})`)
     } else if (interaction.mode === 'resize') {
       dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: calculateLayerResize(interaction.snapshot, cursor, { fromCenter: event.altKey, preserveAspect: event.shiftKey }) }, { groupKey: `resize-${interaction.snapshot.layer.id}` })
     } else if (interaction.mode === 'rotate') {
@@ -176,9 +250,21 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   }
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (interactionRef.current?.pointerId !== event.pointerId) return
+    const interaction = interactionRef.current
+    if (interaction?.pointerId !== event.pointerId) return
     interactionRef.current = null
-    setSmartGuides({})
+    updateSmartGuides()
+    if (interaction.mode === 'move') {
+      const dx = interaction.lastDx / (canvas?.width ?? 1)
+      const dy = interaction.lastDy / (canvas?.height ?? 1)
+      if (interaction.lastDx === 0 && interaction.lastDy === 0) {
+        if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        previewCleanupRef.current?.()
+      } else {
+        dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) })
+        schedulePreviewCleanup()
+      }
+    }
     endHistoryGroup()
   }
 
@@ -188,6 +274,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const rotationOffset = handleSize * 3.2
 
   return (
+    <Fragment>
+    <canvas ref={previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full will-change-transform" />
     <svg
       ref={svgRef}
       aria-label="Transform overlay"
@@ -199,8 +287,9 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       onPointerUp={pointerEnd}
       onPointerCancel={pointerEnd}
     >
-      {smartGuides.x !== undefined && <line x1={smartGuides.x} x2={smartGuides.x} y1="0" y2={canvas?.height ?? 1000} stroke="#f472b6" strokeWidth="1" strokeDasharray="7 4" vectorEffect="non-scaling-stroke" className="pointer-events-none" />}
-      {smartGuides.y !== undefined && <line x1="0" x2={canvas?.width ?? 1600} y1={smartGuides.y} y2={smartGuides.y} stroke="#f472b6" strokeWidth="1" strokeDasharray="7 4" vectorEffect="non-scaling-stroke" className="pointer-events-none" />}
+      <line ref={xGuideRef} x1="0" x2="0" y1="0" y2={canvas?.height ?? 1000} stroke="#f472b6" strokeWidth="1" strokeDasharray="7 4" vectorEffect="non-scaling-stroke" className="pointer-events-none hidden" />
+      <line ref={yGuideRef} x1="0" x2={canvas?.width ?? 1600} y1="0" y2="0" stroke="#f472b6" strokeWidth="1" strokeDasharray="7 4" vectorEffect="non-scaling-stroke" className="pointer-events-none hidden" />
+      <g ref={movingSelectionRef}>
       {selectedBounds.map(({ layer, bounds }) => {
         const active = layer.id === document.selectedLayerId
         const centerX = bounds.x + bounds.width / 2
@@ -234,6 +323,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
           ))}
         </g>
       )}
+      </g>
     </svg>
+    </Fragment>
   )
 }

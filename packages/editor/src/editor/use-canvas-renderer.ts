@@ -19,6 +19,11 @@ export function useCanvasRenderer(
   const latestFrameRef = useRef({ document, assets })
   latestFrameRef.current = { document, assets }
 
+  const markRendered = (canvas: HTMLCanvasElement, requestId: number) => {
+    canvas.dataset.renderRevision = String(requestId)
+    canvas.dispatchEvent(new CustomEvent('studio:canvas-rendered', { detail: { requestId } }))
+  }
+
   const workerRenderer = useCallback(() => {
     if (workerRef.current || workerFailedRef.current) return workerRef.current
     const worker = new Worker(new URL('./workers/composition.worker.ts', import.meta.url), { type: 'module' })
@@ -39,13 +44,14 @@ export function useCanvasRenderer(
       context.clearRect(0, 0, response.width, response.height)
       context.drawImage(response.frame, 0, 0)
       response.frame.close()
+      markRendered(canvas, response.id)
     }
     worker.onerror = () => {
       workerFailedRef.current = true
       worker.terminate()
       if (workerRef.current === worker) workerRef.current = null
       const canvas = canvasRef.current
-      if (canvas) canvas2dCompositionRenderer.render(canvas, latestFrameRef.current.document, latestFrameRef.current.assets)
+      if (canvas) { canvas2dCompositionRenderer.render(canvas, latestFrameRef.current.document, latestFrameRef.current.assets); markRendered(canvas, requestRef.current) }
     }
     workerRef.current = worker
     return worker
@@ -79,6 +85,7 @@ export function useCanvasRenderer(
         && supportsWorkerComposition(document)
       if (!supportsWorker) {
         renderer.render(canvas, document, assets)
+        markRendered(canvas, requestId)
         return
       }
       void Promise.all(Object.entries(assets).map(async ([id, asset]) => ({
@@ -95,12 +102,13 @@ export function useCanvasRenderer(
         if (!worker) {
           workerAssets.forEach((asset) => asset.bitmap.close())
           renderer.render(canvas, document, assets)
+          markRendered(canvas, requestId)
           return
         }
         const request: WorkerCompositionRequest = { id: requestId, document, assets: workerAssets }
         worker.postMessage(request, workerAssets.map((asset) => asset.bitmap))
       }).catch(() => {
-        if (!cancelled && requestId === requestRef.current) renderer.render(canvas, document, assets)
+        if (!cancelled && requestId === requestRef.current) { renderer.render(canvas, document, assets); markRendered(canvas, requestId) }
       })
     })
     return () => {
