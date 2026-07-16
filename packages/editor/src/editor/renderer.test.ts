@@ -2,7 +2,7 @@ import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
 import { createShapeLayer, createSmartObjectLayer, initialDocument } from './presets'
 import { defaultLayerEffects } from './effects'
-import { calculateImageRect, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel } from './renderer'
+import { calculateImageRect, clearSmartFilterResultCache, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel, smartFilterResultCacheSize } from './renderer'
 import type { ImageLayer } from './types'
 
 Object.assign(globalThis, {
@@ -92,6 +92,7 @@ describe('smart-object rendering', () => {
   })
 
   it('evaluates ordered smart filters through their opacity, blend, and mask settings', () => {
+    clearSmartFilterResultCache()
     const source = createCanvas(2, 1)
     const sourceContext = source.getContext('2d')!
     sourceContext.fillStyle = '#ff0000'
@@ -104,19 +105,26 @@ describe('smart-object rendering', () => {
     maskContext.fillRect(1, 0, 1, 1)
     const layer = createSmartObjectLayer('smart-source', 'Filtered', 2, 1, { kind: 'embedded', fileName: 'filtered.psb' })
     layer.transformMatrix = [3, 0, 0, 3, 1, 1]
+    layer.contentHash = 'source-red-v1'
     layer.smartFilters = [{
       id: 'invert', name: 'Invert', visible: true, opacity: 100, blendMode: 'normal', maskAssetId: 'filter-mask',
       settings: { brightness: 100, contrast: 100, saturation: 100, hue: 0, grayscale: 0, sepia: 0, invert: 100, blur: 0 },
       descriptor: { type: 'invert' },
     }]
     const canvas = createCanvas(8, 5) as unknown as HTMLCanvasElement
-    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 8, height: 5 }, layers: [layer] }, {
+    const assets = {
       'smart-source': { element: source as unknown as HTMLImageElement, surface: source as unknown as HTMLCanvasElement, name: 'Filtered' },
       'filter-mask': { element: mask as unknown as HTMLImageElement, surface: mask as unknown as HTMLCanvasElement, name: 'Mask' },
-    })
+    }
+    const document = { ...initialDocument, canvasPreset: 'custom' as const, canvasSize: { width: 8, height: 5 }, layers: [layer] }
+    renderComposition(canvas, document, assets)
+    renderComposition(canvas, document, assets)
 
     expect([...canvas.getContext('2d')!.getImageData(2, 2, 1, 1).data]).toEqual([0, 255, 255, 255])
     expect([...canvas.getContext('2d')!.getImageData(5, 2, 1, 1).data]).toEqual([255, 0, 0, 255])
+    expect(smartFilterResultCacheSize()).toBe(1)
+    renderComposition(canvas, { ...document, layers: [{ ...layer, contentHash: 'source-red-v2' }] }, assets)
+    expect(smartFilterResultCacheSize()).toBe(2)
   })
 })
 

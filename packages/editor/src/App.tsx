@@ -16,6 +16,7 @@ import { canvas2dCompositionRenderer } from './editor/rendering/composition-rend
 import { useRendererCapabilities } from './editor/rendering/use-renderer-capabilities'
 import type { AssetMap } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
+import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import type { RasterEdit, RasterRegion } from './editor/raster'
 import type { EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
 import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
@@ -223,6 +224,7 @@ function App({ onExit }: AppProps) {
         mimeType: file.type || undefined,
         lastModified: file.lastModified,
       })
+      layer.contentHash = smartObjectBytesHash(new Uint8Array(await file.arrayBuffer()))
       setAssets((current) => ({ ...current, [assetId]: source }))
       dispatch({ type: 'add-layer', layer })
       setNotice(`Placed ${file.name} as a linked smart object. Use Relink to refresh its local snapshot.`, 'success')
@@ -766,6 +768,7 @@ function App({ onExit }: AppProps) {
       effects: layer.effects,
       additionalEffects: layer.additionalEffects,
       embeddedDocument,
+      contentHash: smartObjectDocumentHash(embeddedDocument, assets),
     }
     setAssets((current) => ({ ...current, [assetId]: source }))
     dispatch({ type: 'replace-layer', id: layer.id, layer: smartObject })
@@ -803,7 +806,7 @@ function App({ onExit }: AppProps) {
         return { ...current, [session.assetId]: next }
       })
       historyDispatch({ type: 'restore', state: session.parentHistory })
-      historyDispatch({ type: 'apply', action: { type: 'update-layer', id: session.layerId, patch: { embeddedDocument: editedDocument } } })
+      historyDispatch({ type: 'apply', action: { type: 'update-layer', id: session.layerId, patch: { embeddedDocument: editedDocument, contentHash: smartObjectDocumentHash(editedDocument, assets) } } })
       setNotice(`Saved ${session.name} contents and refreshed its preview.`, 'success')
     } else {
       historyDispatch({ type: 'restore', state: session.parentHistory })
@@ -820,6 +823,7 @@ function App({ onExit }: AppProps) {
     setIsLoading(true)
     try {
       const loaded = await loadImageFile(file)
+      const contentHash = smartObjectBytesHash(new Uint8Array(await file.arrayBuffer()))
       const width = loaded.element.naturalWidth || loaded.surface?.width || 1
       const height = loaded.element.naturalHeight || loaded.surface?.height || 1
       let embeddedDocument = layer.embeddedDocument
@@ -846,6 +850,7 @@ function App({ onExit }: AppProps) {
           width,
           height,
           embeddedDocument,
+          contentHash,
           source: { kind, fileName: file.name, mimeType: file.type || undefined, lastModified: file.lastModified },
         },
       })

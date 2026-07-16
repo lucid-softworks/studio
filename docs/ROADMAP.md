@@ -96,7 +96,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add replace/relink/export-contents actions
 - [x] Add non-destructive affine transform matrices independent of source pixels
 - [x] Add ordered smart-filter stacks with visibility, masks, opacity, and blend modes
-- [ ] Cache smart-object and smart-filter results by content hash
+- [x] Cache smart-object and smart-filter results by content hash
 
 ## M3 — selections, masks, and channels
 

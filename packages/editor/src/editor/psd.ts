@@ -6,7 +6,7 @@ import { createAdjustmentLayer, createId, createRasterLayer, createSmartObjectLa
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap, SourceImage } from './runtime-assets'
-import { affineTransformFromQuad, smartObjectDisplayQuad } from './smart-objects'
+import { affineTransformFromQuad, smartObjectBytesHash, smartObjectDisplayQuad } from './smart-objects'
 import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, SmartObjectSource, TextLayer, VectorMask } from './types'
 
 let initialized = false
@@ -1041,6 +1041,9 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
         ? createSmartObjectLayer(assetId, name, canvas.width, canvas.height, psdSmartObjectSource(placedLayer, linkedFile), position)
         : createRasterLayer(assetId, name, canvas.width, canvas.height, position)
       if (importedLayer.type === 'smart-object') {
+        importedLayer.contentHash = linkedFile?.data
+          ? smartObjectBytesHash(linkedFile.data)
+          : smartObjectBytesHash(new TextEncoder().encode(JSON.stringify(importedLayer.source)))
         importedLayer.smartFilters = (placedLayer?.filter?.list ?? []).map((filter, index) => ({
           id: `${placedLayer!.id}-filter-${index}`,
           name: filter.name || filter.type,

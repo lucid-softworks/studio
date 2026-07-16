@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createSmartObjectLayer } from './presets'
-import { affineTransformFromQuad, quadBounds, smartObjectDisplayQuad } from './smart-objects'
+import { affineTransformFromQuad, quadBounds, smartObjectBytesHash, smartObjectDisplayQuad } from './smart-objects'
 
 describe('smart-object transforms', () => {
   it('converts PSD corner coordinates to an affine source matrix', () => {
@@ -16,5 +16,10 @@ describe('smart-object transforms', () => {
 
     expect(quadBounds(quad)).toEqual({ x: -10, y: 5, width: 200, height: 100 })
     expect(layer.transformMatrix).toEqual([1, 0, 0, 1, 20, 30])
+  })
+
+  it('creates deterministic content hashes that change with source bytes', () => {
+    expect(smartObjectBytesHash(Uint8Array.from([1, 2, 3]))).toBe(smartObjectBytesHash(Uint8Array.from([1, 2, 3])))
+    expect(smartObjectBytesHash(Uint8Array.from([1, 2, 3]))).not.toBe(smartObjectBytesHash(Uint8Array.from([1, 2, 4])))
   })
 })

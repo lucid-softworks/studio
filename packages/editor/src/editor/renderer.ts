@@ -333,13 +333,42 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   context.globalAlpha = 1
 }
 
+const smartFilterResultCache = new Map<string, { canvas: HTMLCanvasElement; lastUsed: number }>()
+let smartFilterCacheClock = 0
+
+export function clearSmartFilterResultCache() {
+  smartFilterResultCache.clear()
+  smartFilterCacheClock = 0
+}
+
+export function smartFilterResultCacheSize() {
+  return smartFilterResultCache.size
+}
+
+function cacheSmartFilterResult(key: string, canvas: HTMLCanvasElement) {
+  smartFilterResultCache.set(key, { canvas, lastUsed: ++smartFilterCacheClock })
+  while (smartFilterResultCache.size > 64) {
+    const oldest = [...smartFilterResultCache.entries()].sort((left, right) => left[1].lastUsed - right[1].lastUsed)[0]
+    if (!oldest) break
+    smartFilterResultCache.delete(oldest[0])
+  }
+}
+
 function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: SmartObjectLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   const asset = canvasImageResource(resources, assets, layer.assetId)
   const quad = smartObjectSourceQuad(layer)
   if (!asset) return
-  let filteredSource = asset.source
-  for (const filter of layer.smartFilters) {
-    if (!filter.visible) continue
+  const visibleFilters = layer.smartFilters.filter((filter) => filter.visible)
+  const filterCacheKey = visibleFilters.length ? JSON.stringify([
+    layer.contentHash ?? layer.assetId,
+    assets[layer.assetId]?.revision ?? 0,
+    visibleFilters,
+    visibleFilters.map((filter) => filter.maskAssetId ? assets[filter.maskAssetId]?.revision ?? 0 : null),
+  ]) : ''
+  const cached = filterCacheKey ? smartFilterResultCache.get(filterCacheKey) : undefined
+  if (cached) cached.lastUsed = ++smartFilterCacheClock
+  let filteredSource = cached?.canvas ?? asset.source
+  for (const filter of cached ? [] : visibleFilters) {
     const filtered = document.createElement('canvas')
     filtered.width = layer.width
     filtered.height = layer.height
@@ -378,6 +407,7 @@ function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCan
     compositedContext.drawImage(filtered, 0, 0)
     filteredSource = composited
   }
+  if (!cached && filterCacheKey) cacheSmartFilterResult(filterCacheKey, filteredSource as HTMLCanvasElement)
   if (!layer.transformMatrix || !quad) {
     const bounds = rasterBounds(canvas, layer)
     context.globalAlpha = layer.opacity / 100
@@ -397,7 +427,7 @@ function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCan
   context.scale(layer.scale / 100 * (layer.flipX ? -1 : 1), layer.scale / 100 * (layer.flipY ? -1 : 1))
   context.translate(-center.x, -center.y)
   context.transform(...layer.transformMatrix)
-  context.drawImage(layer.smartFilters.some((filter) => filter.visible) ? filteredSource : mipmapSource(asset, layer.width, layer.height), 0, 0, layer.width, layer.height)
+  context.drawImage(visibleFilters.length ? filteredSource : mipmapSource(asset, layer.width, layer.height), 0, 0, layer.width, layer.height)
   context.restore()
 }
 
