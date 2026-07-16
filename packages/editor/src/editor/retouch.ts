@@ -1,5 +1,6 @@
 import { hexToRgba } from './raster'
 import type { PatternSettings } from './types'
+import { bitmapPatternColor } from './patterns'
 
 export type RetouchMode = 'color-replacement' | 'mixer-brush' | 'history-brush' | 'pattern-stamp' | 'sponge' | 'blur' | 'sharpen' | 'smudge'
 
@@ -32,6 +33,11 @@ function blurred(data: Uint8ClampedArray, width: number, height: number, x: numb
 }
 
 function patternColor(pattern: PatternSettings, x: number, y: number, fallback: [number, number, number]) {
+  const bitmap = bitmapPatternColor(pattern, x / Math.max(0.01, pattern.size / Math.max(1, pattern.bitmap?.width ?? pattern.size)), y / Math.max(0.01, pattern.size / Math.max(1, pattern.bitmap?.width ?? pattern.size)))
+  if (bitmap) {
+    const opacity = bitmap[3] / 255 * pattern.opacity / 100
+    return fallback.map((value, channel) => value * (1 - opacity) + bitmap[channel] * opacity) as [number, number, number]
+  }
   const color = hexToRgba(pattern.color)
   const size = Math.max(4, pattern.size)
   let active = false

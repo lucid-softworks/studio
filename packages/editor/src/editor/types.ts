@@ -1,7 +1,7 @@
 export type Position = { x: number; y: number }
 export const EDITOR_DOCUMENT_SCHEMA_VERSION = 3 as const
 export type BackgroundKind = 'gradient' | 'solid' | 'image' | 'transparent'
-export type PatternKind = 'none' | 'grid' | 'dots' | 'waves'
+export type PatternKind = 'none' | 'grid' | 'dots' | 'waves' | 'bitmap'
 export type ShapeKind = 'rectangle' | 'ellipse' | 'path'
 export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' | 'color-dodge' | 'color-burn' | 'hard-light' | 'soft-light' | 'difference' | 'exclusion' | 'hue' | 'saturation' | 'color' | 'luminosity'
 export type LayerFilters = { brightness: number; contrast: number; saturation: number; hue: number; grayscale: number; sepia: number; invert: number; blur: number }
@@ -331,6 +331,7 @@ export type PatternSettings = {
   color: string
   opacity: number
   size: number
+  bitmap?: { width: number; height: number; data: string }
 }
 
 export type DocumentChannel = {

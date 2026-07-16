@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
-import type { GradientPreset } from '../editor/gradients'
+import type { GradientPreset, GradientStop } from '../editor/gradients'
 import type { PatternPreset } from '../editor/patterns'
 import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import type { CustomShapePreset } from '../editor/shape-library'
@@ -71,13 +71,15 @@ type LayersPanelProps = {
   onAddSwatch: (color: string) => void
   onRemoveSwatch: (color: string) => void
   customGradients: GradientPreset[]
-  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end'>) => void
-  onAddGradient: (name: string, start: string, end: string) => void
+  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end' | 'stops'>) => void
+  onAddGradient: (name: string, stops: GradientStop[]) => void
   onRemoveGradient: (id: string) => void
   customPatterns: PatternPreset[]
   onApplyPattern: (pattern: PatternSettings) => void
   onAddPattern: (name: string, pattern: PatternSettings) => void
   onRemovePattern: (id: string) => void
+  onImportPattern: () => void
+  onExportPattern: (pattern: PatternPreset) => void
   brushes: BrushPreset[]
   brushId: string
   customFonts: CustomFontResource[]
@@ -105,7 +107,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
@@ -282,7 +284,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} assets={assets} renderRevision={renderRevision} />}
       {activePanel === 'swatches' && <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />}
       {activePanel === 'gradients' && <GradientsPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customGradients={customGradients} onApplyGradient={onApplyGradient} onAddGradient={onAddGradient} onRemoveGradient={onRemoveGradient} />}
-      {activePanel === 'patterns' && <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} />}
+      {activePanel === 'patterns' && <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} onImportPattern={onImportPattern} onExportPattern={onExportPattern} />}
       {activePanel === 'libraries' && <LibrariesPanel brushes={brushes} activeBrushId={brushId} fonts={customFonts} activeFontFamily={activeLayer?.type === 'text' ? activeLayer.fontFamily : undefined} canApplyFont={activeLayer?.type === 'text'} onBrushChange={onBrushChange} onLoadBrush={onLoadBrush} onRemoveBrush={onRemoveBrush} onExportBrush={onExportBrush} onApplyFont={(fontFamily) => { if (activeLayer?.type === 'text') dispatch({ type: 'update-layer', id: activeLayer.id, patch: { fontFamily, missingFonts: [] } }) }} onLoadFont={onLoadFont} onRemoveFont={onRemoveFont} />}
       {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} renderRevision={renderRevision} />}
       </>}

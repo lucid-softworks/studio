@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { historyCommandLabel } from '../editor/history-labels'
-import { defaultGradients, type GradientPreset } from '../editor/gradients'
+import { defaultGradients, gradientStops, normalizeGradientStops, type GradientPreset, type GradientStop } from '../editor/gradients'
 import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
-import { defaultPatterns, type PatternPreset } from '../editor/patterns'
+import { defaultPatterns, patternBitmapCanvas, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
 import { getTypeGpuRoot } from '../editor/rendering/typegpu-runtime'
 import type { BrushPreset, CustomFontResource } from '../editor/resources'
@@ -375,9 +375,10 @@ export function SwatchesPanel({ foregroundColor, backgroundColor, customSwatches
 }
 
 function GradientRow({ gradient, custom, onApply, onRemove }: { gradient: GradientPreset; custom?: boolean; onApply: () => void; onRemove?: () => void }) {
+  const css = gradient.stops.map((stop) => `${stop.color} ${stop.position}%`).join(', ')
   return (
     <div className="group flex items-center gap-2 rounded-lg border border-white/[0.06] bg-black/15 p-1.5">
-      <button type="button" aria-label={`Use ${gradient.name} gradient`} onClick={onApply} className="min-w-0 flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-violet-400"><span style={{ backgroundImage: `linear-gradient(90deg, ${gradient.start}, ${gradient.end})` }} className="h-8 w-16 shrink-0 rounded border border-white/10" /><span className="min-w-0"><span className="block truncate text-[10px] font-medium text-zinc-400">{gradient.name}</span><span className="block truncate font-mono text-[8px] text-zinc-700 uppercase">{gradient.start} · {gradient.end}</span></span></button>
+      <button type="button" aria-label={`Use ${gradient.name} gradient`} onClick={onApply} className="min-w-0 flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-2 focus-visible:outline-violet-400"><span style={{ backgroundImage: `linear-gradient(90deg, ${css})` }} className="h-8 w-16 shrink-0 rounded border border-white/10" /><span className="min-w-0"><span className="block truncate text-[10px] font-medium text-zinc-400">{gradient.name}</span><span className="block truncate font-mono text-[8px] text-zinc-700 uppercase">{gradient.stops.length} stops · {gradient.start} · {gradient.end}</span></span></button>
       {custom && onRemove && <button type="button" aria-label={`Delete gradient ${gradient.name}`} onClick={onRemove} className="flex size-6 shrink-0 items-center justify-center rounded text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>}
     </div>
   )
@@ -387,31 +388,47 @@ export function GradientsPanel({ foregroundColor, backgroundColor, customGradien
   foregroundColor: string
   backgroundColor: string
   customGradients: GradientPreset[]
-  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end'>) => void
-  onAddGradient: (name: string, start: string, end: string) => void
+  onApplyGradient: (gradient: Pick<GradientPreset, 'start' | 'end' | 'stops'>) => void
+  onAddGradient: (name: string, stops: GradientStop[]) => void
   onRemoveGradient: (id: string) => void
 }) {
   const [name, setName] = useState('')
-  const current = { id: 'current', name: 'Current colours', start: foregroundColor, end: backgroundColor }
+  const [stops, setStops] = useState<GradientStop[]>(() => gradientStops([foregroundColor, backgroundColor]))
+  const normalizedStops = normalizeGradientStops(stops, foregroundColor, backgroundColor)
+  const current: GradientPreset = { id: 'current', name: 'Current gradient', stops: normalizedStops, start: normalizedStops[0].color, end: normalizedStops.at(-1)!.color }
+  const apply = (gradient: GradientPreset) => { setStops(gradient.stops); onApplyGradient(gradient) }
   const saveCurrent = () => {
     const nextName = name.trim()
     if (!nextName) return
-    onAddGradient(nextName, foregroundColor, backgroundColor)
+    onAddGradient(nextName, normalizedStops)
     setName('')
   }
 
   return (
     <div role="tabpanel" aria-label="Gradients" className="min-h-0 flex-1 overflow-y-auto p-3">
-      <section><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Active gradient</h3><button type="button" onClick={() => onApplyGradient({ start: backgroundColor, end: foregroundColor })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">Reverse</button></div><GradientRow gradient={current} onApply={() => onApplyGradient(current)} /></section>
-      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio gradients</h3><div className="space-y-1.5">{defaultGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} onApply={() => onApplyGradient(gradient)} />)}</div></section>
-      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pair</h3><div className="flex gap-2"><input aria-label="Custom gradient name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder="Gradient name" className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!name.trim()} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
-      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom gradients</h3>{customGradients.length ? <div className="space-y-1.5">{customGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} custom onApply={() => onApplyGradient(gradient)} onRemove={() => onRemoveGradient(gradient.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Name and save the active colour pair to build a local library.</div>}</section>
-      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Choosing a preset sets both colours and activates the Gradient tool.</p>
+      <section><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Active gradient</h3><button type="button" onClick={() => { const reversed = normalizedStops.toReversed().map((stop) => ({ ...stop, position: 100 - stop.position })); setStops(reversed); onApplyGradient({ start: reversed[0].color, end: reversed.at(-1)!.color, stops: reversed }) }} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">Reverse</button></div><GradientRow gradient={current} onApply={() => onApplyGradient(current)} /><div className="mt-2 space-y-1">{normalizedStops.map((stop, index) => <div key={`${index}:${stop.position}`} className="flex items-center gap-1"><input aria-label={`Gradient stop ${index + 1} color`} type="color" value={stop.color} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, color: event.target.value } : candidate))} className="size-6 border-0 bg-transparent p-0" /><input aria-label={`Gradient stop ${index + 1} position`} type="number" min="0" max="100" value={stop.position} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, position: Number(event.target.value) } : candidate))} className="w-14 rounded border border-white/[0.08] bg-black/20 px-1 py-1 font-mono text-[9px] text-zinc-400" /><span className="text-[8px] text-zinc-700">%</span>{normalizedStops.length > 2 && <button type="button" aria-label={`Remove gradient stop ${index + 1}`} onClick={() => setStops((currentStops) => currentStops.filter((_, candidateIndex) => candidateIndex !== index))} className="ml-auto text-zinc-700 hover:text-red-300">×</button>}</div>)}</div><button type="button" disabled={normalizedStops.length >= 16} onClick={() => setStops((currentStops) => [...currentStops, { color: foregroundColor, position: 50 }])} className="mt-2 w-full rounded-md border border-white/[0.07] py-1.5 text-[9px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">+ Add colour stop</button></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio gradients</h3><div className="space-y-1.5">{defaultGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} onApply={() => apply(gradient)} />)}</div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save gradient</h3><div className="flex gap-2"><input aria-label="Custom gradient name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder="Gradient name" className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!name.trim()} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom gradients</h3>{customGradients.length ? <div className="space-y-1.5">{customGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} custom onApply={() => apply(gradient)} onRemove={() => onRemoveGradient(gradient.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Build and save a multi-stop gradient to add it here.</div>}</section>
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Gradients support up to sixteen independently positioned colour stops.</p>
     </div>
   )
 }
 
-function PatternPreview({ pattern }: { pattern: Pick<PatternSettings, 'kind' | 'color' | 'opacity' | 'size'> }) {
+function PatternPreview({ pattern }: { pattern: PatternSettings }) {
+  const bitmapRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const bitmap = pattern.bitmap
+    const canvas = bitmapRef.current
+    const context = canvas?.getContext('2d')
+    if (!bitmap || !canvas || !context) return
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.globalAlpha = pattern.opacity / 100
+    const tile = patternBitmapCanvas(bitmap)
+    const fill = context.createPattern(tile, 'repeat')
+    if (fill) { context.fillStyle = fill; context.fillRect(0, 0, canvas.width, canvas.height) }
+  }, [pattern])
+  if (pattern.kind === 'bitmap') return <canvas ref={bitmapRef} width="144" height="88" aria-hidden="true" className="h-11 w-full rounded-md bg-[repeating-conic-gradient(#202024_0_25%,#18181b_0_50%)_50%/10px_10px]" />
   const spacing = Math.max(8, Math.min(20, Math.round(pattern.size / 4)))
   const lines = Array.from({ length: Math.ceil(72 / spacing) + 1 }, (_, index) => index * spacing)
   return (
@@ -425,25 +442,27 @@ function PatternPreview({ pattern }: { pattern: Pick<PatternSettings, 'kind' | '
   )
 }
 
-function PatternRow({ pattern, custom, active, onApply, onRemove }: { pattern: PatternPreset; custom?: boolean; active: boolean; onApply: () => void; onRemove?: () => void }) {
+function PatternRow({ pattern, custom, active, onApply, onRemove, onExport }: { pattern: PatternPreset; custom?: boolean; active: boolean; onApply: () => void; onRemove?: () => void; onExport?: () => void }) {
   return (
     <div className={`group relative rounded-lg border p-1.5 transition ${active ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}>
       <button type="button" aria-label={`Use ${pattern.name} pattern`} aria-pressed={active} onClick={onApply} className="w-full text-left focus-visible:outline-2 focus-visible:outline-violet-400"><PatternPreview pattern={pattern} /><span className="mt-1.5 block truncate px-0.5 text-[9px] font-medium text-zinc-400">{pattern.name}</span><span className="block px-0.5 font-mono text-[8px] text-zinc-700">{pattern.kind} · {pattern.size}px</span></button>
-      {custom && onRemove && <button type="button" aria-label={`Delete pattern ${pattern.name}`} onClick={onRemove} className="absolute top-2 right-2 flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-500 opacity-0 shadow transition hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button>}
+      {custom && <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">{onExport && <button type="button" aria-label={`Export pattern ${pattern.name}`} onClick={onExport} className="flex size-5 items-center justify-center rounded bg-zinc-950/80 text-[8px] text-zinc-500 hover:text-cyan-200">⇩</button>}{onRemove && <button type="button" aria-label={`Delete pattern ${pattern.name}`} onClick={onRemove} className="flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-500 hover:text-red-300">×</button>}</div>}
     </div>
   )
 }
 
-export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPattern, onRemovePattern }: {
+export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern }: {
   pattern: PatternSettings
   customPatterns: PatternPreset[]
   onApplyPattern: (pattern: PatternSettings) => void
   onAddPattern: (name: string, pattern: PatternSettings) => void
   onRemovePattern: (id: string) => void
+  onImportPattern: () => void
+  onExportPattern: (pattern: PatternPreset) => void
 }) {
   const [name, setName] = useState('')
   const matches = (preset: PatternPreset) => pattern.kind === preset.kind && pattern.color === preset.color && pattern.opacity === preset.opacity && pattern.size === preset.size
-  const applyPreset = (preset: PatternPreset) => onApplyPattern({ kind: preset.kind, color: preset.color, opacity: preset.opacity, size: preset.size })
+  const applyPreset = (preset: PatternPreset) => onApplyPattern({ kind: preset.kind, color: preset.color, opacity: preset.opacity, size: preset.size, bitmap: preset.bitmap })
   const saveCurrent = () => {
     const nextName = name.trim()
     if (!nextName || pattern.kind === 'none') return
@@ -465,7 +484,7 @@ export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPa
       </section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio patterns</h3><div className="grid grid-cols-2 gap-2">{defaultPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} active={matches(preset)} onApply={() => applyPreset(preset)} />)}</div></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pattern</h3><div className="flex gap-2"><input aria-label="Custom pattern name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder={pattern.kind === 'none' ? 'Choose a pattern first' : 'Pattern name'} disabled={pattern.kind === 'none'} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40 disabled:text-zinc-700" /><button type="button" disabled={!name.trim() || pattern.kind === 'none'} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
-      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom patterns</h3>{customPatterns.length ? <div className="grid grid-cols-2 gap-2">{customPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} custom active={matches(preset)} onApply={() => applyPreset(preset)} onRemove={() => onRemovePattern(preset.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save the active procedural pattern to build a local library.</div>}</section>
+      <section className="mt-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom patterns</h3><button type="button" onClick={onImportPattern} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Import bitmap…</button></div>{customPatterns.length ? <div className="grid grid-cols-2 gap-2">{customPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} custom active={matches(preset)} onApply={() => applyPreset(preset)} onRemove={() => onRemovePattern(preset.id)} onExport={() => onExportPattern(preset)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save a procedural pattern or import a bitmap tile to build a local library.</div>}</section>
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Pattern changes are stored in the document and can be undone from History.</p>
     </div>
   )

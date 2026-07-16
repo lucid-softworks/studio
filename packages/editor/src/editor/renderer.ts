@@ -13,6 +13,7 @@ import { geometryMesh, geometryTransformIsIdentity } from './transform'
 import { applyPixelFilterGraph, normalizeFilterGraph } from './filter-graph'
 import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, FilterGraphNode, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, SmartObjectLayer, TextLayer, TextStyleRun } from './types'
 import { flattenTextPath, polylineLength, samplePolyline, textWarpOffset, wrapTextRanges } from './typography'
+import { patternBitmapCanvas } from './patterns'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -217,7 +218,15 @@ function drawPattern(context: CanvasRenderingContext2D, width: number, height: n
   context.fillStyle = pattern.color
   context.lineWidth = Math.max(1, width / 1200)
 
-  if (pattern.kind === 'grid') {
+  if (pattern.kind === 'bitmap' && pattern.bitmap) {
+    const source = patternBitmapCanvas(pattern.bitmap)
+    const tile = globalThis.document.createElement('canvas')
+    tile.width = Math.max(1, spacing)
+    tile.height = Math.max(1, Math.round(spacing * source.height / source.width))
+    tile.getContext('2d')?.drawImage(source, 0, 0, tile.width, tile.height)
+    context.fillStyle = context.createPattern(tile, 'repeat') ?? pattern.color
+    context.fillRect(0, 0, width, height)
+  } else if (pattern.kind === 'grid') {
     context.beginPath()
     for (let x = 0; x <= width; x += spacing) {
       context.moveTo(x, 0)

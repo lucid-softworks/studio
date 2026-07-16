@@ -166,10 +166,10 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
 - [x] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
 - [x] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
-- [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
+- [x] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
   - [x] Add persistent local custom-swatch, two-colour gradient, and procedural-pattern libraries connected to live editor state
   - [x] Expose browser-persisted custom brush tips and fonts through the Libraries panel
-  - [ ] Add tool-preset and expanded brush-preset libraries plus multi-stop gradients and bitmap pattern import/export
+  - [x] Add tool-preset and expanded brush-preset libraries plus multi-stop gradients and bitmap pattern import/export
 - [x] Add tablet tilt, twist, barrel button, and per-device pressure calibration
 
 ## M9 — workflow and extensibility

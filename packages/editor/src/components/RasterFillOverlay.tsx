@@ -4,6 +4,7 @@ import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCan
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position } from '../editor/types'
+import type { GradientStop } from '../editor/gradients'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -12,6 +13,7 @@ type Props = {
   tool: 'fill' | 'gradient'
   color: string
   secondaryColor: string
+  gradientStops: GradientStop[]
   tolerance: number
   selection: SelectionState | null
   maskAssetId?: string
@@ -23,7 +25,7 @@ type Props = {
 
 type GradientDrag = { pointerId: number; target: RasterTarget; start: Position; before: ImageData }
 
-export function RasterFillOverlay({ canvasRef, document, assets, tool, color, secondaryColor, tolerance, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
+export function RasterFillOverlay({ canvasRef, document, assets, tool, color, secondaryColor, gradientStops, tolerance, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<GradientDrag | null>(null)
   const [preview, setPreview] = useState<{ start: Position; end: Position } | null>(null)
@@ -61,8 +63,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     if (!context) return
     const after = context.createImageData(current.surface.width, current.surface.height)
     after.data.set(drag.before.data)
-    const startColor = hexToRgba(maskAssetId ? '#ffffff' : color)
-    const endColor = hexToRgba(maskAssetId ? '#000000' : secondaryColor)
+    const stops = maskAssetId ? [{ color: '#ffffff', position: 0 }, { color: '#000000', position: 100 }] : gradientStops.length >= 2 ? gradientStops : [{ color, position: 0 }, { color: secondaryColor, position: 100 }]
     const dx = end.x - drag.start.x
     const dy = end.y - drag.start.y
     const lengthSquared = Math.max(1, dx * dx + dy * dy)
@@ -70,7 +71,14 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
       for (let x = 0; x < after.width; x += 1) {
         const amount = Math.max(0, Math.min(1, ((x - drag.start.x) * dx + (y - drag.start.y) * dy) / lengthSquared))
         const offset = (y * after.width + x) * 4
-        for (let channel = 0; channel < 4; channel += 1) after.data[offset + channel] = Math.round(startColor[channel] + (endColor[channel] - startColor[channel]) * amount)
+        const position = amount * 100
+        const rightIndex = Math.max(1, stops.findIndex((stop) => stop.position >= position))
+        const leftStop = stops[rightIndex - 1]
+        const rightStop = stops[rightIndex] ?? stops.at(-1)!
+        const localAmount = Math.max(0, Math.min(1, (position - leftStop.position) / Math.max(0.001, rightStop.position - leftStop.position)))
+        const startColor = hexToRgba(leftStop.color)
+        const endColor = hexToRgba(rightStop.color)
+        for (let channel = 0; channel < 4; channel += 1) after.data[offset + channel] = Math.round(startColor[channel] + (endColor[channel] - startColor[channel]) * localAmount)
       }
     }
     constrainRasterRegion(drag.before, after, 0, 0, current, selectionData())
