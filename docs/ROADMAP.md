@@ -32,7 +32,6 @@ A feature is complete only when it has:
 
 ## P1 — interactive performance and large documents
 
-- [ ] Set and enforce gradient interaction budgets across 2K–8K fixtures, keep common commits below one frame where practical, and show progress for genuinely long worker jobs.
 - [ ] Extend the new path, direct-selection, warp, and puppet-warp local-preview coverage to every anchor, handle, pin, cancel, and modifier-key path.
 - [ ] Replace the remaining Current & Below clone/healing composition snapshot with a tiled or viewport sample; extend dirty-region regression coverage across every retouch mode and transformed/masked targets.
 - [ ] Replace remaining full-canvas raster mutation paths with sparse tiles and dirty regions.

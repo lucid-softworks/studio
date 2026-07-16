@@ -32,6 +32,7 @@ describe('performance fixtures', () => {
       expect(budget.renderP95Ms).toBeGreaterThan(0)
       expect(budget.pointerP95Ms).toBeGreaterThan(0)
       expect(budget.saveP95Ms).toBeGreaterThan(0)
+      expect(budget.gradientCommitMs).toBeGreaterThan(0)
     }
   })
 })
