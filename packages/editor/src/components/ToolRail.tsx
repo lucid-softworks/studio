@@ -27,6 +27,8 @@ export type EditorTool =
   | 'pen'
   | 'direct-select'
   | 'path-select'
+  | 'warp'
+  | 'puppet-warp'
   | 'rectangle'
   | 'ellipse'
   | 'hand'
@@ -132,6 +134,8 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'pen', label: 'Pen', shortcut: 'P', icon: <PenToolIcon className="size-[19px]" /> },
   { id: 'direct-select', label: 'Direct Selection', shortcut: 'A', icon: <PenToolIcon className="size-[19px]" selection /> },
   { id: 'path-select', label: 'Path Selection', shortcut: 'Shift A', icon: <MoveToolIcon className="size-[19px]" /> },
+  { id: 'warp', label: 'Warp', shortcut: '', icon: <span className="text-base">⌗</span> },
+  { id: 'puppet-warp', label: 'Puppet Warp', shortcut: '', icon: <span className="text-base">◎</span> },
   { id: 'rectangle', label: 'Rectangle', shortcut: 'U', icon: <RectangleIcon className="size-[19px]" /> },
   { id: 'ellipse', label: 'Ellipse', shortcut: 'Shift U', icon: <CircleIcon className="size-[19px]" /> },
   { id: 'hand', label: 'Hand', shortcut: 'H', icon: <HandToolIcon className="size-[19px]" />, divider: true },

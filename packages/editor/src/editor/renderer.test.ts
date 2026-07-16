@@ -226,6 +226,14 @@ Mesh 1 12
 })
 
 describe('compound vector shapes', () => {
+  it('renders reusable distort meshes through the Canvas2D compatibility path', () => {
+    const shape = { ...createShapeLayer('rectangle', 0), width: 50, height: 50, fill: '#ff0000', geometryTransform: { skewX: 0, skewY: 0, perspectiveX: 0, perspectiveY: 0, corners: [{ x: 0.2, y: 0 }, { x: 0.2, y: 0 }, { x: 0.2, y: 0 }, { x: 0.2, y: 0 }] as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }], interpolation: 'nearest' as const, referencePoint: { x: 0.5, y: 0.5 } } }
+    const canvas = createCanvas(20, 20) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 20, height: 20 }, layers: [shape] }, {})
+    expect(canvas.getContext('2d')!.getImageData(6, 10, 1, 1).data[3]).toBe(0)
+    expect([...canvas.getContext('2d')!.getImageData(8, 10, 1, 1).data]).toEqual([255, 0, 0, 255])
+  })
+
   it('renders subtract operations as a transparent hole', () => {
     const rectangle = (left: number, top: number, right: number, bottom: number, operation: 'combine' | 'subtract') => ({
       closed: true, operation, fillRule: 'non-zero' as const,

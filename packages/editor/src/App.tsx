@@ -18,7 +18,7 @@ import type { AssetMap } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import type { RasterEdit, RasterRegion } from './editor/raster'
-import type { DocumentChannel, DocumentPath, EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
+import type { DocumentChannel, DocumentPath, EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerGeometryTransform, LayerPatch, Position, ShapeKind } from './editor/types'
 import { applySelectionAlphaMask, colorRangeMask, componentChannelMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, similarSelectionMask, type ComponentChannel, type SelectionBounds, type SelectionMode, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
@@ -51,6 +51,7 @@ function App({ onExit }: AppProps) {
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
   const [tool, setTool] = useState<EditorTool>('move')
+  const [lastGeometryTransform, setLastGeometryTransform] = useState<LayerGeometryTransform | null>(null)
   const [zoom, setZoom] = useState(100)
   const [customFonts, setCustomFonts] = useState<CustomFontResource[]>([])
   const [customBrushes, setCustomBrushes] = useState<BrushPreset[]>([])
@@ -201,6 +202,7 @@ function App({ onExit }: AppProps) {
       bumpRasterHistory()
     }
     if (action.type === 'reset-document') setSelection(null)
+    if (action.type === 'update-layer' && action.patch.geometryTransform) setLastGeometryTransform(structuredClone(action.patch.geometryTransform))
     historyDispatch({ type: 'apply', action, record: options?.record, groupKey: options?.groupKey })
   }, [])
   const endHistoryGroup = useCallback(() => historyDispatch({ type: 'end-group' }), [])
@@ -1296,6 +1298,7 @@ function App({ onExit }: AppProps) {
             onExport={(format) => void exportImage(format)}
             onUndo={performUndo}
             onRedo={performRedo}
+            onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
             onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}
             onFlipCanvas={(axis) => transformCanvas(axis === 'x' ? 'flip-x' : 'flip-y')}
             onNewLayer={addEmptyLayer}
@@ -1338,6 +1341,7 @@ function App({ onExit }: AppProps) {
             layersPanelVisible={!workspaceLayout.collapsedPanels.layers}
             canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
+            canTransformAgain={Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment'))}
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
             canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
             canConvertToSmartObject={selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type)}

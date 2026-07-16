@@ -20,6 +20,7 @@ import { SingleMarqueeOverlay } from './SingleMarqueeOverlay'
 import type { EditorTool } from './ToolRail'
 import { TransformOverlay } from './TransformOverlay'
 import { PathEditorOverlay } from './PathEditorOverlay'
+import { WarpOverlay } from './WarpOverlay'
 import type { BrushPreset } from '../editor/resources'
 import { BrushSettingsPopover } from './BrushSettingsPopover'
 import { CanvasRulers } from './CanvasRulers'
@@ -86,6 +87,8 @@ const toolNames: Record<EditorTool, string> = {
   pen: 'Pen',
   'direct-select': 'Direct Selection',
   'path-select': 'Path Selection',
+  warp: 'Warp',
+  'puppet-warp': 'Puppet Warp',
   rectangle: 'Rectangle',
   ellipse: 'Ellipse',
   hand: 'Hand',
@@ -128,7 +131,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'magic-wand': return 'Click a contiguous colour region to select it'
     case 'object-select': return 'Click a connected visible object to select its pixel silhouette'
     case 'crop': return context.hasCrop ? 'Adjust the crop region or apply it from the options bar' : 'Drag over the canvas to define a crop region'
-    case 'move': return 'Click to select · drag to move · Shift-click for multi-select · drag handles to transform'
+    case 'move': return 'Click to select · drag handles to transform · Ctrl-drag a corner to distort · add Shift for perspective'
     case 'eyedropper': return 'Click the canvas to sample a foreground colour'
     case 'measure': return 'Drag between two points to measure their heading · Shift snaps to 45° · straighten the selected layer from the options bar'
     case 'fill': return 'Click a contiguous area on the selected raster layer to fill it'
@@ -141,6 +144,8 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'pen': return 'Click to add points · drag for Bézier handles · click the first point to close'
     case 'direct-select': return 'Drag anchors or handles · Alt-click an anchor to convert it · Delete removes it'
     case 'path-select': return 'Drag a complete path component to reposition it'
+    case 'warp': return 'Drag mesh points to apply a reusable multi-point warp'
+    case 'puppet-warp': return 'Click to add pins · drag pins to deform the selected layer'
     case 'rectangle': return 'Click the canvas to add a rectangle layer'
     case 'ellipse': return 'Click the canvas to add an ellipse layer'
     case 'hand': return 'Drag the workspace to pan around the document'
@@ -444,6 +449,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
+            <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
             <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
           </div>

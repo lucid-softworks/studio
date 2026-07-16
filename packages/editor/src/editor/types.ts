@@ -47,6 +47,18 @@ export type VectorMask = LayerMaskSettings & {
   fillStartsWithAllPixels: boolean
 }
 
+export type LayerGeometryTransform = {
+  skewX: number
+  skewY: number
+  perspectiveX: number
+  perspectiveY: number
+  corners: [Position, Position, Position, Position]
+  warp?: { columns: number; rows: number; points: Position[] }
+  puppetPins?: Array<{ id: string; source: Position; position: Position }>
+  interpolation: 'nearest' | 'bilinear' | 'bicubic'
+  referencePoint: Position
+}
+
 export type BlendIfSettings = {
   source: number[]
   destination: number[]
@@ -84,6 +96,7 @@ export type BaseLayer = {
   clipToBelow?: boolean
   groupId?: string | null
   stackOrder?: number
+  geometryTransform?: LayerGeometryTransform
 }
 
 export type LayerGroup = {
@@ -332,6 +345,7 @@ export type LayerPatch = Partial<{
   clipToBelow: boolean
   groupId: string | null
   stackOrder: number
+  geometryTransform: LayerGeometryTransform | null
   assetId: string
   padding: number
   scale: number

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { findLayerAtPoint, getLayerBounds, type LayerBounds, type ResizeHandle } from '../editor/renderer'
 import { layerIsLocked, layerIsVisible } from '../editor/stack'
-import { calculateLayerResize, calculateRotation, type TransformResizeSnapshot } from '../editor/transform'
+import { calculateLayerResize, calculateRotation, normalizeGeometryTransform, type TransformResizeSnapshot } from '../editor/transform'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDispatch, EditorDocument, Position } from '../editor/types'
 
@@ -18,6 +18,7 @@ type Interaction =
   | { mode: 'move'; pointerId: number; start: Position; layers: Array<{ id: string; position: Position }> }
   | { mode: 'resize'; pointerId: number; snapshot: TransformResizeSnapshot }
   | { mode: 'rotate'; pointerId: number; layerId: string; bounds: LayerBounds; pointerOffset: number }
+  | { mode: 'distort'; pointerId: number; layerId: string; bounds: LayerBounds; cornerIndex: number; source: ReturnType<typeof normalizeGeometryTransform>; perspective: boolean }
 
 const handles: Array<{ id: ResizeHandle; x: number; y: number; cursor: string }> = [
   { id: 'nw', x: -0.5, y: -0.5, cursor: 'nwse-resize' },
@@ -71,6 +72,12 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const startResize = (event: ReactPointerEvent<SVGRectElement>, handle: ResizeHandle) => {
     if (!activeLayer || !activeBounds || layerIsLocked(document, activeLayer) || !canvas) return
     event.stopPropagation()
+    const cornerIndex = ({ nw: 0, ne: 1, se: 2, sw: 3 } as Partial<Record<ResizeHandle, number>>)[handle]
+    if (cornerIndex !== undefined && (event.ctrlKey || event.metaKey)) {
+      interactionRef.current = { mode: 'distort', pointerId: event.pointerId, layerId: activeLayer.id, bounds: activeBounds, cornerIndex, source: normalizeGeometryTransform(activeLayer.geometryTransform), perspective: event.shiftKey }
+      capture(event)
+      return
+    }
     interactionRef.current = {
       mode: 'resize', pointerId: event.pointerId,
       snapshot: { layer: activeLayer, bounds: activeBounds, handle, canvasWidth: canvas.width, canvasHeight: canvas.height },
@@ -122,8 +129,23 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) }, { groupKey: 'move-selection' })
     } else if (interaction.mode === 'resize') {
       dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: calculateLayerResize(interaction.snapshot, cursor, { fromCenter: event.altKey, preserveAspect: event.shiftKey }) }, { groupKey: `resize-${interaction.snapshot.layer.id}` })
-    } else {
+    } else if (interaction.mode === 'rotate') {
       dispatch({ type: 'update-layer', id: interaction.layerId, patch: { rotation: calculateRotation(interaction.bounds, cursor, interaction.pointerOffset) } }, { groupKey: `rotate-${interaction.layerId}` })
+    } else {
+      const bounds = interaction.bounds
+      const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+      const angle = -bounds.rotation * Math.PI / 180
+      const dx = cursor.x - center.x
+      const dy = cursor.y - center.y
+      const normalized = { x: 0.5 + (dx * Math.cos(angle) - dy * Math.sin(angle)) / bounds.width, y: 0.5 + (dx * Math.sin(angle) + dy * Math.cos(angle)) / bounds.height }
+      const base = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }][interaction.cornerIndex]
+      const corners = structuredClone(interaction.source.corners)
+      corners[interaction.cornerIndex] = { x: normalized.x - base.x, y: normalized.y - base.y }
+      if (interaction.perspective) {
+        const adjacent = interaction.cornerIndex === 0 ? 3 : interaction.cornerIndex === 1 ? 2 : interaction.cornerIndex === 2 ? 1 : 0
+        corners[adjacent] = { ...corners[adjacent], x: corners[interaction.cornerIndex].x }
+      }
+      dispatch({ type: 'update-layer', id: interaction.layerId, patch: { geometryTransform: { ...interaction.source, corners } } }, { groupKey: `distort-${interaction.layerId}` })
     }
   }
 

@@ -15,6 +15,7 @@ type MenuBarProps = {
   onExport: (format: ExportFormat) => void
   onUndo: () => void
   onRedo: () => void
+  onTransformAgain: () => void
   onRotateCanvas: (direction: 'cw' | 'ccw') => void
   onFlipCanvas: (axis: 'x' | 'y') => void
   onNewLayer: () => void
@@ -50,6 +51,7 @@ type MenuBarProps = {
   layersPanelVisible: boolean
   canUndo: boolean
   canRedo: boolean
+  canTransformAgain: boolean
   hasLayerSelection: boolean
   canRasterize: boolean
   canConvertToSmartObject: boolean
@@ -105,6 +107,7 @@ export function MenuBar(props: MenuBarProps) {
         else props.onNew()
       } else if (key === 'o') props.onOpen()
       else if (key === 's') props.onSave()
+      else if (key === 't' && event.shiftKey && props.canTransformAgain) props.onTransformAgain()
       else if (key === '0') props.onZoom('actual')
       else if (key === '=' || key === '+') props.onZoom('in')
       else if (key === '-') props.onZoom('out')
@@ -155,6 +158,8 @@ export function MenuBar(props: MenuBarProps) {
       {menu('edit', 'Edit', <>
         <MenuItem shortcut="⌘Z" disabled={!props.canUndo} onSelect={() => select(props.onUndo)}>Undo</MenuItem>
         <MenuItem shortcut="⇧⌘Z" disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
+        <Separator />
+        <MenuItem shortcut="⇧⌘T" disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
       </>)}
 
       {menu('image', 'Image', <>

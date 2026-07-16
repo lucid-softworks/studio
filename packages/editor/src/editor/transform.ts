@@ -1,4 +1,4 @@
-import type { EditorLayer, LayerPatch, Position } from './types'
+import type { EditorLayer, LayerGeometryTransform, LayerPatch, Position } from './types'
 import type { LayerBounds, ResizeHandle } from './renderer'
 
 export type TransformResizeSnapshot = {
@@ -12,6 +12,75 @@ export type TransformResizeSnapshot = {
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
 const hasX = (handle: ResizeHandle) => handle.includes('e') || handle.includes('w')
 const hasY = (handle: ResizeHandle) => handle.includes('n') || handle.includes('s')
+
+export const defaultGeometryTransform: LayerGeometryTransform = {
+  skewX: 0,
+  skewY: 0,
+  perspectiveX: 0,
+  perspectiveY: 0,
+  corners: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }],
+  interpolation: 'bicubic',
+  referencePoint: { x: 0.5, y: 0.5 },
+}
+
+export function normalizeGeometryTransform(value?: LayerGeometryTransform | null): LayerGeometryTransform {
+  return value ? { ...defaultGeometryTransform, ...value, corners: value.corners?.length === 4 ? value.corners : defaultGeometryTransform.corners } : structuredClone(defaultGeometryTransform)
+}
+
+export function geometryTransformIsIdentity(value?: LayerGeometryTransform | null) {
+  if (!value) return true
+  const geometry = normalizeGeometryTransform(value)
+  return geometry.skewX === 0 && geometry.skewY === 0 && geometry.perspectiveX === 0 && geometry.perspectiveY === 0
+    && geometry.corners.every((corner) => corner.x === 0 && corner.y === 0)
+    && !geometry.warp && !(geometry.puppetPins?.length)
+}
+
+function bilinear(corners: LayerGeometryTransform['corners'], u: number, v: number) {
+  const [topLeft, topRight, bottomRight, bottomLeft] = corners
+  return {
+    x: topLeft.x * (1 - u) * (1 - v) + topRight.x * u * (1 - v) + bottomRight.x * u * v + bottomLeft.x * (1 - u) * v,
+    y: topLeft.y * (1 - u) * (1 - v) + topRight.y * u * (1 - v) + bottomRight.y * u * v + bottomLeft.y * (1 - u) * v,
+  }
+}
+
+export function geometryMesh(value?: LayerGeometryTransform | null) {
+  const geometry = normalizeGeometryTransform(value)
+  const columns = geometry.warp?.columns ?? (geometry.puppetPins?.length ? 9 : 2)
+  const rows = geometry.warp?.rows ?? (geometry.puppetPins?.length ? 9 : 2)
+  const source: Position[] = []
+  const destination: Position[] = []
+  for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
+    const u = columns === 1 ? 0.5 : column / (columns - 1)
+    const v = rows === 1 ? 0.5 : row / (rows - 1)
+    source.push({ x: u, y: v })
+    const stored = geometry.warp?.points[row * columns + column]
+    let x = stored?.x ?? u
+    let y = stored?.y ?? v
+    if (!stored) {
+      x = 0.5 + (u - 0.5) * (1 + geometry.perspectiveX / 100 * (v - 0.5) * 1.5) + Math.tan(geometry.skewX * Math.PI / 180) * (v - 0.5)
+      y = 0.5 + (v - 0.5) * (1 + geometry.perspectiveY / 100 * (u - 0.5) * 1.5) + Math.tan(geometry.skewY * Math.PI / 180) * (u - 0.5)
+      const corner = bilinear(geometry.corners, u, v)
+      x += corner.x
+      y += corner.y
+    }
+    if (geometry.puppetPins?.length) {
+      let total = 0
+      let dx = 0
+      let dy = 0
+      for (const pin of geometry.puppetPins) {
+        const distanceSquared = (u - pin.source.x) ** 2 + (v - pin.source.y) ** 2
+        const weight = 1 / Math.max(0.0001, distanceSquared)
+        total += weight
+        dx += (pin.position.x - pin.source.x) * weight
+        dy += (pin.position.y - pin.source.y) * weight
+      }
+      x += dx / total
+      y += dy / total
+    }
+    destination.push({ x, y })
+  }
+  return { columns, rows, source, destination }
+}
 
 function rotate(position: Position, degrees: number): Position {
   const angle = degrees * Math.PI / 180

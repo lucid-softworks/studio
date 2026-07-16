@@ -3,6 +3,7 @@ import { normalizeLayerFilters } from '../filters'
 import { getStackChildren, type StackItem } from '../stack'
 import type { AdjustmentDescriptor, BlendMode, EditorDocument, LayerEffects, LayerFilters } from '../types'
 import { isTypeGpuBlendMode } from './typegpu-blend-modes'
+import { geometryTransformIsIdentity } from '../transform'
 
 export type LayerRenderNode = {
   kind: 'layer'
@@ -147,6 +148,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
 }
 
 export function buildNativeLayerCompositionPlan(document: EditorDocument): NativeLayerCompositionPlan | null {
+  if (document.layers.some((layer) => !geometryTransformIsIdentity(layer.geometryTransform))) return null
   if (document.layers.some((layer) => (
     layer.vectorMask
     || layer.blendIf
