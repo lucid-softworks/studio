@@ -104,7 +104,10 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
   const groupIds = new Set(groups.map((group) => group.id))
   let layers = value.layers.map((layer) => {
     const normalizedLayer = layer.type === 'text' && !layer.fontFamily ? { ...layer, fontFamily: 'Inter' } : layer
-    return normalizedLayer.groupId && !groupIds.has(normalizedLayer.groupId) ? { ...normalizedLayer, groupId: null } : normalizedLayer
+    const withContent = normalizedLayer.type === 'smart-object' && normalizedLayer.embeddedDocument
+      ? { ...normalizedLayer, embeddedDocument: normalizeDocument(normalizedLayer.embeddedDocument) }
+      : normalizedLayer
+    return withContent.groupId && !groupIds.has(withContent.groupId) ? { ...withContent, groupId: null } : withContent
   })
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
   let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
@@ -118,6 +121,10 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
   }
   layers = flattenStackLayers(normalized)
   return { ...normalized, schemaVersion: EDITOR_DOCUMENT_SCHEMA_VERSION, layers }
+}
+
+function documentTree(document: EditorDocument): EditorDocument[] {
+  return [document, ...document.layers.flatMap((layer) => layer.type === 'smart-object' && layer.embeddedDocument ? documentTree(layer.embeddedDocument) : [])]
 }
 
 function openDatabase() {
@@ -143,9 +150,9 @@ function transactionRequest<T>(mode: IDBTransactionMode, operation: (store: IDBO
 
 async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): Promise<AssetMap> {
   const rasterAssetIds = new Set([
-    ...document.layers.filter((layer) => layer.type === 'raster' || layer.type === 'smart-object').map((layer) => layer.assetId),
-    ...document.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : []),
-    ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
+    ...documentTree(document).flatMap((nested) => nested.layers.filter((layer) => layer.type === 'raster' || layer.type === 'smart-object').map((layer) => layer.assetId)),
+    ...documentTree(document).flatMap((nested) => nested.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : [])),
+    ...documentTree(document).flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
   ])
   const entries = await Promise.all(assets.map(async (asset) => {
     const source = await loadImageBlob(asset.blob, asset.name)
@@ -166,13 +173,14 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
 }
 
 async function storedAssets(document: EditorDocument, assets: AssetMap): Promise<StoredAsset[]> {
+  const documents = documentTree(document)
   const referencedIds = new Set([
-    ...document.layers.flatMap((layer) => [
+    ...documents.flatMap((nested) => nested.layers.flatMap((layer) => [
       ...('assetId' in layer ? [layer.assetId] : []),
       ...(layer.maskAssetId ? [layer.maskAssetId] : []),
-    ]),
-    ...(document.background.imageAssetId ? [document.background.imageAssetId] : []),
-    ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
+    ])),
+    ...documents.flatMap((nested) => nested.background.imageAssetId ? [nested.background.imageAssetId] : []),
+    ...documents.flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
   ])
   const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]): Promise<StoredAsset | null> => {
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob

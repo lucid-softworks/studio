@@ -17,7 +17,7 @@ import { useRendererCapabilities } from './editor/rendering/use-renderer-capabil
 import type { AssetMap } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import type { RasterEdit, RasterRegion } from './editor/raster'
-import type { EditorDispatch, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
+import type { EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
 import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
@@ -78,6 +78,7 @@ function App({ onExit }: AppProps) {
       return normalizeWorkspaceLayout(defaultWorkspaceLayout)
     }
   })
+  const [smartObjectSessions, setSmartObjectSessions] = useState<Array<{ parentHistory: HistoryState; layerId: string; assetId: string; name: string }>>([])
   const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspacePreset[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('studio.saved-workspaces') ?? '[]') as unknown
@@ -717,16 +718,31 @@ function App({ onExit }: AppProps) {
     if (!layer || layer.type === 'adjustment' || layer.type === 'smart-object') return
     const { width, height } = getDocumentSize(document)
     const canvas = window.document.createElement('canvas')
-    canvas2dCompositionRenderer.render(canvas, {
-      ...document,
-      background: { ...document.background, kind: 'transparent' },
-      pattern: { ...document.pattern, kind: 'none' },
-      groups: [],
-      layers: [{ ...layer, groupId: null, stackOrder: 0, visible: true, locked: false, clipToBelow: false }],
-      selectedLayerId: null,
-      selectedLayerIds: [],
-      selectedGroupId: null,
-    }, assets)
+    const contentLayer = {
+      ...layer,
+      opacity: 100,
+      blendMode: 'normal',
+      groupId: null,
+      stackOrder: 0,
+      visible: true,
+      locked: false,
+      clipToBelow: false,
+      maskAssetId: null,
+      maskSettings: undefined,
+      vectorMask: undefined,
+      blendIf: undefined,
+      effects: null,
+      additionalEffects: [],
+    } as EditorLayer
+    const embeddedDocument = {
+      ...structuredClone(initialDocument),
+      canvasPreset: 'custom' as const,
+      canvasSize: { width, height },
+      layers: [contentLayer],
+      selectedLayerId: contentLayer.id,
+      selectedLayerIds: [contentLayer.id],
+    }
+    canvas2dCompositionRenderer.render(canvas, embeddedDocument, assets)
     const assetId = createId()
     const source = createEmptyRasterSource(width, height, `${layer.name} smart-object preview`)
     source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
@@ -746,10 +762,53 @@ function App({ onExit }: AppProps) {
       clipToBelow: layer.clipToBelow,
       effects: layer.effects,
       additionalEffects: layer.additionalEffects,
+      embeddedDocument,
     }
     setAssets((current) => ({ ...current, [assetId]: source }))
     dispatch({ type: 'replace-layer', id: layer.id, layer: smartObject })
     setNotice(`Converted ${layer.name} to an embedded smart object.`, 'success')
+  }
+
+  const openSmartObjectContents = () => {
+    const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
+    if (!layer || layer.type !== 'smart-object' || !layer.embeddedDocument) return
+    setSmartObjectSessions((current) => [...current, { parentHistory: history, layerId: layer.id, assetId: layer.assetId, name: layer.name }])
+    historyDispatch({ type: 'replace', document: structuredClone(layer.embeddedDocument) })
+    setSelection(null)
+    setEditingMaskLayerId(null)
+    setNotice(`Editing ${layer.name}. Save the contents to update every instance.`, 'info')
+  }
+
+  const closeSmartObjectContents = (save: boolean) => {
+    const session = smartObjectSessions.at(-1)
+    if (!session) return
+    const editedDocument = history.present
+    if (save) {
+      const preview = window.document.createElement('canvas')
+      canvas2dCompositionRenderer.render(preview, { ...editedDocument, selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null }, assets)
+      setAssets((current) => {
+        const source = current[session.assetId]
+        if (!source) return current
+        const surface = source.surface ?? window.document.createElement('canvas')
+        surface.width = preview.width
+        surface.height = preview.height
+        const context = surface.getContext('2d')
+        context?.clearRect(0, 0, surface.width, surface.height)
+        context?.drawImage(preview, 0, 0)
+        const next = { ...source, surface, revision: (source.revision ?? 0) + 1 }
+        void surfaceToBlob(surface).then((blob) => setAssets((latest) => latest[session.assetId] ? { ...latest, [session.assetId]: { ...latest[session.assetId], blob } } : latest))
+        return { ...current, [session.assetId]: next }
+      })
+      historyDispatch({ type: 'restore', state: session.parentHistory })
+      historyDispatch({ type: 'apply', action: { type: 'update-layer', id: session.layerId, patch: { embeddedDocument: editedDocument } } })
+      setNotice(`Saved ${session.name} contents and refreshed its preview.`, 'success')
+    } else {
+      historyDispatch({ type: 'restore', state: session.parentHistory })
+      setNotice(`Discarded changes to ${session.name}.`, 'info')
+    }
+    setSmartObjectSessions((current) => current.slice(0, -1))
+    setSelection(null)
+    setEditingMaskLayerId(null)
   }
 
   const applyFilter = (patch: Partial<LayerFilters>) => {
@@ -1014,9 +1073,11 @@ function App({ onExit }: AppProps) {
         </div>
       </header>
 
+      {smartObjectSessions.length > 0 && <div className="flex h-10 items-center justify-between border-b border-cyan-300/15 bg-cyan-300/[0.06] px-4 text-[11px]"><span className="text-cyan-100">Editing smart object · {smartObjectSessions.at(-1)?.name}</span><span className="flex gap-2"><button type="button" onClick={() => closeSmartObjectContents(false)} className="rounded-md px-3 py-1 text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Cancel</button><button type="button" onClick={() => closeSmartObjectContents(true)} className="rounded-md bg-cyan-300/15 px-3 py-1 font-medium text-cyan-100 hover:bg-cyan-300/20">Save contents & return</button></span></div>}
+
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>

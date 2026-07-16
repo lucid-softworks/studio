@@ -283,6 +283,8 @@ export function historyReducer(state: HistoryState, action: HistoryAction): Hist
     }
     case 'replace':
       return { past: [], present: action.document, future: [], groupKey: null }
+    case 'restore':
+      return action.state
     case 'discard-future':
       return state.future.length ? { ...state, future: [] } : state
   }

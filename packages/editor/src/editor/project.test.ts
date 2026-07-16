@@ -119,6 +119,26 @@ describe('Studio project migrations', () => {
     expect(String(serialized.assets[0].precision)).toMatch(/^data:/)
   })
 
+  it('serializes assets referenced by nested smart-object documents', async () => {
+    const nested = {
+      ...structuredClone(initialDocument),
+      layers: [{ id: 'inside', type: 'raster' as const, name: 'Inside', visible: true, locked: false, opacity: 100, position: { x: 0, y: 0 }, rotation: 0, assetId: 'inside-asset', width: 1, height: 1, scale: 100 }],
+    }
+    const document = {
+      ...structuredClone(initialDocument),
+      layers: [{ id: 'smart', type: 'smart-object' as const, name: 'Smart', visible: true, locked: false, opacity: 100, position: { x: 0, y: 0 }, rotation: 0, assetId: 'preview-asset', width: 1, height: 1, scale: 100, source: { kind: 'embedded' as const, fileName: 'inside.studio' }, smartFilters: [], embeddedDocument: nested }],
+    }
+    const blob = new Blob([Uint8Array.from([1])], { type: 'image/png' })
+    const assets: AssetMap = {
+      'preview-asset': { element: {} as HTMLImageElement, name: 'Preview', blob },
+      'inside-asset': { element: {} as HTMLImageElement, name: 'Inside', blob },
+    }
+
+    const serialized = JSON.parse(await serializeProject(document, assets)) as { assets: Array<{ id: string }> }
+
+    expect(serialized.assets.map((asset) => asset.id).sort()).toEqual(['inside-asset', 'preview-asset'])
+  })
+
   it('rejects unknown future document schemas', () => {
     expect(() => migrateDocument({ ...initialDocument, schemaVersion: 99 }, STUDIO_PROJECT_VERSION))
       .toThrow('That Studio document schema version is not supported.')

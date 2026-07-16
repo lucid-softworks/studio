@@ -19,6 +19,7 @@ type InspectorProps = {
   backgroundImageName?: string
   customFonts: CustomFontResource[]
   onLoadFont: () => void
+  onOpenSmartObject: () => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -53,7 +54,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -330,6 +331,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 <p className="mt-2 text-[10px] leading-relaxed text-zinc-500">Source pixels stay untouched while Studio renders this layer from its local preview.</p>
               </div>
               <RangeControl label="Scale" value={selected.scale} min={10} max={300} suffix="%" onChange={(value) => updateLayer(selected, { scale: value }, `scale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              {selected.source.kind === 'embedded' && <button type="button" disabled={!selected.embeddedDocument} onClick={onOpenSmartObject} className="mt-3 w-full rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-3 py-2 text-xs text-cyan-100 transition hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:text-zinc-700">Open contents</button>}
               <p className="mt-2 font-mono text-[9px] text-zinc-700">{selected.width} × {selected.height} px · {selected.smartFilters.length} smart filter{selected.smartFilters.length === 1 ? '' : 's'}</p>
             </ControlSection>
           )}

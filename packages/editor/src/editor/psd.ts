@@ -930,7 +930,7 @@ function detectSourceTopToBottom(psd: Psd) {
   return imageDifference(topToBottom, reference) <= imageDifference(bottomToTop, reference)
 }
 
-export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
+export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd', smartObjectDepth = 0): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
   initializeBrowserCanvas()
   let psd
   try {
@@ -1039,6 +1039,17 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
           blendMode: psdBlendMode(filter.blendMode),
           descriptor: serializePsdValue(filter),
         }))
+        if (linkedFile?.data?.length && linkedFile.type === '8BPS' && smartObjectDepth < 4) {
+          try {
+            const bytes = linkedFile.data.slice().buffer
+            const embedded = await importPsdBuffer(bytes, linkedFile.name, smartObjectDepth + 1)
+            importedLayer.embeddedDocument = embedded.document
+            Object.assign(assets, embedded.assets)
+          } catch {
+            // The raster preview remains editable as a smart-object layer when
+            // the embedded payload uses a codec Studio cannot open yet.
+          }
+        }
       }
       importedLayer.visible = !layer.hidden
       importedLayer.locked = Boolean(layer.protected?.position || layer.protected?.composite)

@@ -617,4 +617,22 @@ describe('PSD layer ordering', () => {
       { id: linkedId, name: 'linked.png', linkedFile: { fileSize: 128, name: 'linked.png', fullPath: '/Artwork/linked.png', originalPath: '/Artwork/linked.png', relativePath: './linked.png' } },
     )).toEqual({ kind: 'linked', fileName: 'linked.png', linkedFileId: linkedId, path: '/Artwork/linked.png', lastModified: undefined })
   })
+
+  it('opens embedded PSB smart-object contents as a nested document', async () => {
+    const imageData = new ImageData(2, 2)
+    imageData.data.fill(255)
+    const nestedBytes = new Uint8Array(writePsd({ width: 2, height: 2, imageData, children: [{ name: 'Nested pixels', left: 0, top: 0, right: 2, bottom: 2, imageData }] }, { noBackground: true }))
+    const linkedId = '20953ddb-9391-11ec-b4f1-c15674f50bc6'
+    const imported = await importPsdBuffer(writePsd({
+      width: 2,
+      height: 2,
+      imageData,
+      children: [{ name: 'Embedded', left: 0, top: 0, right: 2, bottom: 2, imageData, placedLayer: { id: linkedId, type: 'raster', transform: [0, 0, 2, 0, 2, 2, 0, 2], width: 2, height: 2 } }],
+      linkedFiles: [{ id: linkedId, name: 'embedded.psb', type: '8BPS', data: nestedBytes }],
+    }, { noBackground: true }), 'embedded.psd')
+
+    const smartObject = imported.document.layers[0]
+    expect(smartObject).toMatchObject({ type: 'smart-object', embeddedDocument: { layers: [{ name: 'Nested pixels' }] } })
+    if (smartObject.type === 'smart-object') expect(imported.assets[smartObject.embeddedDocument!.layers[0].type === 'raster' ? smartObject.embeddedDocument!.layers[0].assetId : '']).toBeDefined()
+  })
 })

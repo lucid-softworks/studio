@@ -139,6 +139,7 @@ export type SmartObjectLayer = BaseLayer & {
   source: SmartObjectSource
   smartFilters: SmartFilter[]
   contentHash?: string
+  embeddedDocument?: EditorDocument
 }
 
 export type TextStyleRun = {
@@ -329,6 +330,7 @@ export type LayerPatch = Partial<{
   source: SmartObjectSource
   smartFilters: SmartFilter[]
   contentHash: string
+  embeddedDocument: EditorDocument
   shadow: number
   flipX: boolean
   flipY: boolean
@@ -403,6 +405,7 @@ export type HistoryAction =
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'replace'; document: EditorDocument }
+  | { type: 'restore'; state: HistoryState }
   | { type: 'discard-future' }
 
 export type EditorDispatch = (
