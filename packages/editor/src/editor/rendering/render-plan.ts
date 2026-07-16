@@ -148,6 +148,7 @@ function collectNativeLayers(nodes: RenderPlanNode[], layers: Array<LayerRenderN
 }
 
 export function buildNativeLayerCompositionPlan(document: EditorDocument): NativeLayerCompositionPlan | null {
+  if (document.artboards?.length) return null
   if (document.layers.some((layer) => !geometryTransformIsIdentity(layer.geometryTransform))) return null
   if (document.layers.some((layer) => (
     layer.vectorMask

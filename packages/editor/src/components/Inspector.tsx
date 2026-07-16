@@ -2,7 +2,7 @@ import { backgroundPresets, canvasPresets, createId } from '../editor/presets'
 import { adjustmentKinds, createAdjustmentDescriptor } from '../editor/adjustments'
 import { defaultLayerFilters, normalizeLayerFilters } from '../editor/filters'
 import { getDescendantLayers, getStackChildren } from '../editor/stack'
-import type { AdjustmentDescriptor, BlendMode, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
+import type { AdjustmentDescriptor, BlendMode, DocumentArtboard, EditorDispatch, EditorDocument, EditorLayer, LayerPatch, PatternKind } from '../editor/types'
 import { ControlSection, RangeControl } from './Control'
 import { ImageIcon, ResetIcon } from './Icons'
 import { LayerEffectsControl } from './LayerEffectsControl'
@@ -120,6 +120,14 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
       add('horizontal', edge); add('horizontal', edge + gutter)
     }
     dispatch({ type: 'set-guides', guides: [...positions.values()].map((guide) => ({ id: createId(), ...guide })) })
+  }
+  const updateArtboard = (id: string, patch: Partial<Omit<DocumentArtboard, 'id'>>) => dispatch({ type: 'set-artboards', artboards: (document.artboards ?? []).map((artboard) => artboard.id === id ? { ...artboard, ...patch } : artboard) })
+  const addArtboard = () => {
+    const count = document.artboards?.length ?? 0
+    const width = count === 0 ? document.canvasSize.width : Math.max(1, Math.floor(document.canvasSize.width / 2))
+    const height = count === 0 ? document.canvasSize.height : Math.max(1, Math.floor(document.canvasSize.height / 2))
+    const artboard: DocumentArtboard = { id: createId(), name: `Artboard ${count + 1}`, x: count === 0 ? 0 : (count - 1) % 2 * width, y: count === 0 ? 0 : Math.floor((count - 1) / 2) * height, width, height, background: { kind: 'transparent', color: '#ffffff' } }
+    dispatch({ type: 'set-artboards', artboards: [...(document.artboards ?? []), artboard] })
   }
   const addSmartFilter = (kind: 'blur' | 'sharpen' | 'invert') => {
     if (selected?.type !== 'smart-object') return
@@ -295,6 +303,19 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
               {(['columns', 'rows', 'margin', 'gutter'] as const).map((field) => <label key={field} className="text-[9px] text-zinc-600 capitalize">{field}<input aria-label={`Guide ${field}`} type="number" min={field === 'columns' || field === 'rows' ? 1 : 0} max={field === 'columns' || field === 'rows' ? 24 : 2000} value={guideLayout[field]} onChange={(event) => setGuideLayout((current) => ({ ...current, [field]: Math.max(field === 'columns' || field === 'rows' ? 1 : 0, Number(event.target.value)) }))} className={`${fieldClass} mt-1`} /></label>)}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={applyGuideLayout} className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2 text-[10px] text-cyan-100/70 hover:bg-cyan-300/[0.08]">Create layout</button><button type="button" disabled={!document.guides?.length} onClick={() => dispatch({ type: 'set-guides', guides: [] })} className="rounded-lg border border-white/[0.08] px-3 py-2 text-[10px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">Clear guides</button></div>
+          </ControlSection>
+
+          <ControlSection title="Artboards">
+            <p className="text-[10px] leading-relaxed text-zinc-600">Define export regions inside the document. Each region can keep transparency or paint its own background colour.</p>
+            <div className="mt-3 space-y-2">
+              {(document.artboards ?? []).map((artboard) => <div key={artboard.id} className="rounded-lg border border-white/[0.07] bg-black/20 p-2.5">
+                <div className="flex items-center gap-2"><input aria-label={`${artboard.name} name`} value={artboard.name} onChange={(event) => updateArtboard(artboard.id, { name: event.target.value })} className="min-w-0 flex-1 bg-transparent text-[11px] font-medium text-zinc-300 outline-none" /><button type="button" aria-label={`Delete ${artboard.name}`} onClick={() => dispatch({ type: 'set-artboards', artboards: (document.artboards ?? []).filter((candidate) => candidate.id !== artboard.id) })} className="rounded px-1.5 text-zinc-700 hover:bg-red-400/10 hover:text-red-300">×</button></div>
+                <div className="mt-2 grid grid-cols-4 gap-1.5">{(['x', 'y', 'width', 'height'] as const).map((field) => <label key={field} className="text-[8px] text-zinc-700 uppercase">{field}<input aria-label={`${artboard.name} ${field}`} type="number" min={field === 'width' || field === 'height' ? 1 : 0} value={Math.round(artboard[field])} onChange={(event) => updateArtboard(artboard.id, { [field]: Math.max(field === 'width' || field === 'height' ? 1 : 0, Number(event.target.value)) })} className="mt-1 w-full rounded border border-white/[0.07] bg-zinc-950 px-1.5 py-1 font-mono text-[9px] text-zinc-500 outline-none" /></label>)}</div>
+                <div className="mt-2 flex items-center gap-2"><select aria-label={`${artboard.name} background`} value={artboard.background.kind} onChange={(event) => updateArtboard(artboard.id, { background: { ...artboard.background, kind: event.target.value as 'transparent' | 'color' } })} className="min-w-0 flex-1 rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 text-[9px] text-zinc-500"><option value="transparent">Transparent</option><option value="color">Colour</option></select>{artboard.background.kind === 'color' && <input aria-label={`${artboard.name} background color`} type="color" value={artboard.background.color} onChange={(event) => updateArtboard(artboard.id, { background: { ...artboard.background, color: event.target.value } })} className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" />}</div>
+              </div>)}
+            </div>
+            <button type="button" onClick={addArtboard} className="mt-3 w-full rounded-lg border border-violet-300/15 bg-violet-300/[0.04] px-3 py-2 text-[10px] text-violet-100/70 hover:bg-violet-300/[0.08]">Add artboard</button>
+            {Boolean(document.artboards?.length) && <p className="mt-2 text-[9px] text-zinc-700">Use File → Export artboards as PNGs to export every region.</p>}
           </ControlSection>
         </>
       ) : (

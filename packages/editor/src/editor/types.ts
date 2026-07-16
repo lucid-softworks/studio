@@ -68,6 +68,7 @@ export type BlendIfSettings = {
 export type SerializedPsdValue = null | boolean | number | string | SerializedPsdValue[] | { [key: string]: SerializedPsdValue }
 export type DocumentGuide = { id: string; direction: 'horizontal' | 'vertical'; position: number }
 export type DocumentGridSettings = { visible: boolean; spacing: number; subdivisions: number; color: string; snap: boolean }
+export type DocumentArtboard = { id: string; name: string; x: number; y: number; width: number; height: number; background: { kind: 'transparent' | 'color'; color: string } }
 export type PsdDocumentMetadata = {
   imageResources?: SerializedPsdValue
   linkedFiles?: SerializedPsdValue[]
@@ -323,6 +324,7 @@ export type EditorDocument = {
   selectedPathId?: string | null
   guides?: DocumentGuide[]
   grid?: DocumentGridSettings
+  artboards?: DocumentArtboard[]
   psdMetadata?: PsdDocumentMetadata
 }
 
@@ -401,6 +403,7 @@ export type DocumentAction =
   | { type: 'set-paths'; paths: DocumentPath[]; selectedPathId: string | null }
   | { type: 'set-guides'; guides: DocumentGuide[] }
   | { type: 'set-grid'; patch: Partial<DocumentGridSettings> }
+  | { type: 'set-artboards'; artboards: DocumentArtboard[] }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

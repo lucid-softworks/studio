@@ -488,7 +488,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} guides={document.guides} grid={document.grid} />
+        <CanvasRulers stageRef={stageRef} canvasRef={canvasRef} zoom={zoom} guides={document.guides} grid={document.grid} artboards={document.artboards} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(79,70,229,0.08),transparent_42%)]" />
         <div className={`relative z-10 grid w-full max-w-full shrink-0 items-center gap-3 ${splitView ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <div className="flex min-w-0 items-center justify-center transition-transform duration-150" style={{ aspectRatio: `${preset.width} / ${preset.height}`, transform: `scale(${zoom / 100}) rotate(${viewRotation}deg)` }}>

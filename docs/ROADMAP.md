@@ -127,7 +127,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add puppet warp with editable mesh pins
 - [x] Add content-aware scale without server or AI dependencies
 - [x] Add transform-again, numeric reference points, and precise interpolation controls
-- [ ] Add artboards, artboard export, and per-artboard backgrounds
+- [x] Add artboards, artboard export, and per-artboard backgrounds
 - [x] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
 - [x] Add linked views, split views, navigator, rotate view, and scrubby zoom
 - [x] Add configurable grids, guide layouts, smart guides, and reusable workspace layouts

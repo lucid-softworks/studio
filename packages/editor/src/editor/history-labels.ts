@@ -9,6 +9,7 @@ const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
   'set-paths': 'Edit paths',
   'set-guides': 'Edit guides',
   'set-grid': 'Change grid',
+  'set-artboards': 'Edit artboards',
   'replace-document': 'Replace document',
   'add-layer': 'Add layer',
   'replace-layer': 'Rasterize layer',

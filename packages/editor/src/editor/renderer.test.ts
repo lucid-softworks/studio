@@ -36,6 +36,23 @@ describe('mipmap selection', () => {
   })
 })
 
+describe('artboard backgrounds', () => {
+  it('renders independent colour and transparent artboard regions', () => {
+    const canvas = createCanvas(20, 10) as unknown as HTMLCanvasElement
+    renderComposition(canvas, {
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 20, height: 10 },
+      artboards: [
+        { id: 'left', name: 'Left', x: 0, y: 0, width: 10, height: 10, background: { kind: 'color', color: '#ff0000' } },
+        { id: 'right', name: 'Right', x: 10, y: 0, width: 10, height: 10, background: { kind: 'transparent', color: '#ffffff' } },
+      ],
+    }, {})
+    expect([...canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data]).toEqual([255, 0, 0, 255])
+    expect(canvas.getContext('2d')!.getImageData(15, 5, 1, 1).data[3]).toBe(0)
+  })
+})
+
 describe('advanced masks', () => {
   it('renders compound vector masks with density and Blend If thresholds', () => {
     const path = (left: number, right: number) => ({

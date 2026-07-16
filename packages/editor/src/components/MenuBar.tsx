@@ -13,6 +13,7 @@ type MenuBarProps = {
   onLoadFont: () => void
   onLoadBrush: () => void
   onExport: (format: ExportFormat) => void
+  onExportArtboards: () => void
   onUndo: () => void
   onRedo: () => void
   onTransformAgain: () => void
@@ -61,6 +62,7 @@ type MenuBarProps = {
   hasFilterTarget: boolean
   saving: boolean
   exporting: boolean
+  hasArtboards: boolean
 }
 
 function MenuItem({ children, shortcut, disabled, checked, onSelect }: { children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
@@ -153,6 +155,8 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('svg'))}>Editable SVG</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
+        <Separator />
+        <MenuItem disabled={props.exporting || !props.hasArtboards} onSelect={() => select(props.onExportArtboards)}>Export artboards as PNGs</MenuItem>
       </>, 'w-60')}
 
       {menu('edit', 'Edit', <>

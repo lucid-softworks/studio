@@ -161,6 +161,15 @@ function drawGradient(context: CanvasRenderingContext2D, width: number, height: 
 }
 
 function drawBackground(context: CanvasRenderingContext2D, width: number, height: number, document: EditorDocument, assets: AssetMap, resources: RenderResourceRegistry) {
+  if (document.artboards?.length) {
+    context.clearRect(0, 0, width, height)
+    for (const artboard of document.artboards) {
+      if (artboard.background.kind !== 'color') continue
+      context.fillStyle = artboard.background.color
+      context.fillRect(artboard.x, artboard.y, artboard.width, artboard.height)
+    }
+    return
+  }
   const background = document.background
   const backgroundImage = background.imageAssetId ? canvasImageResource(resources, assets, background.imageAssetId) : null
   if (background.kind === 'transparent') {
@@ -194,6 +203,11 @@ function drawPattern(context: CanvasRenderingContext2D, width: number, height: n
   if (pattern.kind === 'none' || pattern.opacity === 0) return
   const spacing = Math.max(12, pattern.size)
   context.save()
+  if (document.artboards?.length) {
+    context.beginPath()
+    for (const artboard of document.artboards) context.rect(artboard.x, artboard.y, artboard.width, artboard.height)
+    context.clip()
+  }
   context.globalAlpha = pattern.opacity / 100
   context.strokeStyle = pattern.color
   context.fillStyle = pattern.color
@@ -1668,6 +1682,16 @@ export function renderComposition(
   drawPattern(context, canvas.width, canvas.height, document)
 
   drawRenderPlan(context, canvas, document, assets, resources, buildCompositionRenderPlan(document).nodes)
+
+  if (document.artboards?.length) {
+    context.save()
+    context.globalCompositeOperation = 'destination-in'
+    context.fillStyle = '#000000'
+    context.beginPath()
+    for (const artboard of document.artboards) context.rect(artboard.x, artboard.y, artboard.width, artboard.height)
+    context.fill()
+    context.restore()
+  }
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)

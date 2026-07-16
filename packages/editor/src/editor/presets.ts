@@ -43,6 +43,7 @@ export const initialDocument: EditorDocument = {
   selectedGroupId: null,
   guides: [],
   grid: { visible: false, spacing: 100, subdivisions: 4, color: '#38bdf8', snap: true },
+  artboards: [],
 }
 
 export function createId() {

@@ -1215,6 +1215,30 @@ function App({ onExit }: AppProps) {
     }, mime, format === 'png' ? undefined : 0.92)
   }
 
+  const exportArtboards = async () => {
+    if (!document.artboards?.length) return
+    setIsExporting(true)
+    try {
+      const composition = window.document.createElement('canvas')
+      canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
+      for (const [index, artboard] of document.artboards.entries()) {
+        const output = window.document.createElement('canvas')
+        output.width = Math.max(1, Math.round(artboard.width))
+        output.height = Math.max(1, Math.round(artboard.height))
+        output.getContext('2d')?.drawImage(composition, artboard.x, artboard.y, artboard.width, artboard.height, 0, 0, output.width, output.height)
+        const blob = await new Promise<Blob | null>((resolve) => output.toBlob(resolve, 'image/png'))
+        if (!blob) throw new Error(`Could not render ${artboard.name}.`)
+        const name = artboard.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `artboard-${index + 1}`
+        downloadBlob(blob, `${name}.png`)
+      }
+      setNotice(`Exported ${document.artboards.length} artboard${document.artboards.length === 1 ? '' : 's'} locally.`, 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The artboards could not be exported.')
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const saveProject = async () => {
     setIsProjectSaving(true)
     setNotice(null)
@@ -1403,6 +1427,7 @@ function App({ onExit }: AppProps) {
             onLoadFont={() => fontInputRef.current?.click()}
             onLoadBrush={() => brushInputRef.current?.click()}
             onExport={(format) => void exportImage(format)}
+            onExportArtboards={() => void exportArtboards()}
             onUndo={performUndo}
             onRedo={performRedo}
             onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
@@ -1458,6 +1483,7 @@ function App({ onExit }: AppProps) {
             hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
             saving={isProjectSaving}
             exporting={isExporting}
+            hasArtboards={Boolean(document.artboards?.length)}
           />
         </div>
 

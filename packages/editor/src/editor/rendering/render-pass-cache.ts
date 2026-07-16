@@ -28,6 +28,7 @@ export function backgroundPassSignature(document: EditorDocument, assets: AssetM
     document.canvasSize,
     document.background,
     document.pattern,
+    document.artboards,
     assetSignature(imageAsset),
   ])
 }

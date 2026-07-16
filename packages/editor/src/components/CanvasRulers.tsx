@@ -1,10 +1,10 @@
 import { useLayoutEffect, useMemo, useState, type RefObject } from 'react'
 import { rulerStep, rulerValues } from './canvas-ruler-scale'
-import type { DocumentGridSettings, DocumentGuide } from '../editor/types'
+import type { DocumentArtboard, DocumentGridSettings, DocumentGuide } from '../editor/types'
 
 type Metrics = { width: number; height: number; canvasLeft: number; canvasTop: number; scaleX: number; scaleY: number; scrollLeft: number; scrollTop: number }
 
-export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [], grid }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number; guides?: DocumentGuide[]; grid?: DocumentGridSettings }) {
+export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [], grid, artboards = [] }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number; guides?: DocumentGuide[]; grid?: DocumentGridSettings; artboards?: DocumentArtboard[] }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
 
   useLayoutEffect(() => {
@@ -76,6 +76,7 @@ export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [], grid }: {
         {verticalGridLines.map((position, index) => <line key={`x-${index}`} x1={position * metrics.scaleX} x2={position * metrics.scaleX} y1="0" y2="100%" stroke={grid.color} strokeOpacity={(index + 1) % grid.subdivisions === 0 ? 0.52 : 0.22} strokeWidth={(index + 1) % grid.subdivisions === 0 ? 0.8 : 0.5} />)}
         {horizontalGridLines.map((position, index) => <line key={`y-${index}`} y1={position * metrics.scaleY} y2={position * metrics.scaleY} x1="0" x2="100%" stroke={grid.color} strokeOpacity={(index + 1) % grid.subdivisions === 0 ? 0.52 : 0.22} strokeWidth={(index + 1) % grid.subdivisions === 0 ? 0.8 : 0.5} />)}
       </svg>}
+      {artboards.map((artboard) => <div key={artboard.id} className="absolute border border-violet-300/65 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]" style={{ left: metrics.canvasLeft + artboard.x * metrics.scaleX, top: metrics.canvasTop + artboard.y * metrics.scaleY, width: artboard.width * metrics.scaleX, height: artboard.height * metrics.scaleY }}><span className="absolute bottom-full left-0 rounded-t bg-violet-400/85 px-1.5 py-0.5 text-[8px] font-semibold text-violet-950">{artboard.name}</span></div>)}
       <svg width={metrics.width} height="22" className="absolute top-0 left-0 bg-[#151518]/95 text-zinc-500 shadow-[0_1px_rgba(255,255,255,0.06)]">
         {ticks.x.map((value, index) => {
           const x = metrics.canvasLeft + value * metrics.scaleX

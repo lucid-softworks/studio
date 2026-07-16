@@ -78,6 +78,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       const grid = { ...(state.grid ?? { visible: false, spacing: 100, subdivisions: 4, color: '#38bdf8', snap: true }), ...action.patch }
       return { ...state, grid: { ...grid, spacing: Math.max(4, Math.min(2000, Number(grid.spacing) || 4)), subdivisions: Math.max(1, Math.min(10, Math.round(Number(grid.subdivisions) || 1))) } }
     }
+    case 'set-artboards':
+      return { ...state, artboards: action.artboards }
     case 'replace-document':
       return action.document
     case 'add-layer': {
@@ -232,6 +234,7 @@ const documentFields = [
   'selectedPathId',
   'guides',
   'grid',
+  'artboards',
   'psdMetadata',
 ] as const satisfies readonly (keyof EditorDocument)[]
 

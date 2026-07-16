@@ -123,7 +123,11 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     color: typeof value.grid?.color === 'string' ? value.grid.color : '#38bdf8',
     snap: value.grid?.snap !== false,
   }
-  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId, guides: Array.isArray(value.guides) ? value.guides : [], grid }
+  const artboards = Array.isArray(value.artboards) ? value.artboards.flatMap((artboard) => {
+    if (!artboard || typeof artboard !== 'object' || typeof artboard.id !== 'string') return []
+    return [{ ...artboard, name: typeof artboard.name === 'string' ? artboard.name : 'Artboard', x: Number(artboard.x) || 0, y: Number(artboard.y) || 0, width: Math.max(1, Number(artboard.width) || canvasSize.width), height: Math.max(1, Number(artboard.height) || canvasSize.height), background: { kind: artboard.background?.kind === 'color' ? 'color' as const : 'transparent' as const, color: typeof artboard.background?.color === 'string' ? artboard.background.color : '#ffffff' } }]
+  }) : []
+  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId, guides: Array.isArray(value.guides) ? value.guides : [], grid, artboards }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {
     const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
     normalized = {
