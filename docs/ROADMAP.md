@@ -125,7 +125,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add skew, perspective, distort, and multi-point warp transforms
 - [x] Add perspective crop and perspective warp
 - [x] Add puppet warp with editable mesh pins
-- [ ] Add content-aware scale without server or AI dependencies
+- [x] Add content-aware scale without server or AI dependencies
 - [x] Add transform-again, numeric reference points, and precise interpolation controls
 - [ ] Add artboards, artboard export, and per-artboard backgrounds
 - [ ] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents

@@ -9,7 +9,7 @@ import { LayerEffectsControl } from './LayerEffectsControl'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
 import type { CustomFontResource } from '../editor/resources'
-import type { CSSProperties, DragEvent } from 'react'
+import { useState, type CSSProperties, type DragEvent } from 'react'
 import { normalizeGeometryTransform } from '../editor/transform'
 
 type InspectorProps = {
@@ -24,6 +24,7 @@ type InspectorProps = {
   onReplaceSmartObject: () => void
   onRelinkSmartObject: () => void
   onExportSmartObject: () => void
+  onContentAwareScale: (layerId: string, width: number, height: number) => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -62,7 +63,8 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+  const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -353,6 +355,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
               <div className="rounded-lg border border-violet-400/15 bg-violet-400/[0.06] p-3 text-[10px] leading-relaxed text-violet-200/70">Use the Brush or Eraser tool above the canvas to edit this layer’s pixels.</div>
               <RangeControl label="Scale" value={selected.scale} min={10} max={300} suffix="%" onChange={(value) => updateLayer(selected, { scale: value }, `scale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
               <p className="mt-2 font-mono text-[9px] text-zinc-700">{selected.width} × {selected.height} px</p>
+              <div className="mt-4 border-t border-white/[0.06] pt-3"><p className="text-[9px] font-semibold tracking-[0.14em] text-zinc-600 uppercase">Content-aware scale</p><p className="mt-1 text-[9px] leading-relaxed text-zinc-700">Local seam carving protects high-contrast subjects without AI.</p><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-[9px] text-zinc-600">Width %<input aria-label="Content-aware width percent" type="number" min="25" max="200" value={contentAwarePercent.width} onChange={(event) => setContentAwarePercent((current) => ({ ...current, width: Number(event.target.value) }))} className={`${fieldClass} mt-1`} /></label><label className="text-[9px] text-zinc-600">Height %<input aria-label="Content-aware height percent" type="number" min="25" max="200" value={contentAwarePercent.height} onChange={(event) => setContentAwarePercent((current) => ({ ...current, height: Number(event.target.value) }))} className={`${fieldClass} mt-1`} /></label></div><button type="button" onClick={() => onContentAwareScale(selected.id, selected.width * contentAwarePercent.width / 100, selected.height * contentAwarePercent.height / 100)} className="mt-2 w-full rounded-lg border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2 text-[9px] text-cyan-100/70 hover:bg-cyan-300/[0.08]">Apply local seam carving</button></div>
             </ControlSection>
           )}
 
