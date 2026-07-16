@@ -57,24 +57,27 @@ Run all four with `pnpm check`.
 
 `@studio/web` owns navigation and presentation. `/` renders the product landing page and `/app` mounts the shared editor. The route also understands `#/app`, allowing the production Electron build to load the static Vite bundle over `file:`.
 
-`@studio/desktop` is a minimal Electron host with context isolation, renderer sandboxing, and Node integration disabled. Packaging, signing, auto-update, and native file integrations will be added when desktop distribution begins.
+`@studio/desktop` is a thin Electron host with context isolation, renderer sandboxing, and Node integration disabled. It includes native open/save dialogs, recent files, atomic writes, file associations, external-change notifications, clipboard image writes, a screen colour picker, scratch storage, update checks, and electron-builder targets. Producing signed distributable builds still requires the platform signing credentials used by the release environment.
 
 All image decoding, editing, autosave, project serialization, and export remain client-side. No application backend is required.
 
-## Current editor scope
+## Current support
 
-- Transparent blank documents and mutable raster layers
-- Brush, eraser, rectangle and ellipse selections
-- Selection add, subtract, intersect, clear, and selection-aware pixel deletion
-- Editable layer masks, clipping masks, blend modes, stack-based adjustment layers, and non-destructive per-layer filters
-- Transform handles, rotation, multi-selection, alignment, visibility, locking, ordering, and recursively composited nested layer folders
-- Folder drag-and-drop reparenting, inherited locks/visibility, pass-through blending, and hierarchy-aware duplication
-- PNG, JPEG, WebP, and layered PSD opening with composite-verified stack direction and folder hierarchy preservation
-- PNG, JPEG, and WebP export
-- Portable `.studio` projects and IndexedDB recovery
-- Dirty-region raster undo/redo
+Studio has broad editor coverage, but feature presence is not a claim of Photopea-level fidelity. The pending-only [parity roadmap](docs/ROADMAP.md) records the compatibility, depth, performance, and validation work that remains.
 
-PSD support currently follows `ag-psd`: RGB 8-bit PSD files are supported, while PSB, 16-bit, and several non-RGB colour modes are not.
+The editor currently provides raster, image, text, shape, adjustment, smart-object, animation, and grouped layers; masks, clipping, blend modes, layer effects, filters, paths, channels, selections, transforms, painting and retouching tools; local fonts, brushes, patterns, gradients, swatches, actions, scripts, plugins, recovery, and multi-document workspaces.
+
+### File support
+
+- Studio projects: editable `.studio` save/load with IndexedDB recovery.
+- Photoshop: layered PSD and PSB import/export, including preserved high-depth sample data, editable supported structures, and compatibility warnings.
+- Browser images: PNG, JPEG, WebP, GIF, BMP, AVIF, SVG, and ICO import where the browser or bundled codec supports the file.
+- Advanced raster input: TIFF, OpenEXR, HDR, HEIF/HEIC, PDF, and embedded previews from supported TIFF-based RAW containers.
+- Additional output: AVIF, layered TIFF, PDF/print PDF, SVG, GIF, and APNG workflows.
+
+PSD/PSB support uses `ag-psd` plus Studio's local high-depth and metadata handling. RGB 8-bit documents have the broadest editable path. Studio can preserve and rewrite supported 16-bit and 32-bit PSD/PSB samples, but their interactive canvas preview and several editing paths are still 8-bit. Non-RGB Photoshop documents are currently converted to RGB for editing with a compatibility warning. See the parity roadmap instead of assuming every Photoshop descriptor or colour mode round-trips perfectly.
+
+PDF pages are currently rasterized on import, and RAW containers use a locally decoded embedded preview rather than full sensor demosaicing. Electron packaging targets are configured for macOS, Windows, and Linux, while signing and publishing depend on release credentials.
 
 ## Commits
 

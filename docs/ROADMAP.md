@@ -32,7 +32,6 @@ A feature is complete only when it has:
 - [ ] Add visual golden tests for every renderer feature at multiple zoom levels and document precisions.
 - [ ] Create standard performance fixtures for 2K, 4K, 8K, deeply layered, high-bit-depth, and animation documents.
 - [ ] Track pointer latency, dropped frames, render count, memory, save time, and export time in repeatable benchmarks.
-- [ ] Resolve the conflicting support claims in the README, UI, codec warnings, and test fixtures.
 
 ## P1 — interactive performance and large documents
 
