@@ -36,6 +36,7 @@ import { precisionFromImageData } from './editor/precision'
 import { ShortcutEditor } from './components/ShortcutEditor'
 import { normalizeShortcutMap, type ShortcutMap } from './editor/shortcuts'
 import { actionConditionMatches, type ActionStep } from './editor/actions'
+import { ScriptSandboxDialog } from './components/ScriptSandboxDialog'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -64,6 +65,7 @@ function App({ onExit }: AppProps) {
   const [tool, setTool] = useState<EditorTool>('move')
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => { try { return normalizeShortcutMap(JSON.parse(localStorage.getItem('studio.shortcuts') ?? '{}')) } catch { return normalizeShortcutMap({}) } })
   const [editingShortcuts, setEditingShortcuts] = useState(false)
+  const [editingScripts, setEditingScripts] = useState(false)
   const [lastGeometryTransform, setLastGeometryTransform] = useState<LayerGeometryTransform | null>(null)
   const [zoom, setZoom] = useState(100)
   const [customFonts, setCustomFonts] = useState<CustomFontResource[]>([])
@@ -1621,6 +1623,7 @@ function App({ onExit }: AppProps) {
             onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
             shortcuts={shortcuts}
             onEditShortcuts={() => setEditingShortcuts(true)}
+            onOpenScripts={() => setEditingScripts(true)}
             onContentAwareFill={() => void contentAwareFillSelection()}
             onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}
             onFlipCanvas={(axis) => transformCanvas(axis === 'x' ? 'flip-x' : 'flip-y')}
@@ -1736,6 +1739,7 @@ function App({ onExit }: AppProps) {
       {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
       {selectionWorkspaceSource && <SelectAndMaskWorkspace source={selectionWorkspaceSource} onPreview={setSelection} onApply={() => setSelectionWorkspaceSource(null)} onCancel={() => { setSelection(cloneSelection(selectionWorkspaceSource)); setSelectionWorkspaceSource(null) }} />}
       {editingShortcuts && <ShortcutEditor value={shortcuts} onChange={setShortcuts} onClose={() => setEditingShortcuts(false)} />}
+      {editingScripts && <ScriptSandboxDialog document={document} onClose={() => setEditingScripts(false)} />}
     </div>
   )
 }

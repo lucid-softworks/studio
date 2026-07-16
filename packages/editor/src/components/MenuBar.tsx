@@ -11,6 +11,7 @@ type MenuBarProps = {
   onSave: () => void
   shortcuts: ShortcutMap
   onEditShortcuts: () => void
+  onOpenScripts: () => void
   onAddImage: () => void
   onPlaceLinkedSmartObject: () => void
   onLoadFont: () => void
@@ -173,6 +174,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={!props.canContentAwareFill} onSelect={() => select(props.onContentAwareFill)}>Content-Aware Fill…</MenuItem>
         <Separator />
         <MenuItem onSelect={() => select(props.onEditShortcuts)}>Keyboard Shortcuts…</MenuItem>
+        <MenuItem onSelect={() => select(props.onOpenScripts)}>Local Scripts…</MenuItem>
       </>)}
 
       {menu('image', 'Image', <>
