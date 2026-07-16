@@ -5,19 +5,19 @@ import type { AdjustmentDescriptor, FilterGraphKind } from './types'
 
 export type ParityStatus = 'missing' | 'partial' | 'validation-needed' | 'parity-validated' | 'excluded'
 export type ParityConcern = 'missing' | 'partial' | 'visually-inaccurate' | 'round-trip-incompatible' | 'too-slow' | 'parity-validated' | 'excluded'
-export type ParityAssessment = { status: ParityStatus; concerns: readonly ParityConcern[]; gap: string }
+export type ParityAssessment = { status: ParityStatus; concerns: readonly ParityConcern[]; gap: string; evidence: readonly string[] }
 
-const partial = (gap: string, ...concerns: ParityConcern[]): ParityAssessment => ({ status: 'partial', concerns: ['partial', ...concerns], gap })
-const validate = (gap: string): ParityAssessment => ({ status: 'validation-needed', concerns: ['partial'], gap })
-const missing = (gap: string): ParityAssessment => ({ status: 'missing', concerns: ['missing'], gap })
-const validated = (gap: string): ParityAssessment => ({ status: 'parity-validated', concerns: ['parity-validated'], gap })
+const partial = (gap: string, ...concerns: ParityConcern[]): ParityAssessment => ({ status: 'partial', concerns: ['partial', ...concerns], gap, evidence: [] })
+const validate = (gap: string): ParityAssessment => ({ status: 'validation-needed', concerns: ['partial'], gap, evidence: [] })
+const missing = (gap: string): ParityAssessment => ({ status: 'missing', concerns: ['missing'], gap, evidence: [] })
+const validated = (gap: string, ...evidence: string[]): ParityAssessment => ({ status: 'parity-validated', concerns: ['parity-validated'], gap, evidence })
 
 export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   move: partial('Needs complete auto-select, keyboard nudge, mask-only movement, distribute, and modifier parity.'),
   marquee: partial('Needs Photopea option-bar, fixed-size, fixed-ratio, and transform-selection parity.'),
   'ellipse-select': partial('Needs Photopea option-bar, fixed-size, fixed-ratio, and transform-selection parity.'),
-  'single-row-select': validate('Implemented; interaction, high-depth, modifier, and round-trip fixtures are missing.'),
-  'single-column-select': validate('Implemented; interaction, high-depth, modifier, and round-trip fixtures are missing.'),
+  'single-row-select': validated('Exact one-pixel geometry and replace, add, subtract, and intersect behavior are covered independently of document depth.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/navigation-parity.spec.ts'),
+  'single-column-select': validated('Exact one-pixel geometry and replace, add, subtract, and intersect behavior are covered independently of document depth.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/navigation-parity.spec.ts'),
   lasso: partial('Needs option-bar, smoothing, modifier, and selection-edge parity.'),
   'polygonal-lasso': partial('Needs anchor editing, close/cancel, keyboard, and modifier parity.'),
   'magnetic-lasso': partial('Needs width, contrast, frequency, anchor editing, and stronger edge following.'),
@@ -52,8 +52,8 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   'puppet-warp': partial('Needs local preview commits, mesh controls, pin depth/rotation, rigidity, and reference parity.', 'visually-inaccurate', 'too-slow'),
   rectangle: partial('Needs on-canvas creation by drag and complete live-shape/stroke/fill controls.', 'round-trip-incompatible'),
   ellipse: partial('Needs on-canvas creation by drag and complete live-shape/stroke/fill controls.', 'round-trip-incompatible'),
-  hand: validate('Core panning is implemented; temporary Space switching and browser interaction fixtures remain.'),
-  zoom: partial('Needs scrubby/tool-area zoom, resize-windows behavior, temporary switching, and shortcut parity.'),
+  hand: validated('Hand panning and temporary Space switching restore the prior tool and are covered in the browser.', 'apps/web/e2e/navigation-parity.spec.ts'),
+  zoom: validated('Click, Alt-click, scrubby, menu, shortcut, and temporary modified-Space zoom paths are covered in the browser; window resizing is not applicable to the single-window web workspace.', 'apps/web/e2e/navigation-parity.spec.ts', 'apps/web/e2e/visual.spec.ts'),
 }
 
 type AdjustmentType = AdjustmentDescriptor['type']
@@ -150,8 +150,8 @@ export const studioMenuCommandParity = [
   item('file.print', 'File > Print and PDF', 'File > Print', implemented('Local print and PDF settings are available.')),
   ...(['png', 'jpeg', 'webp', 'svg', 'psd', 'psb', 'tiff', 'pdf', 'avif', 'gif', 'apng'] as const).map((format) => item(`file.export.${format}`, `File > Export as ${format.toUpperCase()}`, `File > Export as ${format.toUpperCase()}`, format === 'psd' || format === 'psb' ? partial('Layered export works, but full PSD/PSB structural round-trip parity remains.') : implemented(`${format.toUpperCase()} export is processed locally.`))),
   item('file.export-artboards', 'File > Export artboards as PNGs', 'File > Export Layers', implemented('Each artboard can be exported locally as PNG.')),
-  item('edit.undo', 'Edit > Undo', 'Edit > Undo', validated('Undo is transaction-grouped and covered by reducer and browser interaction tests.')),
-  item('edit.redo', 'Edit > Redo', 'Edit > Redo', validated('Redo is transaction-grouped and covered by reducer and browser interaction tests.')),
+  item('edit.undo', 'Edit > Undo', 'Edit > Undo', validated('Undo is transaction-grouped and covered by reducer and browser interaction tests.', 'packages/editor/src/editor/editor.reducer.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
+  item('edit.redo', 'Edit > Redo', 'Edit > Redo', validated('Redo is transaction-grouped and covered by reducer and browser interaction tests.', 'packages/editor/src/editor/editor.reducer.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
   item('edit.transform-again', 'Edit > Transform Again', 'Edit > Transform Again', implemented('Repeats the latest reusable geometry transform.')),
   item('edit.content-aware-fill', 'Edit > Content-Aware Fill', 'Edit > Content-Aware Fill', partial('Local patch matching works; Photopea texture and edge fidelity still need reference validation.')),
   item('edit.shortcuts', 'Edit > Keyboard Shortcuts', 'Edit > Keyboard Shortcuts', partial('Bindings are editable locally; the complete Photopea command set is not yet assignable.')),
@@ -170,8 +170,8 @@ export const studioMenuCommandParity = [
   item('layer.smart-object.export', 'Layer > Export smart-object contents', 'Layer > Smart Object > Export Contents', implemented('Exports embedded smart-object bytes locally.')),
   item('layer.effects.clear', 'Layer > Clear layer effects', 'Layer > Layer Style > Clear', implemented('Clears editable effects from the selected layer.')),
   item('layer.delete', 'Layer > Delete layer or group', 'Layer > Delete', implemented('Deletes selected layers or groups with undo.')),
-  item('select.all', 'Select > All', 'Select > All', validated('Select All is covered across command and raster workflows.')),
-  item('select.deselect', 'Select > Deselect', 'Select > Deselect', validated('Deselect is covered across command and raster workflows.')),
+  item('select.all', 'Select > All', 'Select > All', validated('Select All is covered across command and raster workflows.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
+  item('select.deselect', 'Select > Deselect', 'Select > Deselect', validated('Deselect is covered across command and raster workflows.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
   item('select.inverse', 'Select > Inverse', 'Select > Inverse', implemented('Inverts the current pixel selection.')),
   item('select.feather', 'Select > Feather', 'Select > Modify > Feather', partial('Feathering works, but the menu currently exposes a fixed four-pixel value.')),
   item('select.expand', 'Select > Expand', 'Select > Modify > Expand', partial('Expansion works, but the menu currently exposes a fixed four-pixel value.')),
@@ -188,9 +188,9 @@ export const studioMenuCommandParity = [
   item('filter.sepia', 'Filter > Sepia', 'Image > Adjustments / filters', implemented('A local destructive sepia preset is available.')),
   item('filter.invert', 'Filter > Invert', 'Image > Adjustments > Invert', implemented('Destructive inversion is available.')),
   item('filter.reset', 'Filter > Reset layer filters', 'Filter > clear smart filters', partial('Studio filter reset works; Photopea smart-filter stack semantics remain deeper.')),
-  item('view.zoom-in', 'View > Zoom in', 'View > Zoom In', validated('Zoom in has menu, button, shortcut, and browser interaction coverage.')),
-  item('view.zoom-out', 'View > Zoom out', 'View > Zoom Out', validated('Zoom out has menu, button, shortcut, and browser interaction coverage.')),
-  item('view.actual', 'View > 100%', 'View > Pixel to Pixel', validated('Actual-pixel zoom has menu, button, shortcut, and browser coverage.')),
+  item('view.zoom-in', 'View > Zoom in', 'View > Zoom In', validated('Zoom in has menu, button, shortcut, and browser interaction coverage.', 'apps/web/e2e/navigation-parity.spec.ts')),
+  item('view.zoom-out', 'View > Zoom out', 'View > Zoom Out', validated('Zoom out has menu, button, shortcut, and browser interaction coverage.', 'apps/web/e2e/navigation-parity.spec.ts')),
+  item('view.actual', 'View > 100%', 'View > Pixel to Pixel', validated('Actual-pixel zoom has menu, button, shortcut, and browser coverage.', 'apps/web/e2e/navigation-parity.spec.ts', 'apps/web/e2e/visual.spec.ts')),
   ...(['properties', 'layers', 'timeline'] as const).map((panel) => item(`view.panel.${panel}`, `View > Panels > ${panel}`, `Window > ${panel}`, implemented(`The ${panel} surface can be shown and hidden.`))),
   item('view.workspace.apply', 'View > Workspace > built-in or saved workspace', 'Window > Workspace', partial('Workspace application works; restoration and docking edge cases remain.')),
   item('view.workspace.save', 'View > Save current workspace', 'Window > Workspace > New Workspace', implemented('Custom workspace layouts persist locally.')),

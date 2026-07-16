@@ -28,6 +28,19 @@ No capability should move to **Parity validated** without linking to its interac
 
 Typed assessments also carry one or more searchable concerns: `missing`, `partial`, `visually-inaccurate`, `round-trip-incompatible`, `too-slow`, `parity-validated`, or `excluded`. A workflow status describes delivery state; concerns describe why it has not reached parity.
 
+## Parity-validated slices
+
+These bounded workflows are at 100% of the Photopea behavior applicable to Studio's local browser and desktop workspace. Each typed claim contains machine-checked test paths in its `evidence` field.
+
+| Workflow | Status | Evidence |
+| --- | --- | --- |
+| Undo and Redo | Parity validated | Transaction grouping and raster restoration in [`editor.reducer.test.ts`](../packages/editor/src/editor/editor.reducer.test.ts) and [`command-parity.spec.ts`](../apps/web/e2e/command-parity.spec.ts). |
+| Select All and Deselect | Parity validated | Complete-document selection and clearing in [`selection.test.ts`](../packages/editor/src/editor/selection.test.ts) and [`command-parity.spec.ts`](../apps/web/e2e/command-parity.spec.ts). |
+| Single Row Marquee | Parity validated | Exact one-pixel geometry plus replace, add, subtract, and intersect coverage in [`selection.test.ts`](../packages/editor/src/editor/selection.test.ts) and [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
+| Single Column Marquee | Parity validated | Exact one-pixel geometry plus replace, add, subtract, and intersect coverage in [`selection.test.ts`](../packages/editor/src/editor/selection.test.ts) and [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
+| Hand tool | Parity validated | Direct panning and temporary Space switching with prior-tool restoration in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
+| Zoom tool | Parity validated | Click, Alt-click, scrubby drag, menu, shortcut, temporary modified-Space, and visual-scale coverage in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
+
 ## Menus and commands
 
 | Photopea area | Studio coverage | Status | Principal remaining gap |
@@ -37,7 +50,7 @@ Typed assessments also carry one or more searchable concerns: `missing`, `partia
 | File: export | PNG, JPEG, WebP, AVIF, SVG, PSD, PSB, TIFF, PDF, GIF, APNG and asset workspace | Partial | Per-format option depth, metadata controls, optimized export preview, and editable fidelity. |
 | File: automate / scripts | Local actions, batch worker and sandboxed scripts | Partial | Photopea/Photoshop-like scripting surface, complete recordable commands, ATN compatibility. |
 | File: print | Local print/PDF dialog | Partial | Printer setup parity, color-managed print preview, separations, and platform validation. |
-| Edit: undo / redo | Typed document history and raster-region history | Validation needed | Cross-system transaction tests, long-session memory limits, and complete command coverage. |
+| Edit: undo / redo | Typed document history and raster-region history | Parity validated | Transaction grouping and raster pixel restoration are covered by unit and browser evidence. |
 | Edit: cut / copy / paste | Pixel and image clipboard paths | Partial | Layers, vectors, text, masks, paths, cross-document placement, and external application fidelity. |
 | Edit: fill / stroke | Paint Bucket, gradients, path fill/stroke | Partial | Dialog-level fill/stroke behavior, pattern/history/content options, blending and selection parity. |
 | Edit: transform | Move overlay, free transform, transform again, distort, perspective, warp | Partial | Complete numeric controls, repeat/duplicate semantics, local previews, modifier and reference-output parity. |
@@ -52,7 +65,8 @@ Typed assessments also carry one or more searchable concerns: `missing`, `partia
 | Layer: smart objects / filters | Embedded and linked smart objects with filter stacks | Partial | Shared-source behavior, complete smart-filter dialogs/masks/blending, nested compatibility. |
 | Layer: arrange / align / distribute | Ordering, alignment, smart guides and snapping | Partial | Complete distribute/spacing/reference commands and mask/path target behavior. |
 | Layer: layer comps | PSD descriptor preservation only | Missing | Editable panel and create/apply/update/state workflow. |
-| Select: all / deselect / inverse | Available | Validation needed | Color-mode, high-depth, artboard and interaction fixtures. |
+| Select: all / deselect | Available | Parity validated | Complete-document selection and clearing are covered by unit and browser evidence. |
+| Select: inverse | Available | Validation needed | Color-mode, high-depth, artboard and interaction fixtures. |
 | Select: modify | Fixed feather/expand/contract plus grow/similar | Partial | Dialog values, border, smooth, transform selection, save/load parity. |
 | Select: color / luminosity / subject edges | Local non-AI implementations | Partial | Sampling options, fuzziness/range UI, difficult-edge quality and reference masks. |
 | Select: Select and Mask | Dedicated workspace | Partial | Tool depth, views, output modes, edge brush and decontamination fidelity. |
@@ -85,7 +99,7 @@ The canonical 41-tool assessment is `studioToolParity`. Current summary:
 | Type | Partial | Deterministic shaping, complex scripts, bidi, CJK and color fonts. |
 | Pen and path selection | Partial | Free/Curvature Pen, complete anchor operations, multi-selection and transforms. |
 | Shapes | Partial | Drag-to-create and complete live shapes beyond rectangle/ellipse. |
-| Hand and zoom | Validation needed / Partial | Temporary switching, scrub/area zoom variants and browser fixtures. |
+| Hand and zoom | Parity validated | Direct and temporary navigation, scrubby zoom, menu commands, shortcuts, and visual scaling are covered by automated browser evidence. |
 | Notes, Count and Color Sampler | Missing | Tools and persistent panels/records do not exist. |
 
 ## Panels

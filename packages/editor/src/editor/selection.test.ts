@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it, vi } from 'vitest'
-import { applySelectionShape, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
+import { applySelectionShape, applySingleMarquee, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -66,6 +66,17 @@ describe('selection coverage', () => {
     expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([1, 1, 0, 0, 1, 1, 1, 1])
     selection = applySelectionShape(selection, { kind: 'rectangle', x: 1, y: 0, width: 5, height: 1 }, 'intersect', 8, 1)
     expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([0, 1, 0, 0, 1, 1, 0, 0])
+  })
+
+  it('creates exact single-pixel rows and columns across every combine mode', () => {
+    let selection = applySingleMarquee(null, 'row', 2.8, 'replace', 6, 5)
+    expect(selection.bounds).toEqual({ x: 0, y: 2, width: 6, height: 1 })
+    selection = applySingleMarquee(selection, 'column', 3.7, 'add', 6, 5)
+    expect(selection.bounds).toEqual({ x: 0, y: 0, width: 6, height: 5 })
+    selection = applySingleMarquee(selection, 'row', 2, 'subtract', 6, 5)
+    expect(selection.bounds).toEqual({ x: 3, y: 0, width: 1, height: 5 })
+    selection = applySingleMarquee(selection, 'row', 4, 'intersect', 6, 5)
+    expect(selection.bounds).toEqual({ x: 3, y: 4, width: 1, height: 1 })
   })
 
   it('builds global color, luminosity, and local edge masks', () => {

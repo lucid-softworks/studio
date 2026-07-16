@@ -33,7 +33,7 @@ describe('Photopea parity registry', () => {
     expect(assessments.every((assessment) => assessment.gap.trim().length >= 12)).toBe(true)
     expect(assessments.every((assessment) => assessment.concerns.length > 0)).toBe(true)
     const concerns = new Set(assessments.flatMap((assessment) => assessment.concerns))
-    expect(concerns).toEqual(new Set(['missing', 'partial', 'visually-inaccurate', 'round-trip-incompatible', 'too-slow']))
+    expect(concerns).toEqual(new Set(['missing', 'partial', 'visually-inaccurate', 'round-trip-incompatible', 'too-slow', 'parity-validated']))
   })
 
   it('uses stable unique identifiers for missing capabilities', () => {
@@ -52,6 +52,21 @@ describe('Photopea parity registry', () => {
     expect(new Set(ids).size).toBe(ids.length)
     expect(completeParityInventory.every((entry) => entry.studio.trim() && entry.photopea.trim())).toBe(true)
     expect(completeParityInventory.every((entry) => entry.assessment.gap.trim().length >= 12)).toBe(true)
+  })
+
+  it('requires concrete automated evidence for every parity-validated claim', () => {
+    const assessments = [
+      ...Object.values(studioToolParity),
+      ...Object.values(studioAdjustmentParity),
+      ...Object.values(studioFilterParity),
+      ...Object.values(studioPanelParity),
+      ...missingPhotopeaCapabilities.map((capability) => capability.assessment),
+      ...completeParityInventory.map((entry) => entry.assessment),
+    ]
+    const validated = assessments.filter((assessment) => assessment.status === 'parity-validated')
+    expect(validated.length).toBeGreaterThanOrEqual(11)
+    expect(validated.every((assessment) => assessment.evidence.length > 0)).toBe(true)
+    expect(validated.flatMap((assessment) => assessment.evidence).every((path) => /\.(spec|test)\.tsx?$/.test(path))).toBe(true)
   })
 
   it('includes every registered shortcut and every built-in tool in the shortcut matrix', () => {

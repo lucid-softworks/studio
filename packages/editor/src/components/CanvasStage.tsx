@@ -227,6 +227,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const panRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null)
   const zoomScrubRef = useRef<{ pointerId: number; x: number; zoom: number; moved: boolean } | null>(null)
   const suppressZoomResetRef = useRef(false)
+  const temporaryToolRef = useRef<EditorTool | null>(null)
   const preset = getDocumentSize(document)
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
@@ -310,7 +311,16 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target?.matches('input, textarea, select, [contenteditable="true"]') || event.metaKey || event.ctrlKey || event.altKey) return
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      if (event.key === ' ') {
+        event.preventDefault()
+        if (!event.repeat && temporaryToolRef.current === null) {
+          temporaryToolRef.current = tool
+          onToolChange(event.metaKey || event.ctrlKey || event.altKey ? 'zoom' : 'hand')
+        }
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return
       if (event.key.toLowerCase() === 'q') {
         event.preventDefault()
         setQuickMask((current) => !current)
@@ -322,8 +332,23 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       event.preventDefault()
       onToolChange(next)
     }
+    const restoreTemporaryTool = () => {
+      const previous = temporaryToolRef.current
+      if (previous === null) return
+      temporaryToolRef.current = null
+      onToolChange(previous)
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === ' ') restoreTemporaryTool()
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', restoreTemporaryTool)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', restoreTemporaryTool)
+    }
   }, [onToolChange, shortcuts, tool])
 
   useEffect(() => {
