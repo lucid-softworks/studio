@@ -32,6 +32,7 @@ export function PerspectiveCropOverlay({ canvasRef, enabled, value, onChange }: 
     const origin = point(event)
     onChange([origin, origin, origin, origin])
   }
+  if (!enabled) return null
   const points = value.map((position) => `${position.x},${position.y}`).join(' ')
-  return <svg aria-label={enabled ? 'Perspective crop surface' : undefined} viewBox={`0 0 ${canvasRef.current?.width ?? 1600} ${canvasRef.current?.height ?? 1000}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} onPointerDown={start}><polygon points={points} fill="rgba(15,23,42,.12)" stroke="#a78bfa" strokeWidth="2" vectorEffect="non-scaling-stroke" />{value.map((position, index) => <circle key={index} cx={position.x} cy={position.y} r="8" fill="#111113" stroke="#c4b5fd" strokeWidth="2" vectorEffect="non-scaling-stroke" onPointerDown={(event) => down(event, index)} />)}</svg>
+  return <svg aria-label="Perspective crop surface" viewBox={`0 0 ${canvasRef.current?.width ?? 1600} ${canvasRef.current?.height ?? 1000}`} preserveAspectRatio="none" className="absolute inset-0 size-full touch-none" onPointerDown={start}><polygon points={points} fill="rgba(15,23,42,.12)" stroke="#a78bfa" strokeWidth="2" vectorEffect="non-scaling-stroke" />{value.map((position, index) => <circle key={index} cx={position.x} cy={position.y} r="8" fill="#111113" stroke="#c4b5fd" strokeWidth="2" vectorEffect="non-scaling-stroke" onPointerDown={(event) => down(event, index)} />)}</svg>
 }
