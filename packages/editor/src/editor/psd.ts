@@ -11,6 +11,62 @@ import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode,
 
 let initialized = false
 
+function abortReason(signal?: AbortSignal) {
+  return signal?.reason instanceof Error ? signal.reason : new DOMException('The PSD job was cancelled.', 'AbortError')
+}
+
+function transferableBuffers(value: unknown, buffers = new Set<ArrayBuffer>(), seen = new WeakSet<object>()): Transferable[] {
+  if (value instanceof ArrayBuffer) buffers.add(value)
+  else if (ArrayBuffer.isView(value) && value.buffer instanceof ArrayBuffer) buffers.add(value.buffer)
+  else if (value && typeof value === 'object' && !seen.has(value)) {
+    seen.add(value)
+    for (const entry of Object.values(value)) transferableBuffers(entry, buffers, seen)
+  }
+  return [...buffers]
+}
+
+async function readPsdInWorker(buffer: ArrayBuffer, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  if (typeof Worker === 'undefined') return { psd: readPsd(buffer, { skipThumbnail: true, useImageData: true }), buffer }
+  const worker = new Worker(new URL('./workers/psd-read.worker.ts', import.meta.url), { type: 'module' })
+  return new Promise<{ psd: Psd; buffer: ArrayBuffer }>((resolve, reject) => {
+    const finish = (callback: () => void) => {
+      signal?.removeEventListener('abort', cancel)
+      worker.terminate()
+      callback()
+    }
+    const cancel = () => finish(() => reject(abortReason(signal)))
+    worker.onmessage = (event: MessageEvent<{ psd?: Psd; buffer?: ArrayBuffer; error?: string }>) => finish(() => {
+      if (event.data.error || !event.data.psd || !event.data.buffer) reject(new Error(event.data.error || 'The PSD reader returned incomplete data.'))
+      else resolve({ psd: event.data.psd, buffer: event.data.buffer })
+    })
+    worker.onerror = () => finish(() => reject(new Error('The PSD reader worker stopped unexpectedly.')))
+    signal?.addEventListener('abort', cancel, { once: true })
+    worker.postMessage({ buffer }, [buffer])
+  })
+}
+
+async function writePsdInWorker(psd: Psd, psb: boolean, transfer: Transferable[], signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  if (typeof Worker === 'undefined') return writePsdSegments(psd, { psb, noBackground: true })
+  const worker = new Worker(new URL('./workers/psd-write.worker.ts', import.meta.url), { type: 'module' })
+  return new Promise<Uint8Array<ArrayBuffer>[]>((resolve, reject) => {
+    const finish = (callback: () => void) => {
+      signal?.removeEventListener('abort', cancel)
+      worker.terminate()
+      callback()
+    }
+    const cancel = () => finish(() => reject(abortReason(signal)))
+    worker.onmessage = (event: MessageEvent<{ segments?: Uint8Array<ArrayBuffer>[]; error?: string }>) => finish(() => {
+      if (event.data.error || !event.data.segments) reject(new Error(event.data.error || 'The PSD writer returned no output.'))
+      else resolve(event.data.segments)
+    })
+    worker.onerror = () => finish(() => reject(new Error('The PSD writer worker stopped unexpectedly.')))
+    signal?.addEventListener('abort', cancel, { once: true })
+    worker.postMessage({ psd, psb }, transfer)
+  })
+}
+
 function serializePsdValue(value: unknown): SerializedPsdValue {
   if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
   if (value instanceof Uint8Array) return { __studioBytes: [...value] }
@@ -1004,12 +1060,15 @@ function detectSourceTopToBottom(psd: Psd) {
   return imageDifference(topToBottom, reference) <= imageDifference(bottomToTop, reference)
 }
 
-export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd', smartObjectDepth = 0): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
+export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd', smartObjectDepth = 0, signal?: AbortSignal): Promise<{ document: EditorDocument; assets: AssetMap; warnings: string[] }> {
   initializeBrowserCanvas()
   let psd
   try {
-    psd = readPsd(buffer, { skipThumbnail: true, useImageData: true })
+    const decoded = await readPsdInWorker(buffer, signal)
+    psd = decoded.psd
+    buffer = decoded.buffer
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new Error(error instanceof Error ? `PSD import failed: ${error.message}` : 'That PSD file could not be decoded.')
   }
 
@@ -1018,10 +1077,15 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   const groups: LayerGroup[] = []
   const previewedColorLookups = new Set<Layer>()
   const sourceIsTopToBottom = detectSourceTopToBottom(psd)
+  let importedLayerCount = 0
 
   const importChildren = async (children: Layer[], parentId: string | null, parentPath = '') => {
     const editorOrder = sourceIsTopToBottom ? [...children].reverse() : children
     for (const [stackOrder, layer] of editorOrder.entries()) {
+      signal?.throwIfAborted()
+      importedLayerCount += 1
+      if (importedLayerCount % 8 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      signal?.throwIfAborted()
       const name = layer.name?.trim() || `Layer ${sourceIsTopToBottom ? children.length - stackOrder : stackOrder + 1}`
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.children) {
@@ -1120,7 +1184,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
         if (linkedFile?.data?.length && linkedFile.type === '8BPS' && smartObjectDepth < 4) {
           try {
             const bytes = linkedFile.data.slice().buffer
-            const embedded = await importPsdBuffer(bytes, linkedFile.name, smartObjectDepth + 1)
+            const embedded = await importPsdBuffer(bytes, linkedFile.name, smartObjectDepth + 1, signal)
             importedLayer.embeddedDocument = embedded.document
             Object.assign(assets, embedded.assets)
             const contentCanvas = document.createElement('canvas')
@@ -1159,6 +1223,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   }
 
   await importChildren(psd.children ?? [], null)
+  signal?.throwIfAborted()
 
   const channelNames = psd.imageResources?.alphaChannelNames ?? []
   const compositePlanes = psd.channels && psd.channels > 3
@@ -1213,8 +1278,11 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   }
 }
 
-export async function importPsdFile(file: File) {
-  return importPsdBuffer(await file.arrayBuffer(), file.name)
+export async function importPsdFile(file: File, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const buffer = await file.arrayBuffer()
+  signal?.throwIfAborted()
+  return importPsdBuffer(buffer, file.name, 0, signal)
 }
 
 const studioPsdBlendModes: Record<BlendMode, NonNullable<Layer['blendMode']>> = {
@@ -1467,8 +1535,9 @@ function exportedAdjustment(layer: AdjustmentLayer): Layer['adjustment'] {
   return { type: 'brightness/contrast', brightness: layer.brightness - 100, contrast: layer.contrast - 100 }
 }
 
-export async function exportPsdDocument(documentState: EditorDocument, assets: AssetMap, psb = false) {
+export async function exportPsdDocument(documentState: EditorDocument, assets: AssetMap, psb = false, signal?: AbortSignal) {
   initializeBrowserCanvas()
+  signal?.throwIfAborted()
   const { width, height } = getDocumentSize(documentState)
   const resources = new RenderResourceRegistry()
   const renderCanvas = (layers: EditorLayer[], includeBackground = false, renderGroups: LayerGroup[] = []) => {
@@ -1488,7 +1557,12 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   if (!geometryContext) throw new Error('PSD geometry could not be measured.')
   const bitDepth = documentState.bitDepth === 16 || documentState.bitDepth === 32 ? documentState.bitDepth : 8
 
-  const exportLayer = (layer: EditorLayer): Layer => {
+  let exportedLayerCount = 0
+  const exportLayer = async (layer: EditorLayer): Promise<Layer> => {
+    signal?.throwIfAborted()
+    exportedLayerCount += 1
+    if (exportedLayerCount % 4 === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    signal?.throwIfAborted()
     const placedLayer = layer.type === 'smart-object' ? (() => {
       const preserved = layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined
       const quad = smartObjectDisplayQuad(layer, width, height)
@@ -1560,22 +1634,28 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   }
 
   const groups = new Map(documentState.groups.map((group) => [group.id, group]))
-  const exportChildren = (parentId: string | null): Layer[] => {
+  const exportChildren = async (parentId: string | null): Promise<Layer[]> => {
     const items: Array<{ stackOrder: number; layer?: EditorLayer; group?: LayerGroup }> = [
       ...documentState.layers.filter((layer) => (layer.groupId ?? null) === parentId).map((layer) => ({ stackOrder: layer.stackOrder ?? 0, layer })),
       ...documentState.groups.filter((group) => (group.parentId ?? null) === parentId).map((group) => ({ stackOrder: group.stackOrder ?? 0, group })),
     ]
-    return items.sort((left, right) => right.stackOrder - left.stackOrder).map((item) => {
-      if (item.layer) return exportLayer(item.layer)
+    const children: Layer[] = []
+    for (const item of items.sort((left, right) => right.stackOrder - left.stackOrder)) {
+      signal?.throwIfAborted()
+      if (item.layer) {
+        children.push(await exportLayer(item.layer))
+        continue
+      }
       const group = groups.get(item.group!.id)!
-      return { name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: exportChildren(group.id) }
-    })
+      children.push({ name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: await exportChildren(group.id) })
+    }
+    return children
   }
 
   const compositeCanvas = renderCanvas(documentState.layers, true, documentState.groups)
   const imageData = canvasPixels(compositeCanvas)
   if (!imageData) throw new Error('The PSD composite could not be created.')
-  const children = exportChildren(null)
+  const children = await exportChildren(null)
   if (documentState.background.kind !== 'transparent' || documentState.pattern.kind !== 'none') {
     const backgroundCanvas = renderCanvas([], true)
     const backgroundPixels = canvasPixels(backgroundCanvas)
@@ -1600,7 +1680,10 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     xmpMetadata: documentState.fileMetadata?.xmp ?? preservedResources.xmpMetadata,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
-  const segments = writePsdSegments({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
+  signal?.throwIfAborted()
+  const psd: Psd = { width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }
+  const segments = await writePsdInWorker(psd, psb, transferableBuffers(children), signal)
+  signal?.throwIfAborted()
   const channelSources = (documentState.channels ?? []).flatMap((channel) => {
     const source = channel.assetId ? assets[channel.assetId] : undefined
     return source?.surface ? [source] : []

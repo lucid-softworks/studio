@@ -1536,10 +1536,13 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       try {
         const filename = `studio-composition.${format}`
         writable = await openBrowserWritable(filename, format === 'psb' ? 'Photoshop large document' : 'Photoshop document', 'image/vnd.adobe.photoshop', [`.${format}`])
-        const { exportPsdDocument } = await import('./editor/psd')
-        const blob = await exportPsdDocument(document, assets, format === 'psb')
-        if (writable) await writeBlobIncrementally(writable, blob)
-        else downloadBlob(blob, filename)
+        await runCancelableJob(`${format.toUpperCase()} export`, async (signal) => {
+          const { exportPsdDocument } = await import('./editor/psd')
+          const blob = await exportPsdDocument(document, assets, format === 'psb', signal)
+          signal.throwIfAborted()
+          if (writable) await writeBlobIncrementally(writable, blob, signal)
+          else downloadBlob(blob, filename)
+        })
       } catch (error) {
         await writable?.abort?.(error).catch(() => undefined)
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -1769,7 +1772,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       let importWarnings: string[] = []
       if (extension === 'psd' || file.type === 'image/vnd.adobe.photoshop') {
         const { importPsdFile } = await import('./editor/psd')
-        const imported = await importPsdFile(file)
+        const imported = await runCancelableJob('PSD import', (signal) => importPsdFile(file, signal))
         loaded = imported
         importWarnings = imported.warnings
       } else if (extension === 'svg' || file.type === 'image/svg+xml') {
@@ -1832,6 +1835,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
         setNotice(`Opened ${file.name} locally.`, 'success')
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'That file could not be opened.')
     } finally {
       setIsLoading(false)
