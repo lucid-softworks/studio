@@ -2,7 +2,8 @@ import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
 import { createRasterLayer, createShapeLayer, createSmartObjectLayer, initialDocument } from './presets'
 import { defaultLayerEffects } from './effects'
-import { calculateImageRect, clearSmartFilterResultCache, findResizeHandle, getLayerBounds, getResizeHandles, renderComposition, selectMipmapLevel, smartFilterResultCacheSize } from './renderer'
+import { createFilterGraphNode } from './filter-graph'
+import { calculateImageRect, clearSmartFilterResultCache, filterGraphRasterRegion, findResizeHandle, getLayerBounds, getResizeHandles, renderComposition, selectMipmapLevel, smartFilterResultCacheSize } from './renderer'
 import { resolveRasterTarget } from './raster-target'
 import type { ImageLayer } from './types'
 
@@ -34,6 +35,40 @@ describe('mipmap selection', () => {
     expect(selectMipmapLevel(4096, 2048, 512, 256)).toBe(3)
     expect(selectMipmapLevel(4096, 2048, 4096, 256)).toBe(0)
     expect(selectMipmapLevel(65_536, 65_536, 1, 1)).toBe(8)
+  })
+})
+
+describe('bounded filter evaluation', () => {
+  it('pads and clips the rotated layer bounds for every spatial node', () => {
+    expect(filterGraphRasterRegion(
+      { width: 200, height: 200 },
+      { x: 70, y: 80, width: 40, height: 20, rotation: 90 },
+      [
+        { ...createFilterGraphNode('gaussian-blur', 'blur'), size: 4 },
+        { ...createFilterGraphNode('wave', 'wave'), amount: 50 },
+      ],
+    )).toEqual({ x: 56, y: 46, width: 68, height: 88 })
+    expect(filterGraphRasterRegion(
+      { width: 100, height: 100 },
+      { x: -20, y: -10, width: 30, height: 20, rotation: 0 },
+      [],
+    )).toEqual({ x: 0, y: 0, width: 12, height: 12 })
+  })
+
+  it('renders a bounded procedural graph without touching transparent pixels outside the layer', () => {
+    const layer = {
+      ...createShapeLayer('rectangle', 0),
+      width: 20,
+      height: 20,
+      fill: '#808080',
+      rotation: 25,
+      filterGraphEnabled: true,
+      filterGraph: [{ ...createFilterGraphNode('noise', 'noise'), amount: 50, seed: 42 }],
+    }
+    const canvas = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 100, height: 100 }, background: { ...initialDocument.background, kind: 'transparent' }, layers: [layer] }, {})
+    expect([...canvas.getContext('2d')!.getImageData(50, 50, 1, 1).data]).not.toEqual([128, 128, 128, 255])
+    expect(canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data[3]).toBe(0)
   })
 })
 

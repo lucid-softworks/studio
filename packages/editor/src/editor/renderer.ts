@@ -1036,6 +1036,24 @@ function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext
   layerContext.putImageData(source, 0, 0)
 }
 
+export function filterGraphRasterRegion(canvas: Pick<HTMLCanvasElement, 'width' | 'height'>, bounds: LayerBounds, filterGraph: FilterGraphNode[]): RasterRegion | null {
+  const angle = bounds.rotation * Math.PI / 180
+  const centerX = bounds.x + bounds.width / 2
+  const centerY = bounds.y + bounds.height / 2
+  const points = [
+    [-bounds.width / 2, -bounds.height / 2],
+    [bounds.width / 2, -bounds.height / 2],
+    [bounds.width / 2, bounds.height / 2],
+    [-bounds.width / 2, bounds.height / 2],
+  ].map(([x, y]) => ({ x: centerX + x * Math.cos(angle) - y * Math.sin(angle), y: centerY + x * Math.sin(angle) + y * Math.cos(angle) }))
+  const padding = 2 + normalizeFilterGraph(filterGraph).reduce((total, node) => total + (node.kind === 'gaussian-blur' ? node.size * 3 : node.kind === 'pixelate' || node.kind === 'emboss' ? node.size : node.kind === 'wave' ? node.amount / 5 : 0), 0)
+  const x = Math.max(0, Math.floor(Math.min(...points.map((point) => point.x)) - padding))
+  const y = Math.max(0, Math.floor(Math.min(...points.map((point) => point.y)) - padding))
+  const right = Math.min(canvas.width, Math.ceil(Math.max(...points.map((point) => point.x)) + padding))
+  const bottom = Math.min(canvas.height, Math.ceil(Math.max(...points.map((point) => point.y)) + padding))
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null
+}
+
 function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap, resources: RenderResourceRegistry) {
   const maskSource = maskAssetId ? canvasImageResource(resources, assets, maskAssetId)?.source : null
   const filterGraph = layer.filterGraphEnabled === false ? [] : normalizeFilterGraph(layer.filterGraph).filter((node) => node.enabled)
@@ -1071,8 +1089,14 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
         compositionContext.drawImage(filterGraphBlurCanvas, 0, 0)
       }
     }
-    const pixels = compositionContext.getImageData(0, 0, canvas.width, canvas.height)
-    compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph), 0, 0)
+    const bounds = getLayerBounds(compositionContext, canvas, layer, assets)
+    const filterRegion = bounds && geometryTransformIsIdentity(layer.geometryTransform)
+      ? filterGraphRasterRegion(canvas, bounds, filterGraph)
+      : { x: 0, y: 0, width: canvas.width, height: canvas.height }
+    if (filterRegion) {
+      const pixels = compositionContext.getImageData(filterRegion.x, filterRegion.y, filterRegion.width, filterRegion.height)
+      compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph, { x: filterRegion.x, y: filterRegion.y }), filterRegion.x, filterRegion.y)
+    }
     const filterMask = layer.filterMaskAssetId ? canvasImageResource(resources, assets, layer.filterMaskAssetId)?.source : null
     if (filterMask && originalContext) {
       const prepared = preparedRasterMask(canvas, filterMask, layer)

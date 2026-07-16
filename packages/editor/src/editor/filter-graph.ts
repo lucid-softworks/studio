@@ -29,25 +29,27 @@ function noiseAt(x: number, y: number, seed: number) {
   return value - Math.floor(value)
 }
 
-export function applyPixelFilterGraph(image: ImageData, nodes: FilterGraphNode[]) {
+export function applyPixelFilterGraph(image: ImageData, nodes: FilterGraphNode[], origin = { x: 0, y: 0 }) {
   const { width, height } = image
   let current = new Uint8ClampedArray(image.data)
   for (const node of normalizeFilterGraph(nodes).filter((candidate) => candidate.enabled && candidate.kind !== 'gaussian-blur')) {
     const next = new Uint8ClampedArray(current)
     const amount = node.amount / 100
     for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const documentX = origin.x + x
+      const documentY = origin.y + y
       let sx = x
       let sy = y
-      if (node.kind === 'pixelate') { sx = Math.floor(x / node.size) * node.size + node.size / 2; sy = Math.floor(y / node.size) * node.size + node.size / 2 }
-      if (node.kind === 'wave') sx += Math.sin(y / Math.max(1, node.size) * Math.PI * 2) * node.amount / 5
+      if (node.kind === 'pixelate') { sx = Math.floor(documentX / node.size) * node.size + node.size / 2 - origin.x; sy = Math.floor(documentY / node.size) * node.size + node.size / 2 - origin.y }
+      if (node.kind === 'wave') sx += Math.sin(documentY / Math.max(1, node.size) * Math.PI * 2) * node.amount / 5
       const offset = (y * width + x) * 4
       for (let channel = 0; channel < 3; channel += 1) {
         const base = sample(current, width, height, sx, sy, channel)
         let value = base
         if (node.kind === 'sharpen') value = base * (1 + amount * 4) - (sample(current, width, height, x - 1, y, channel) + sample(current, width, height, x + 1, y, channel) + sample(current, width, height, x, y - 1, channel) + sample(current, width, height, x, y + 1, channel)) * amount
-        else if (node.kind === 'noise') value = base + (noiseAt(x, y, node.seed) - 0.5) * 255 * amount
+        else if (node.kind === 'noise') value = base + (noiseAt(documentX, documentY, node.seed) - 0.5) * 255 * amount
         else if (node.kind === 'emboss') value = 128 + (base - sample(current, width, height, x - node.size, y - node.size, channel)) * (0.5 + amount)
-        else if (node.kind === 'clouds') value = base * (1 - amount) + noiseAt(x / node.size, y / node.size, node.seed) * 255 * amount
+        else if (node.kind === 'clouds') value = base * (1 - amount) + noiseAt(documentX / node.size, documentY / node.size, node.seed) * 255 * amount
         next[offset + channel] = Math.max(0, Math.min(255, Math.round(value)))
       }
       next[offset + 3] = sample(current, width, height, sx, sy, 3)
