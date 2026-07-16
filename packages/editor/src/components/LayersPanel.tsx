@@ -94,6 +94,21 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const activeTabRef = useRef<HTMLButtonElement>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
+  const toggleVectorMask = (layer: EditorLayer) => {
+    if (layer.vectorMask) {
+      dispatch({ type: 'update-layer', id: layer.id, patch: { vectorMask: null } })
+      return
+    }
+    const width = canvasRef.current?.width ?? document.canvasSize.width
+    const height = canvasRef.current?.height ?? document.canvasSize.height
+    const bounds = selection?.bounds ?? { x: 0, y: 0, width, height }
+    const left = bounds.x / width
+    const top = bounds.y / height
+    const right = (bounds.x + bounds.width) / width
+    const bottom = (bounds.y + bounds.height) / height
+    const knot = (x: number, y: number) => ({ linked: true, in: { x, y }, anchor: { x, y }, out: { x, y } })
+    dispatch({ type: 'update-layer', id: layer.id, patch: { vectorMask: { density: 100, feather: 0, linked: true, inverted: false, disabled: false, fillStartsWithAllPixels: false, paths: [{ closed: true, operation: 'combine', fillRule: 'non-zero', knots: [knot(left, top), knot(right, top), knot(right, bottom), knot(left, bottom)] }] } } })
+  }
   const visibleFloatingPosition = typeof window === 'undefined' ? floatingPosition : clampFloatingPanelPosition(floatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
 
   useEffect(() => activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), [activePanel])
@@ -240,6 +255,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       </div>
 
       {activeGroup && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><button type="button" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id })} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Ungroup</button><button type="button" aria-label="Delete group and layers" onClick={() => dispatch({ type: 'remove-group', id: activeGroup.id, deleteLayers: true })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
+      {!activeGroup && document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <div className="flex items-center border-t border-white/[0.05] px-3 pt-2"><button type="button" onClick={() => toggleVectorMask(activeLayer)} className={`rounded-md border px-2 py-1 text-[9px] ${activeLayer.vectorMask ? 'border-violet-300/20 bg-violet-300/10 text-violet-100' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.vectorMask ? 'Remove vector mask' : selection?.bounds ? '+ Vector from selection' : '+ Vector mask'}</button></div>}
       {!activeGroup && document.selectedLayerIds.length > 0 && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><div className="flex items-center gap-1">{document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <><button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>{activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-zinc-700 hover:text-red-300">×</button>}</>}{document.selectedLayerIds.length > 1 && <p className="text-[10px] text-zinc-700">{document.selectedLayerIds.length} selected</p>}</div><button type="button" aria-label="Delete selected layer" onClick={() => dispatch({ type: 'remove-layers', ids: document.selectedLayerIds })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
       </>}
       {activePanel === 'history' && <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />}

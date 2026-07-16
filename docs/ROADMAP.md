@@ -106,7 +106,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add color range, luminosity range, subject-free edge selection, grow, and similar
 - [x] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination
 - [x] Add quick mask mode
-- [ ] Add vector masks and editable mask density/feather
+- [x] Add vector masks and editable raster/vector mask density, feather, and linking
 - [ ] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
 - [ ] Save, load, combine, and transform alpha-channel selections
 
