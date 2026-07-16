@@ -115,8 +115,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add a Pen tool with Bézier handles, path continuation, and point conversion
 - [x] Add direct/path selection tools and keyboard editing
 - [x] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
-- [ ] Support compound paths and boolean shape operations
-- [ ] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
+- [x] Support compound paths and boolean shape operations
+- [x] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
 - [ ] Add custom shape import/export and a reusable local shape library
 - [ ] Preserve vector data through SVG and PSD round-trips
 

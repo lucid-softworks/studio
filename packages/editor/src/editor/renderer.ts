@@ -548,48 +548,159 @@ function shapeBounds(canvas: HTMLCanvasElement, layer: ShapeLayer): LayerBounds 
   }
 }
 
+function traceShapePath(context: CanvasRenderingContext2D, path: NonNullable<ShapeLayer['vectorPaths']>[number], width: number, height: number, offsetX = 0, offsetY = 0) {
+  const first = path.knots[0]
+  if (!first) return
+  const point = (position: Position) => ({ x: offsetX + position.x * width, y: offsetY + position.y * height })
+  const firstAnchor = point(first.anchor)
+  context.beginPath()
+  context.moveTo(firstAnchor.x, firstAnchor.y)
+  for (let index = 1; index < path.knots.length; index += 1) {
+    const previous = path.knots[index - 1]
+    const current = path.knots[index]
+    const controlA = point(previous.out)
+    const controlB = point(current.in)
+    const anchor = point(current.anchor)
+    context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, anchor.x, anchor.y)
+  }
+  if (path.closed) {
+    const previous = path.knots.at(-1)!
+    const controlA = point(previous.out)
+    const controlB = point(first.in)
+    context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, firstAnchor.x, firstAnchor.y)
+    context.closePath()
+  }
+}
+
+function shapePattern(context: CanvasRenderingContext2D, layer: ShapeLayer) {
+  if (layer.fillStyle?.type !== 'pattern') return null
+  const tile = document.createElement('canvas')
+  const size = Math.max(6, Math.round(16 * layer.fillStyle.scale / 100))
+  tile.width = size
+  tile.height = size
+  const tileContext = tile.getContext('2d')
+  if (!tileContext) return null
+  tileContext.fillStyle = layer.fill
+  tileContext.fillRect(0, 0, size, size)
+  tileContext.strokeStyle = layer.stroke
+  tileContext.fillStyle = layer.stroke
+  tileContext.globalAlpha = 0.65
+  const key = `${layer.fillStyle.id} ${layer.fillStyle.name}`.toLowerCase()
+  if (key.includes('dot')) {
+    tileContext.beginPath()
+    tileContext.arc(size / 2, size / 2, Math.max(1, size / 7), 0, Math.PI * 2)
+    tileContext.fill()
+  } else if (key.includes('grid')) {
+    tileContext.beginPath()
+    tileContext.moveTo(0, 0)
+    tileContext.lineTo(size, 0)
+    tileContext.moveTo(0, 0)
+    tileContext.lineTo(0, size)
+    tileContext.stroke()
+  } else {
+    tileContext.beginPath()
+    tileContext.moveTo(-size / 2, size)
+    tileContext.lineTo(size / 2, 0)
+    tileContext.moveTo(size / 2, size)
+    tileContext.lineTo(size * 1.5, 0)
+    tileContext.stroke()
+  }
+  return context.createPattern(tile, 'repeat')
+}
+
+function setShapeFill(context: CanvasRenderingContext2D, layer: ShapeLayer, width: number, height: number, centerX: number, centerY: number) {
+  if (layer.fillStyle?.type === 'gradient') {
+    const angle = layer.fillStyle.angle * Math.PI / 180
+    const radius = Math.abs(width * Math.cos(angle)) / 2 + Math.abs(height * Math.sin(angle)) / 2
+    const gradient = layer.fillStyle.style === 'radial'
+      ? context.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.max(width, height) / 2 * layer.fillStyle.scale / 100)
+      : context.createLinearGradient(centerX - Math.cos(angle) * radius, centerY - Math.sin(angle) * radius, centerX + Math.cos(angle) * radius, centerY + Math.sin(angle) * radius)
+    for (const stop of layer.fillStyle.colorStops) gradient.addColorStop(Math.max(0, Math.min(1, stop.position)), stop.color)
+    context.fillStyle = gradient
+  } else if (layer.fillStyle?.type === 'pattern') context.fillStyle = shapePattern(context, layer) ?? layer.fill
+  else context.fillStyle = layer.fillStyle?.type === 'color' ? layer.fillStyle.color : layer.fill
+}
+
+function booleanPathMask(layer: ShapeLayer, width: number, height: number) {
+  const mask = document.createElement('canvas')
+  mask.width = Math.max(1, Math.ceil(width))
+  mask.height = Math.max(1, Math.ceil(height))
+  const context = mask.getContext('2d')
+  if (!context) return null
+  layer.vectorPaths?.forEach((path, index) => {
+    context.globalCompositeOperation = index === 0 || path.operation === 'combine' ? 'source-over'
+      : path.operation === 'subtract' ? 'destination-out'
+        : path.operation === 'intersect' ? 'destination-in'
+          : 'xor'
+    traceShapePath(context, path, mask.width, mask.height)
+    context.fillStyle = '#ffffff'
+    context.fill(path.fillRule === 'even-odd' ? 'evenodd' : 'nonzero')
+  })
+  context.globalCompositeOperation = 'source-over'
+  return mask
+}
+
+function drawBooleanShapePath(context: CanvasRenderingContext2D, layer: ShapeLayer, width: number, height: number, x: number, y: number) {
+  const mask = booleanPathMask(layer, width, height)
+  if (!mask) return
+  if (layer.fill !== 'transparent' || layer.fillStyle) {
+    const paint = document.createElement('canvas')
+    paint.width = mask.width
+    paint.height = mask.height
+    const paintContext = paint.getContext('2d')
+    if (paintContext) {
+      setShapeFill(paintContext, layer, paint.width, paint.height, paint.width / 2, paint.height / 2)
+      paintContext.fillRect(0, 0, paint.width, paint.height)
+      paintContext.globalCompositeOperation = 'destination-in'
+      paintContext.drawImage(mask, 0, 0)
+      context.drawImage(paint, x, y, width, height)
+    }
+  }
+  if (layer.strokeWidth <= 0) return
+  const alignment = layer.strokeStyle?.alignment ?? 'center'
+  const padding = Math.ceil(layer.strokeWidth * 2 + 2)
+  const stroke = document.createElement('canvas')
+  stroke.width = mask.width + padding * 2
+  stroke.height = mask.height + padding * 2
+  const strokeContext = stroke.getContext('2d')
+  if (!strokeContext) return
+  strokeContext.strokeStyle = layer.stroke
+  strokeContext.lineWidth = alignment === 'center' ? layer.strokeWidth : layer.strokeWidth * 2
+  strokeContext.lineCap = layer.strokeStyle?.cap ?? 'butt'
+  strokeContext.lineJoin = layer.strokeStyle?.join ?? 'miter'
+  strokeContext.miterLimit = layer.strokeStyle?.miterLimit ?? 10
+  strokeContext.setLineDash(layer.strokeStyle?.dashes ?? [])
+  strokeContext.lineDashOffset = layer.strokeStyle?.dashOffset ?? 0
+  for (const path of layer.vectorPaths ?? []) {
+    traceShapePath(strokeContext, path, mask.width, mask.height, padding, padding)
+    strokeContext.stroke()
+  }
+  if (alignment !== 'center') {
+    strokeContext.globalCompositeOperation = alignment === 'inside' ? 'destination-in' : 'destination-out'
+    strokeContext.drawImage(mask, padding, padding)
+  }
+  context.save()
+  context.globalAlpha *= layer.strokeStyle?.opacity ?? 1
+  context.globalCompositeOperation = layer.strokeStyle?.blendMode === 'normal' || !layer.strokeStyle?.blendMode ? 'source-over' : layer.strokeStyle.blendMode
+  context.drawImage(stroke, x - padding, y - padding, width + padding * 2, height + padding * 2)
+  context.restore()
+}
+
 function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: ShapeLayer) {
   const bounds = shapeBounds(canvas, layer)
   context.globalAlpha = layer.opacity / 100
   withLayerTransform(context, bounds, Boolean(layer.flipX), Boolean(layer.flipY), () => {
     const x = -bounds.width / 2
     const y = -bounds.height / 2
-    context.beginPath()
     if (layer.shape === 'path' && layer.vectorPaths?.length) {
-      for (const path of layer.vectorPaths) {
-        const first = path.knots[0]
-        if (!first) continue
-        const point = (position: Position) => ({ x: x + position.x * bounds.width, y: y + position.y * bounds.height })
-        const firstAnchor = point(first.anchor)
-        context.moveTo(firstAnchor.x, firstAnchor.y)
-        for (let index = 1; index < path.knots.length; index += 1) {
-          const previous = path.knots[index - 1]
-          const current = path.knots[index]
-          const controlA = point(previous.out)
-          const controlB = point(current.in)
-          const anchor = point(current.anchor)
-          context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, anchor.x, anchor.y)
-        }
-        if (path.closed) {
-          const previous = path.knots.at(-1)!
-          const controlA = point(previous.out)
-          const controlB = point(first.in)
-          context.bezierCurveTo(controlA.x, controlA.y, controlB.x, controlB.y, firstAnchor.x, firstAnchor.y)
-          context.closePath()
-        }
-      }
-    } else if (layer.shape === 'ellipse') context.ellipse(0, 0, bounds.width / 2, bounds.height / 2, 0, 0, Math.PI * 2)
+      drawBooleanShapePath(context, layer, bounds.width, bounds.height, x, y)
+      return
+    }
+    context.beginPath()
+    if (layer.shape === 'ellipse') context.ellipse(0, 0, bounds.width / 2, bounds.height / 2, 0, 0, Math.PI * 2)
     else context.roundRect(x, y, bounds.width, bounds.height, Math.min(layer.cornerRadius, bounds.width / 2, bounds.height / 2))
-    if (layer.fillStyle?.type === 'gradient') {
-      const angle = layer.fillStyle.angle * Math.PI / 180
-      const radius = Math.abs(bounds.width * Math.cos(angle)) / 2 + Math.abs(bounds.height * Math.sin(angle)) / 2
-      const gradient = layer.fillStyle.style === 'radial'
-        ? context.createRadialGradient(0, 0, 0, 0, 0, Math.max(bounds.width, bounds.height) / 2 * layer.fillStyle.scale / 100)
-        : context.createLinearGradient(-Math.cos(angle) * radius, -Math.sin(angle) * radius, Math.cos(angle) * radius, Math.sin(angle) * radius)
-      for (const stop of layer.fillStyle.colorStops) gradient.addColorStop(Math.max(0, Math.min(1, stop.position)), stop.color)
-      context.fillStyle = gradient
-    } else context.fillStyle = layer.fillStyle?.type === 'color' ? layer.fillStyle.color : layer.fill
-    context.fill(layer.vectorPaths?.some((path) => path.fillRule === 'even-odd' || path.operation !== 'combine') ? 'evenodd' : 'nonzero')
+    setShapeFill(context, layer, bounds.width, bounds.height, 0, 0)
+    context.fill()
     if (layer.strokeWidth > 0) {
       context.strokeStyle = layer.stroke
       context.lineWidth = layer.strokeWidth

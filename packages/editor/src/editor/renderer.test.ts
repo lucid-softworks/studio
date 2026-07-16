@@ -225,6 +225,22 @@ Mesh 1 12
   })
 })
 
+describe('compound vector shapes', () => {
+  it('renders subtract operations as a transparent hole', () => {
+    const rectangle = (left: number, top: number, right: number, bottom: number, operation: 'combine' | 'subtract') => ({
+      closed: true, operation, fillRule: 'non-zero' as const,
+      knots: [[left, top], [right, top], [right, bottom], [left, bottom]].map(([x, y]) => ({ linked: true, in: { x, y }, anchor: { x, y }, out: { x, y } })),
+    })
+    const shape = { ...createShapeLayer('path', 0), width: 100, height: 100, fill: '#ff0000', vectorPaths: [rectangle(0.1, 0.1, 0.9, 0.9, 'combine'), rectangle(0.4, 0.4, 0.6, 0.6, 'subtract')] }
+    const canvas = createCanvas(20, 20) as unknown as HTMLCanvasElement
+
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 20, height: 20 }, layers: [shape] }, {})
+
+    expect([...canvas.getContext('2d')!.getImageData(3, 3, 1, 1).data]).toEqual([255, 0, 0, 255])
+    expect(canvas.getContext('2d')!.getImageData(10, 10, 1, 1).data[3]).toBe(0)
+  })
+})
+
 describe('filled layer-effect strokes', () => {
   it('renders a gradient through the generated stroke mask', () => {
     const shape = {
