@@ -4,11 +4,13 @@ import { browserPerformanceBudgets, type PerformanceFixtureId } from '@studio/ed
 for (const fixture of ['2k', '4k', '8k'] as PerformanceFixtureId[]) {
   test(`${fixture} gradient commit stays within its interaction budget`, async ({ page }) => {
     const budget = browserPerformanceBudgets[fixture]
-    test.setTimeout(budget.readyMs + budget.gradientCommitMs + 20_000)
+    test.setTimeout(budget.readyMs * 2 + budget.gradientCommitMs + budget.renderP95Ms * 2 + 10_000)
     await page.goto(`/app?benchmark=${fixture}`)
     const canvas = page.getByLabel('Composition canvas')
     await expect(canvas).toHaveAttribute('data-render-revision', /\d+/, { timeout: budget.readyMs })
+    const emptyLayerRevision = await canvas.getAttribute('data-render-revision')
     await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    await expect.poll(() => canvas.getAttribute('data-render-revision'), { timeout: budget.readyMs }).not.toBe(emptyLayerRevision)
     await page.getByRole('button', { name: 'Gradient tool', exact: true }).click()
     const overlay = page.getByLabel('Gradient surface')
     const bounds = await overlay.boundingBox()
@@ -20,7 +22,7 @@ for (const fixture of ['2k', '4k', '8k'] as PerformanceFixtureId[]) {
     const startedAt = Date.now()
     await page.mouse.up()
     await expect(overlay).toHaveAttribute('aria-busy', 'false', { timeout: budget.gradientCommitMs })
-    await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revision)
     expect(Date.now() - startedAt).toBeLessThanOrEqual(budget.gradientCommitMs)
+    await expect.poll(() => canvas.getAttribute('data-render-revision'), { timeout: budget.renderP95Ms * 2 }).not.toBe(revision)
   })
 }

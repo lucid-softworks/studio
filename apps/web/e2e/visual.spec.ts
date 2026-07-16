@@ -6,6 +6,15 @@ async function setZoom(page: Page, zoom: number) {
   while (await readZoom() > zoom) await page.getByRole('button', { name: 'Zoom out', exact: true }).click()
 }
 
+async function stabilizeCanvasPresentation(page: Page) {
+  await page.getByLabel('Composition canvas').evaluate((canvas: HTMLCanvasElement) => {
+    canvas.style.width = '744px'
+    canvas.style.height = 'auto'
+    canvas.style.maxWidth = 'none'
+    canvas.style.maxHeight = 'none'
+  })
+}
+
 test.describe('composition visual baselines', () => {
   test.use({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 })
 
@@ -15,6 +24,7 @@ test.describe('composition visual baselines', () => {
         await page.goto(`/app?benchmark=${fixture}`)
         const canvas = page.getByLabel('Composition canvas')
         await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
+        await stabilizeCanvasPresentation(page)
 
         await setZoom(page, zoom)
 
@@ -33,6 +43,7 @@ test.describe('composition visual baselines', () => {
         const canvas = page.getByLabel('Composition canvas')
         await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
         await expect(canvas).toHaveAttribute('data-renderer', 'canvas2d')
+        await stabilizeCanvasPresentation(page)
         await setZoom(page, zoom)
         await expect(canvas).toHaveScreenshot(`${fixture}-canvas2d-${zoom}.png`, {
           animations: 'disabled',
