@@ -34,7 +34,7 @@ Typed assessments also carry one or more searchable concerns: `missing`, `partia
 | --- | --- | --- | --- |
 | File: new, open, save | New/open and Studio project save | Partial | Save-in-source-format, Save As semantics, recent/storage workflows, and compatibility prompts. |
 | File: place embedded / linked | Image placement and linked smart-object placement | Partial | Transform-on-place, shared linked sources, file-handle permissions, update/relink edge cases. |
-| File: export | PNG, JPEG, WebP, AVIF, SVG, PSD, PSB, TIFF, PDF, GIF, APNG and asset workspace | Partial | Per-format option depth, metadata controls, optimized export preview, editable fidelity, and cancellation. |
+| File: export | PNG, JPEG, WebP, AVIF, SVG, PSD, PSB, TIFF, PDF, GIF, APNG and asset workspace | Partial | Per-format option depth, metadata controls, optimized export preview, and editable fidelity. |
 | File: automate / scripts | Local actions, batch worker and sandboxed scripts | Partial | Photopea/Photoshop-like scripting surface, complete recordable commands, ATN compatibility. |
 | File: print | Local print/PDF dialog | Partial | Printer setup parity, color-managed print preview, separations, and platform validation. |
 | Edit: undo / redo | Typed document history and raster-region history | Validation needed | Cross-system transaction tests, long-session memory limits, and complete command coverage. |
