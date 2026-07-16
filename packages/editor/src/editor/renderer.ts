@@ -1423,8 +1423,15 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
         break
       }
       case 'black & white': {
-        const total = Math.max(1, adjustment.reds + adjustment.greens + adjustment.blues)
-        const gray = (red * adjustment.reds + green * adjustment.greens + blue * adjustment.blues) / total
+        const yellow = Math.max(0, Math.min(red, green) - blue)
+        const cyan = Math.max(0, Math.min(green, blue) - red)
+        const magenta = Math.max(0, Math.min(red, blue) - green)
+        const redOnly = Math.max(0, red - Math.max(green, blue))
+        const greenOnly = Math.max(0, green - Math.max(red, blue))
+        const blueOnly = Math.max(0, blue - Math.max(red, green))
+        const neutral = Math.min(red, green, blue)
+        const weighted = redOnly * adjustment.reds + greenOnly * adjustment.greens + blueOnly * adjustment.blues + yellow * adjustment.yellows + cyan * adjustment.cyans + magenta * adjustment.magentas + neutral * 100
+        const gray = weighted / 100
         if (adjustment.useTint) {
           const tint = adjustmentColor(adjustment.tintColor)
           red = gray * tint[0] / 255
@@ -1458,11 +1465,22 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
       case 'threshold': red = green = blue = luminance >= adjustment.level ? 255 : 0; break
       case 'gradient map': [red, green, blue] = gradientMapColor(luminance, adjustment); break
       case 'selective color': {
-        const tone = luminance < 64 ? adjustment.blacks : luminance > 192 ? adjustment.whites : adjustment.neutrals
+        const maximum = Math.max(red, green, blue)
+        const minimum = Math.min(red, green, blue)
+        const saturation = maximum - minimum
+        let colorRange: typeof adjustment.reds
+        if (saturation < 18) colorRange = adjustment.neutrals
+        else {
+          const hue = maximum === red ? ((green - blue) / saturation + 6) % 6 : maximum === green ? (blue - red) / saturation + 2 : (red - green) / saturation + 4
+          const sector = Math.round(hue) % 6
+          colorRange = sector === 0 ? adjustment.reds : sector === 1 ? adjustment.yellows : sector === 2 ? adjustment.greens : sector === 3 ? adjustment.cyans : sector === 4 ? adjustment.blues : adjustment.magentas
+        }
+        const tone = luminance < 48 ? adjustment.blacks ?? colorRange : luminance > 208 ? adjustment.whites ?? colorRange : colorRange ?? adjustment.neutrals
         if (tone) {
-          red += (-tone.c + tone.k) * 2.55
-          green += (-tone.m + tone.k) * 2.55
-          blue += (-tone.y + tone.k) * 2.55
+          const scale = adjustment.mode === 'relative' ? Math.max(0.1, saturation / 255) : 1
+          red += (-tone.c - tone.k) * 2.55 * scale
+          green += (-tone.m - tone.k) * 2.55 * scale
+          blue += (-tone.y - tone.k) * 2.55 * scale
         }
         break
       }

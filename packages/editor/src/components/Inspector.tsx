@@ -12,6 +12,7 @@ import type { CustomFontResource } from '../editor/resources'
 import { useState, type CSSProperties, type DragEvent, type RefObject } from 'react'
 import { normalizeGeometryTransform } from '../editor/transform'
 import { CurvesControl } from './CurvesControl'
+import { AdvancedAdjustmentControls } from './AdvancedAdjustmentControls'
 
 type InspectorProps = {
   document: EditorDocument
@@ -376,14 +377,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
               </label>
               {selected.adjustment && <div className="mb-3 rounded-lg border border-white/[0.06] bg-black/15 p-3 text-[10px] text-zinc-500">Typed, PSD-safe {selected.adjustment.type} properties are preserved in Studio projects and layered PSD exports.</div>}
               {selected.adjustment?.type === 'curves' && <CurvesControl curves={selected.adjustment} canvasRef={canvasRef} onChange={(channel, points, groupKey) => updateAdjustment(selected.adjustment!, { [channel]: points }, groupKey)} onChangeEnd={endHistoryGroup} />}
-              {selected.adjustment?.type === 'exposure' && <>
-                <RangeControl label="Exposure" value={selected.adjustment.exposure} min={-5} max={5} step={0.05} onChange={(exposure) => updateAdjustment(selected.adjustment!, { exposure }, `adjustment-exposure-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-                <RangeControl label="Gamma" value={selected.adjustment.gamma} min={0.1} max={3} step={0.05} onChange={(gamma) => updateAdjustment(selected.adjustment!, { gamma }, `adjustment-gamma-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              </>}
-              {selected.adjustment?.type === 'vibrance' && <>
-                <RangeControl label="Vibrance" value={selected.adjustment.vibrance} min={-100} max={100} suffix="%" onChange={(vibrance) => updateAdjustment(selected.adjustment!, { vibrance }, `adjustment-vibrance-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-                <RangeControl label="Saturation" value={selected.adjustment.saturation} min={-100} max={100} suffix="%" onChange={(saturation) => updateAdjustment(selected.adjustment!, { saturation }, `adjustment-advanced-saturation-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              </>}
+              {selected.adjustment && <AdvancedAdjustmentControls adjustment={selected.adjustment} layerId={selected.id} onChange={(patch, groupKey) => updateAdjustment(selected.adjustment!, patch, groupKey)} onChangeEnd={endHistoryGroup} />}
               {selected.adjustment?.type === 'posterize' && <RangeControl label="Levels" value={selected.adjustment.levels} min={2} max={255} onChange={(levels) => updateAdjustment(selected.adjustment!, { levels }, `adjustment-posterize-${selected.id}`)} onChangeEnd={endHistoryGroup} />}
               {selected.adjustment?.type === 'threshold' && <RangeControl label="Threshold" value={selected.adjustment.level} min={1} max={255} onChange={(level) => updateAdjustment(selected.adjustment!, { level }, `adjustment-threshold-${selected.id}`)} onChangeEnd={endHistoryGroup} />}
               {selected.adjustment?.type === 'photo filter' && <>
