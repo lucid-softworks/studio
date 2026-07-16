@@ -136,7 +136,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 - [x] Add Curves with per-channel points, eyedroppers, histogram, and presets
 - [x] Add Levels, Exposure, Vibrance, Selective Color, Channel Mixer, Color Lookup, Gradient Map, and Black & White
-- [ ] Add Camera Raw-style local controls implemented entirely on-device
+- [x] Add Camera Raw-style local controls implemented entirely on-device
 - [ ] Build a TypeGPU filter graph for blur, sharpen, noise, distort, stylize, render, and pixelate families
 - [ ] Add filter masks, live previews, cancelable jobs, and reusable presets
 - [ ] Add editable 8/16/32-bit document precision

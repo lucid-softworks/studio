@@ -271,6 +271,7 @@ export type AdjustmentDescriptor =
   | { type: 'threshold'; level: number }
   | { type: 'gradient map'; name: string; gradientType: 'solid' | 'noise'; dither: boolean; reverse: boolean; method?: 'classic' | 'perceptual' | 'linear' | 'smooth'; smoothness?: number; colorStops?: Array<{ color: string; position: number; midpoint: number }>; opacityStops?: Array<{ opacity: number; position: number; midpoint: number }>; roughness?: number; colorModel?: 'rgb' | 'hsb' | 'lab'; randomSeed?: number; restrictColors?: boolean; addTransparency?: boolean; min?: number[]; max?: number[] }
   | { type: 'selective color'; mode: 'relative' | 'absolute'; reds?: AdjustmentCmyk; yellows?: AdjustmentCmyk; greens?: AdjustmentCmyk; cyans?: AdjustmentCmyk; blues?: AdjustmentCmyk; magentas?: AdjustmentCmyk; whites?: AdjustmentCmyk; neutrals?: AdjustmentCmyk; blacks?: AdjustmentCmyk }
+  | { type: 'camera raw'; temperature: number; tint: number; exposure: number; contrast: number; highlights: number; shadows: number; whites: number; blacks: number; texture: number; clarity: number; dehaze: number; vibrance: number; saturation: number }
 
 export type AdjustmentLayer = BaseLayer & {
   type: 'adjustment'

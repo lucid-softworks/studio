@@ -146,6 +146,20 @@ describe('smart-object rendering', () => {
 })
 
 describe('advanced adjustment layers', () => {
+  it('applies Camera Raw-style tonal and color controls entirely on-device', () => {
+    const shape = { ...createShapeLayer('rectangle', 0), id: 'source', width: 100, height: 100, fill: '#808080', stackOrder: 0 }
+    const adjustment = {
+      id: 'camera-raw', type: 'adjustment' as const, name: 'Camera Raw', visible: true, locked: false, opacity: 100,
+      position: { x: 0, y: 0 }, rotation: 0, brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, stackOrder: 1,
+      adjustment: { type: 'camera raw' as const, temperature: 60, tint: 0, exposure: 0.5, contrast: 20, highlights: -20, shadows: 25, whites: 0, blacks: 0, texture: 10, clarity: 15, dehaze: 5, vibrance: 20, saturation: 0 },
+    }
+    const canvas = createCanvas(10, 10) as unknown as HTMLCanvasElement
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 10, height: 10 }, layers: [shape, adjustment] }, {})
+    const pixel = canvas.getContext('2d')!.getImageData(5, 5, 1, 1).data
+    expect(pixel[0]).toBeGreaterThan(pixel[2])
+    expect(pixel[0]).toBeGreaterThan(128)
+  })
+
   it('renders typed pixel adjustments without changing source layers', () => {
     const shape = { ...createShapeLayer('rectangle', 0), id: 'source', width: 100, height: 100, fill: '#ff0000', stackOrder: 0 }
     const adjustment = {

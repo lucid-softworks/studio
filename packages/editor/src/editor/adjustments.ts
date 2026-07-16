@@ -17,6 +17,7 @@ export const adjustmentKinds: Array<{ value: AdjustmentDescriptor['type']; label
   { value: 'threshold', label: 'Threshold' },
   { value: 'gradient map', label: 'Gradient Map' },
   { value: 'selective color', label: 'Selective Color' },
+  { value: 'camera raw', label: 'Camera Raw' },
 ]
 
 export function createAdjustmentDescriptor(type: AdjustmentDescriptor['type']): AdjustmentDescriptor {
@@ -37,5 +38,6 @@ export function createAdjustmentDescriptor(type: AdjustmentDescriptor['type']): 
     case 'threshold': return { type, level: 128 }
     case 'gradient map': return { type, name: 'Black, White', gradientType: 'solid', dither: false, reverse: false, colorStops: [{ color: '#000000', position: 0, midpoint: 50 }, { color: '#ffffff', position: 1, midpoint: 50 }], opacityStops: [{ opacity: 1, position: 0, midpoint: 50 }, { opacity: 1, position: 1, midpoint: 50 }] }
     case 'selective color': return { type, mode: 'relative', neutrals: { c: 0, m: 0, y: 0, k: 0 } }
+    case 'camera raw': return { type, temperature: 0, tint: 0, exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, texture: 0, clarity: 0, dehaze: 0, vibrance: 0, saturation: 0 }
   }
 }

@@ -1487,6 +1487,30 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
       case 'color lookup':
         if (cubeLut) [red, green, blue] = sampleCubeLut(cubeLut, red, green, blue)
         break
+      case 'camera raw': {
+        const exposure = 2 ** adjustment.exposure
+        red *= exposure
+        green *= exposure
+        blue *= exposure
+        red += adjustment.temperature * 0.55 + adjustment.tint * 0.12
+        green -= adjustment.tint * 0.35
+        blue -= adjustment.temperature * 0.55 - adjustment.tint * 0.12
+        const tone = luminance / 255
+        const shadowWeight = (1 - tone) ** 2
+        const highlightWeight = tone ** 2
+        const midContrast = (adjustment.contrast + adjustment.clarity * 0.45 + adjustment.texture * 0.2 + adjustment.dehaze * 0.35) / 100
+        const tonalOffset = adjustment.shadows * shadowWeight * 1.2 + adjustment.highlights * highlightWeight * 1.2 + adjustment.blacks * (1 - tone) * 0.55 + adjustment.whites * tone * 0.55
+        red = (red - 127.5) * (1 + midContrast) + 127.5 + tonalOffset
+        green = (green - 127.5) * (1 + midContrast) + 127.5 + tonalOffset
+        blue = (blue - 127.5) * (1 + midContrast) + 127.5 + tonalOffset
+        const adjustedLuminance = red * 0.299 + green * 0.587 + blue * 0.114
+        const chroma = Math.max(red, green, blue) - Math.min(red, green, blue)
+        const saturation = adjustment.saturation / 100 + adjustment.vibrance / 100 * (1 - Math.min(1, chroma / 255)) + adjustment.dehaze / 250
+        red = adjustedLuminance + (red - adjustedLuminance) * (1 + saturation)
+        green = adjustedLuminance + (green - adjustedLuminance) * (1 + saturation)
+        blue = adjustedLuminance + (blue - adjustedLuminance) * (1 + saturation)
+        break
+      }
       case 'brightness/contrast':
       case 'hue/saturation':
         break
