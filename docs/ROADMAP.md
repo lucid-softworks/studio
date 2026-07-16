@@ -161,7 +161,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 ## M8 — painting and retouching
 
 - [x] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
-- [ ] Support ABR brush import and preserve compatible dynamics
+- [x] Support ABR brush import and preserve compatible dynamics (legacy v1/v2 computed and sampled brushes plus modern v6 sampled-tip packs)
 - [ ] Add pencil, color replacement, mixer brush, and history brush tools
 - [ ] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
 - [ ] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity

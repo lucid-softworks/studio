@@ -40,7 +40,7 @@ export type BrushPreset = {
 
 type StoredFont = CustomFontResource & { blob: Blob }
 type StoredBrush = Omit<BrushPreset, 'tip' | 'builtIn'> & { blob: Blob }
-type PortableBrush = { app: 'studio-brush'; version: 1; name?: string; spacing?: number; tipData: string }
+type PortableBrush = { app: 'studio-brush'; version: 1; name?: string; spacing?: number; tipData: string; dynamics?: Partial<BrushDynamics> }
 
 export const roundBrush: BrushPreset = { id: 'round', name: 'Round', spacing: 12, tip: null, builtIn: true }
 export const defaultBrushDynamics: BrushDynamics = { scatter: 0, count: 1, angleJitter: 0, roundness: 100, texture: 0, dualBrush: false, hueJitter: 0, saturationJitter: 0, brightnessJitter: 0, smoothing: 35, buildUp: true, tiltSize: false, twistRotation: true }
@@ -165,27 +165,59 @@ async function portableBrush(file: File) {
   const response = await fetch(parsed.tipData)
   const blob = await response.blob()
   if (!BRUSH_IMAGE_TYPES.has(blob.type)) throw new Error('The preset does not contain a supported brush tip image.')
-  return { blob, name: parsed.name || resourceName(file.name), spacing: Math.max(1, Math.min(100, parsed.spacing ?? 18)) }
+  return { blob, name: parsed.name || resourceName(file.name), spacing: Math.max(1, Math.min(100, parsed.spacing ?? 18)), dynamics: parsed.dynamics }
 }
 
 async function brushSource(file: File) {
   const extension = fileExtension(file.name)
   if (extension === 'studio-brush' || extension === 'json') return portableBrush(file)
   if (!BRUSH_IMAGE_TYPES.has(file.type)) throw new Error('Choose a PNG, JPEG, WebP, or Studio brush preset.')
-  return { blob: file as Blob, name: resourceName(file.name), spacing: 18 }
+  return { blob: file as Blob, name: resourceName(file.name), spacing: 18, dynamics: undefined }
 }
 
 async function hydrateBrush(stored: StoredBrush): Promise<BrushPreset> {
-  return { id: stored.id, name: stored.name, spacing: stored.spacing, tip: await createBrushTip(stored.blob) }
+  return { id: stored.id, name: stored.name, spacing: stored.spacing, tip: await createBrushTip(stored.blob), dynamics: stored.dynamics }
 }
 
 export async function importBrush(file: File): Promise<BrushPreset> {
   if (file.size > MAX_RESOURCE_SIZE) throw new Error('That brush is over the 30 MB limit.')
   const source = await brushSource(file)
-  const stored: StoredBrush = { id: resourceId('brush'), name: source.name, spacing: source.spacing, blob: source.blob }
+  const stored: StoredBrush = { id: resourceId('brush'), name: source.name, spacing: source.spacing, blob: source.blob, dynamics: source.dynamics }
   const brush = await hydrateBrush(stored)
   await storeRequest(BRUSH_STORE, 'readwrite', (store) => store.put(stored))
   return brush
+}
+
+function canvasBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('The brush tip could not be encoded.')), 'image/png'))
+}
+
+export async function importBrushes(file: File): Promise<BrushPreset[]> {
+  if (file.size > MAX_RESOURCE_SIZE) throw new Error('That brush pack is over the 30 MB limit.')
+  if (fileExtension(file.name) !== 'abr') return [await importBrush(file)]
+  const { parseAbrBuffer } = await import('./abr')
+  const parsed = parseAbrBuffer(await file.arrayBuffer())
+  const brushes: BrushPreset[] = []
+  for (const brush of parsed) {
+    if (!brush.tip) continue
+    const stored: StoredBrush = { id: resourceId('brush'), name: brush.name, spacing: brush.spacing, dynamics: brush.dynamics, blob: await canvasBlob(brush.tip) }
+    const hydrated = await hydrateBrush(stored)
+    await storeRequest(BRUSH_STORE, 'readwrite', (store) => store.put(stored))
+    brushes.push(hydrated)
+  }
+  return brushes
+}
+
+export async function serializeBrushPreset(brush: BrushPreset) {
+  if (!brush.tip) throw new Error('Built-in brushes do not have a portable tip.')
+  const blob = await canvasBlob(brush.tip)
+  const tipData = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('The brush tip could not be read.'))
+    reader.readAsDataURL(blob)
+  })
+  return new Blob([JSON.stringify({ app: 'studio-brush', version: 1, name: brush.name, spacing: brush.spacing, tipData, dynamics: brush.dynamics } satisfies PortableBrush, null, 2)], { type: 'application/json' })
 }
 
 export async function loadBrushLibrary(): Promise<BrushPreset[]> {
