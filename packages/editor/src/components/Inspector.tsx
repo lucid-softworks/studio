@@ -9,8 +9,9 @@ import { LayerEffectsControl } from './LayerEffectsControl'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
 import type { CustomFontResource } from '../editor/resources'
-import { useState, type CSSProperties, type DragEvent } from 'react'
+import { useState, type CSSProperties, type DragEvent, type RefObject } from 'react'
 import { normalizeGeometryTransform } from '../editor/transform'
+import { CurvesControl } from './CurvesControl'
 
 type InspectorProps = {
   document: EditorDocument
@@ -25,6 +26,7 @@ type InspectorProps = {
   onRelinkSmartObject: () => void
   onExportSmartObject: () => void
   onContentAwareScale: (layerId: string, width: number, height: number) => void
+  canvasRef: RefObject<HTMLCanvasElement | null>
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -63,7 +65,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
   const [guideLayout, setGuideLayout] = useState({ columns: 3, rows: 3, margin: 80, gutter: 24 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
@@ -373,6 +375,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 </select>
               </label>
               {selected.adjustment && <div className="mb-3 rounded-lg border border-white/[0.06] bg-black/15 p-3 text-[10px] text-zinc-500">Typed, PSD-safe {selected.adjustment.type} properties are preserved in Studio projects and layered PSD exports.</div>}
+              {selected.adjustment?.type === 'curves' && <CurvesControl curves={selected.adjustment} canvasRef={canvasRef} onChange={(channel, points, groupKey) => updateAdjustment(selected.adjustment!, { [channel]: points }, groupKey)} onChangeEnd={endHistoryGroup} />}
               {selected.adjustment?.type === 'exposure' && <>
                 <RangeControl label="Exposure" value={selected.adjustment.exposure} min={-5} max={5} step={0.05} onChange={(exposure) => updateAdjustment(selected.adjustment!, { exposure }, `adjustment-exposure-${selected.id}`)} onChangeEnd={endHistoryGroup} />
                 <RangeControl label="Gamma" value={selected.adjustment.gamma} min={0.1} max={3} step={0.05} onChange={(gamma) => updateAdjustment(selected.adjustment!, { gamma }, `adjustment-gamma-${selected.id}`)} onChangeEnd={endHistoryGroup} />
