@@ -38,6 +38,7 @@ type MenuBarProps = {
   onEdgeSelection: () => void
   onGrowSelection: () => void
   onSimilarSelection: () => void
+  onSelectAndMask: () => void
   onFilter: (preset: 'blur' | 'sharpen' | 'grayscale' | 'sepia' | 'invert' | 'reset') => void
   onZoom: (command: 'in' | 'out' | 'actual') => void
   onTogglePanel: (panel: 'properties' | 'layers') => void
@@ -194,6 +195,8 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem onSelect={() => select(props.onEdgeSelection)}>Find subject edges</MenuItem>
         <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onGrowSelection)}>Grow</MenuItem>
         <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onSimilarSelection)}>Similar</MenuItem>
+        <Separator />
+        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onSelectAndMask)}>Select and Mask…</MenuItem>
       </>)}
 
       {menu('filter', 'Filter', <>

@@ -23,6 +23,8 @@ import { applySelectionAlphaMask, colorRangeMask, edgeSelectionMask, featherSele
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
+import { SelectAndMaskWorkspace } from './components/SelectAndMaskWorkspace'
+import { cloneSelection } from './editor/selection'
 import { builtInWorkspacePresets, defaultWorkspaceLayout, normalizeWorkspaceLayout, reorderUtilityPanels, type WorkspaceLayout, type WorkspacePreset } from './editor/panel-layout'
 import { normalizeCustomSwatches, normalizeHexColor } from './editor/swatches'
 import { normalizeCustomGradients, type GradientPreset } from './editor/gradients'
@@ -37,6 +39,7 @@ function App({ onExit }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialHistoryState)
   const [, bumpRasterHistory] = useReducer((value: number) => value + 1, 0)
   const [selection, setSelection] = useState<SelectionState | null>(null)
+  const [selectionWorkspaceSource, setSelectionWorkspaceSource] = useState<SelectionState | null>(null)
   const [assets, setAssets] = useState<AssetMap>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
@@ -1143,6 +1146,7 @@ function App({ onExit }: AppProps) {
             onEdgeSelection={selectEdges}
             onGrowSelection={() => growOrSelectSimilar('grow')}
             onSimilarSelection={() => growOrSelectSimilar('similar')}
+            onSelectAndMask={() => { if (selection) setSelectionWorkspaceSource(cloneSelection(selection)) }}
             onFilter={(preset) => {
               if (preset === 'blur') applyFilter({ blur: 8 })
               else if (preset === 'sharpen') applyFilter({ contrast: 115, saturation: 108 })
@@ -1203,6 +1207,7 @@ function App({ onExit }: AppProps) {
       <input ref={brushInputRef} type="file" className="sr-only" accept=".studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
 
       {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
+      {selectionWorkspaceSource && <SelectAndMaskWorkspace source={selectionWorkspaceSource} onPreview={setSelection} onApply={() => setSelectionWorkspaceSource(null)} onCancel={() => { setSelection(cloneSelection(selectionWorkspaceSource)); setSelectionWorkspaceSource(null) }} />}
     </div>
   )
 }

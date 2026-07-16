@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { applySelectionShape, colorRangeMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
+import { applySelectionShape, colorRangeMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -72,5 +72,12 @@ describe('selection coverage', () => {
     const selection = applySelectionShape(null, { kind: 'rectangle', x: 0, y: 0, width: 1, height: 1 }, 'replace', 4, 1)
     expect([...growSelectionMask(selection, image, 5)]).toEqual([255, 255, 0, 0])
     expect([...similarSelectionMask(selection, image, 5)]).toEqual([255, 170, 0, 213])
+  })
+
+  it('refines a cloned selection without mutating the source mask', () => {
+    const source = applySelectionShape(null, { kind: 'rectangle', x: 2, y: 0, width: 2, height: 1 }, 'replace', 6, 1)
+    const refined = refineSelection(source, { radius: 1, feather: 0, contrast: 0, shiftEdge: 0, decontamination: 0 })
+    expect(source.bounds).toEqual({ x: 2, y: 0, width: 2, height: 1 })
+    expect(refined.bounds).toEqual({ x: 1, y: 0, width: 4, height: 1 })
   })
 })

@@ -74,6 +74,12 @@ export function selectionAlphaAtPoint(selection: SelectionState | null, x: numbe
   return tile ? tile.alpha[(pixelY - tile.y) * tile.width + pixelX - tile.x] / 255 : 0
 }
 
+export function cloneSelection(selection: SelectionState): SelectionState {
+  const mask = createMask(selection.mask.width, selection.mask.height)
+  mask.getContext('2d')?.drawImage(selection.mask, 0, 0)
+  return synchronizedSelection(mask, selection.revision)
+}
+
 export function selectionBounds(mask: HTMLCanvasElement): SelectionBounds | null {
   const context = mask.getContext('2d', { willReadFrequently: true })
   if (!context) return null
@@ -365,6 +371,30 @@ export function morphSelection(current: SelectionState | null, radius: number, m
   }
   context.putImageData(image, 0, 0)
   return synchronizedSelection(current.mask, current.revision + 1)
+}
+
+export type SelectionRefinement = { radius: number; feather: number; contrast: number; shiftEdge: number; decontamination: number }
+
+export function refineSelection(source: SelectionState, settings: SelectionRefinement) {
+  let selection = cloneSelection(source)
+  const edgeShift = Math.round(Math.abs(settings.shiftEdge) / 10)
+  if (edgeShift > 0) selection = morphSelection(selection, edgeShift, settings.shiftEdge > 0 ? 'expand' : 'contract') ?? selection
+  const radius = Math.round(Math.max(0, settings.radius))
+  if (radius > 0) selection = morphSelection(selection, radius, 'expand') ?? selection
+  if (settings.feather > 0) selection = featherSelection(selection, settings.feather) ?? selection
+  const context = selection.mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return selection
+  const image = context.getImageData(0, 0, selection.mask.width, selection.mask.height)
+  const contrast = Math.max(0, Math.min(100, settings.contrast)) / 100
+  const decontamination = Math.max(0, Math.min(100, settings.decontamination)) / 100
+  for (let offset = 3; offset < image.data.length; offset += 4) {
+    let alpha = image.data[offset] / 255
+    alpha = Math.max(0, Math.min(1, (alpha - 0.5) * (1 + contrast * 4) + 0.5))
+    if (decontamination > 0 && alpha < 0.5) alpha *= 1 - decontamination * (1 - alpha * 2)
+    image.data[offset] = Math.round(alpha * 255)
+  }
+  context.putImageData(image, 0, 0)
+  return synchronizedSelection(selection.mask, source.revision + 1)
 }
 
 export function selectionAlphaAt(data: ImageData, x: number, y: number) {
