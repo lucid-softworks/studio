@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspacePreset } from '../editor/panel-layout'
 import { commandForEvent, shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
+import type { PluginExporterHook, PluginFilterHook } from '../editor/plugins'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view'
@@ -12,6 +13,11 @@ type MenuBarProps = {
   shortcuts: ShortcutMap
   onEditShortcuts: () => void
   onOpenScripts: () => void
+  onOpenPlugins: () => void
+  pluginExporters: Array<PluginExporterHook & { pluginId: string }>
+  onPluginExport: (hook: PluginExporterHook) => void
+  pluginFilters: Array<PluginFilterHook & { pluginId: string }>
+  onPluginFilter: (hook: PluginFilterHook) => void
   onAddImage: () => void
   onPlaceLinkedSmartObject: () => void
   onLoadFont: () => void
@@ -152,6 +158,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
+        <MenuItem onSelect={() => select(props.onOpenPlugins)}>Manage plugins…</MenuItem>
         <Separator />
         <MenuItem shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />
@@ -161,6 +168,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('svg'))}>Editable SVG</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
+        {props.pluginExporters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin exporters</p>{props.pluginExporters.map((hook) => <MenuItem key={`${hook.pluginId}:${hook.id}`} disabled={props.exporting} onSelect={() => select(() => props.onPluginExport(hook))}>{hook.label}</MenuItem>)}</>}
         <Separator />
         <MenuItem disabled={props.exporting || !props.hasArtboards} onSelect={() => select(props.onExportArtboards)}>Export artboards as PNGs</MenuItem>
       </>, 'w-60')}
@@ -229,6 +237,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('invert'))}>Invert</MenuItem>
         <Separator />
         <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('reset'))}>Reset layer filters</MenuItem>
+        {props.pluginFilters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin filters</p>{props.pluginFilters.map((hook) => <MenuItem key={`${hook.pluginId}:${hook.id}`} disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onPluginFilter(hook))}>{hook.label}</MenuItem>)}</>}
       </>)}
 
       {menu('view', 'View', <>

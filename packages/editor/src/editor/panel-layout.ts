@@ -11,7 +11,7 @@ export type CollapsedPanels = {
   layers: boolean
 }
 
-export type UtilityPanelId = 'layers' | 'channels' | 'paths' | 'history' | 'actions' | 'navigator' | 'histogram' | 'swatches' | 'gradients' | 'patterns' | 'libraries' | 'info'
+export type UtilityPanelId = 'layers' | 'channels' | 'paths' | 'history' | 'actions' | 'navigator' | 'histogram' | 'swatches' | 'gradients' | 'patterns' | 'libraries' | 'plugins' | 'info'
 export type FloatingPanelPosition = { x: number; y: number }
 
 export type WorkspaceLayout = {
@@ -39,7 +39,7 @@ export const defaultWorkspaceLayout: WorkspaceLayout = {
   panelWidths: { properties: 310, layers: 258 },
   collapsedPanels: { properties: false, layers: false },
   activeUtilityPanel: 'layers',
-  utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
+  utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'plugins', 'info'],
   utilityPanelFloating: false,
   floatingPanelPosition: { x: 960, y: 84 },
   secondaryUtilityPanel: null,
@@ -58,7 +58,7 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       panelWidths: { properties: 310, layers: 258 },
       collapsedPanels: { properties: true, layers: true },
       activeUtilityPanel: 'navigator',
-      utilityPanelOrder: ['navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'layers', 'channels', 'paths', 'history', 'actions', 'info'],
+      utilityPanelOrder: ['navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'plugins', 'layers', 'channels', 'paths', 'history', 'actions', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
       secondaryUtilityPanel: null,
@@ -75,7 +75,7 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       panelWidths: { properties: 280, layers: 360 },
       collapsedPanels: { properties: true, layers: false },
       activeUtilityPanel: 'layers',
-      utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
+      utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'plugins', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
       secondaryUtilityPanel: 'history',
@@ -110,7 +110,7 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
   const candidate = value as Partial<WorkspaceLayout>
   const widths = candidate.panelWidths
   const collapsed = candidate.collapsedPanels
-  const utilityPanels: UtilityPanelId[] = ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info']
+  const utilityPanels: UtilityPanelId[] = ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'plugins', 'info']
   const requestedOrder = Array.isArray(candidate.utilityPanelOrder) ? candidate.utilityPanelOrder.filter((panel): panel is UtilityPanelId => utilityPanels.includes(panel as UtilityPanelId)) : []
   const utilityPanelOrder = [...new Set([...requestedOrder, ...utilityPanels])]
   const floatingPosition = candidate.floatingPanelPosition

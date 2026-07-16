@@ -14,6 +14,7 @@ import { defaultSwatches } from '../editor/swatches'
 import type { DocumentChannel, DocumentHistoryCommand, DocumentPath, EditorDocument, PatternSettings, VectorPath } from '../editor/types'
 import { actionCommandLabels, normalizeActions, type ActionCommand, type ActionCondition, type ActionPreset, type ActionStep } from '../editor/actions'
 import { downloadBlob } from '../editor/download'
+import type { StudioPlugin } from '../editor/plugins'
 
 export type AlphaChannelTransform = 'invert' | 'flip-horizontal' | 'flip-vertical' | 'rotate-clockwise'
 
@@ -563,6 +564,11 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
       <input ref={batchInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void batchFiles(event.target.files); event.target.value = '' }} />
     </div>
   )
+}
+
+export function PluginPanelsPanel({ plugins }: { plugins: StudioPlugin[] }) {
+  const panels = plugins.flatMap((plugin) => plugin.hooks.panels.map((panel) => ({ ...panel, pluginName: plugin.name, pluginId: plugin.id })))
+  return <div role="tabpanel" aria-label="Plugin panels" className="min-h-0 flex-1 overflow-y-auto p-3">{panels.length ? panels.map((panel) => <section key={`${panel.pluginId}:${panel.id}`} className="mb-2 rounded-xl border border-white/[0.07] bg-black/15 p-3"><p className="text-[8px] font-semibold tracking-[0.14em] text-cyan-200/60 uppercase">{panel.pluginName}</p><h3 className="mt-1 text-[11px] font-medium text-zinc-300">{panel.label}</h3><p className="mt-2 text-[9px] leading-relaxed whitespace-pre-wrap text-zinc-600">{panel.description}</p></section>) : <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-center text-[9px] text-zinc-700">Installed plugin panel hooks appear here.</div>}</div>
 }
 
 function BrushThumbnail({ brush }: { brush: BrushPreset }) {

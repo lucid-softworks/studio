@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { CircleIcon, RectangleIcon, TextIcon } from './Icons'
 import { shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
+import type { PluginToolHook } from '../editor/plugins'
 
 export type EditorTool =
   | 'move'
@@ -171,9 +172,10 @@ type ToolRailProps = {
   tool: EditorTool
   onChange: (tool: EditorTool) => void
   shortcuts: ShortcutMap
+  pluginTools: Array<PluginToolHook & { pluginId: string }>
 }
 
-export function ToolRail({ tool, onChange, shortcuts }: ToolRailProps) {
+export function ToolRail({ tool, onChange, shortcuts, pluginTools }: ToolRailProps) {
   return (
     <aside aria-label="Tools" className="order-0 flex h-12 w-full shrink-0 items-center overflow-x-auto border-b border-white/[0.07] bg-[#111113] px-1.5 lg:h-[calc(100vh-84px)] lg:w-12 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-r lg:border-b-0 lg:px-0 lg:py-1.5">
       {tools.map((item) => {
@@ -194,6 +196,7 @@ export function ToolRail({ tool, onChange, shortcuts }: ToolRailProps) {
         </div>
         )
       })}
+      {pluginTools.map((pluginTool) => <div key={`${pluginTool.pluginId}:${pluginTool.id}`} className="mt-1.5 shrink-0 border-t border-white/[0.07] pt-1.5"><button type="button" title={`${pluginTool.label} · plugin tool mapped to ${pluginTool.target}`} aria-label={`${pluginTool.label} plugin tool`} aria-pressed={tool === pluginTool.target} onClick={() => onChange(pluginTool.target)} className={`relative flex size-9 items-center justify-center rounded-md border border-dashed text-[10px] font-bold transition ${tool === pluginTool.target ? 'border-cyan-300/30 bg-cyan-400/10 text-cyan-100' : 'border-white/[0.08] text-zinc-600 hover:text-zinc-200'}`}>{pluginTool.mark}</button></div>)}
     </aside>
   )
 }
