@@ -5,6 +5,7 @@ import { gpuCompositePixel } from './typegpu-compositor'
 import { typeGpuBlendModeCodes, type TypeGpuBlendMode } from './typegpu-blend-modes'
 
 type Pixel = readonly [number, number, number, number]
+type PixelMap = Record<TypeGpuBlendMode, Pixel>
 
 const backdrop: Pixel = [51, 153, 230, 179]
 const source: Pixel = [204, 64, 26, 153]
@@ -42,13 +43,19 @@ function gpuPixel(mode: TypeGpuBlendMode): Pixel {
   ]
 }
 
+function expectPixelClose(actual: Pixel, expected: Pixel, label: string, tolerance = 3) {
+  actual.forEach((channel, index) => {
+    expect(Math.abs(channel - expected[index]), `${label} channel ${index}`).toBeLessThanOrEqual(tolerance)
+  })
+}
+
 describe('TypeGPU and Canvas2D pixel parity', () => {
   it('matches the deterministic blend-mode fixture', () => {
     const modes = Object.keys(typeGpuBlendModeCodes) as TypeGpuBlendMode[]
-    const canvas = Object.fromEntries(modes.map((mode) => [mode, canvasPixel(mode)]))
-    const gpu = Object.fromEntries(modes.map((mode) => [mode, gpuPixel(mode)]))
+    const canvas = Object.fromEntries(modes.map((mode) => [mode, canvasPixel(mode)])) as PixelMap
+    const gpu = Object.fromEntries(modes.map((mode) => [mode, gpuPixel(mode)])) as PixelMap
 
-    expect(canvas).toEqual({
+    const reference: PixelMap = {
       normal: [154, 92, 91, 225],
       multiply: [77, 79, 90, 225],
       screen: [160, 146, 189, 225],
@@ -65,12 +72,12 @@ describe('TypeGPU and Canvas2D pixel parity', () => {
       saturation: [82, 134, 188, 225],
       color: [169, 105, 104, 225],
       luminosity: [68, 120, 175, 225],
-    })
+    }
 
     for (const mode of modes) {
-      gpu[mode].forEach((channel, index) => {
-        expect(Math.abs(channel - canvas[mode][index]), `${mode} channel ${index}`).toBeLessThanOrEqual(3)
-      })
+      // Skia's final byte rounding varies slightly between platform builds.
+      expectPixelClose(canvas[mode], reference[mode], `${mode} Canvas2D reference`)
+      expectPixelClose(gpu[mode], canvas[mode], `${mode} TypeGPU parity`)
     }
   })
 })
