@@ -101,7 +101,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 ## M3 — selections, masks, and channels
 
 - [x] Make selections sparse tile-based pixel masks rather than rectangle-only state
-- [ ] Add elliptical marquee, single-row/column marquee, polygonal lasso, magnetic lasso, and object/contiguous selection tools
+- [x] Add elliptical marquee, single-row/column marquee, polygonal lasso, magnetic lasso, and object/contiguous selection tools
 - [ ] Add add/subtract/intersect selection modes to every selection tool
 - [ ] Add color range, luminosity range, subject-free edge selection, grow, and similar
 - [ ] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination

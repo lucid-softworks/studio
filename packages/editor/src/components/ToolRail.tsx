@@ -5,7 +5,11 @@ export type EditorTool =
   | 'move'
   | 'marquee'
   | 'ellipse-select'
+  | 'single-row-select'
+  | 'single-column-select'
   | 'lasso'
+  | 'polygonal-lasso'
+  | 'magnetic-lasso'
   | 'magic-wand'
   | 'object-select'
   | 'crop'
@@ -99,7 +103,11 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'move', label: 'Move', shortcut: 'V', icon: <MoveToolIcon className="size-[19px]" /> },
   { id: 'marquee', label: 'Rectangular Marquee', shortcut: 'M', icon: <MarqueeToolIcon className="size-[19px]" />, divider: true },
   { id: 'ellipse-select', label: 'Elliptical Marquee', shortcut: 'Shift M', icon: <MarqueeToolIcon className="size-[19px]" ellipse /> },
+  { id: 'single-row-select', label: 'Single Row Marquee', shortcut: '', icon: <MarqueeToolIcon className="size-[19px]" /> },
+  { id: 'single-column-select', label: 'Single Column Marquee', shortcut: '', icon: <MarqueeToolIcon className="size-[19px]" /> },
   { id: 'lasso', label: 'Lasso', shortcut: 'L', icon: <LassoToolIcon className="size-[19px]" /> },
+  { id: 'polygonal-lasso', label: 'Polygonal Lasso', shortcut: 'Shift L', icon: <LassoToolIcon className="size-[19px]" /> },
+  { id: 'magnetic-lasso', label: 'Magnetic Lasso', shortcut: '', icon: <LassoToolIcon className="size-[19px]" /> },
   { id: 'magic-wand', label: 'Magic Wand', shortcut: 'W', icon: <WandToolIcon className="size-[19px]" /> },
   { id: 'object-select', label: 'Object Select', shortcut: 'Shift W', icon: <ObjectSelectToolIcon className="size-[19px]" /> },
   { id: 'crop', label: 'Crop', shortcut: 'C', icon: <CropToolIcon className="size-[19px]" /> },

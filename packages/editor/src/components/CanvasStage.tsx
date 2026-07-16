@@ -10,11 +10,13 @@ import { RedoIcon, UndoIcon, UploadIcon } from './Icons'
 import { CanvasActionOverlay } from './CanvasActionOverlay'
 import { CloneStampOverlay } from './CloneStampOverlay'
 import { LassoSelectionOverlay } from './LassoSelectionOverlay'
+import { PolygonalLassoOverlay } from './PolygonalLassoOverlay'
 import { MagicWandOverlay } from './MagicWandOverlay'
 import { MeasureOverlay, type Measurement } from './MeasureOverlay'
 import { RasterFillOverlay } from './RasterFillOverlay'
 import { RasterPaintOverlay } from './RasterPaintOverlay'
 import { SelectionOverlay } from './SelectionOverlay'
+import { SingleMarqueeOverlay } from './SingleMarqueeOverlay'
 import type { EditorTool } from './ToolRail'
 import { TransformOverlay } from './TransformOverlay'
 import type { BrushPreset } from '../editor/resources'
@@ -60,7 +62,11 @@ const toolNames: Record<EditorTool, string> = {
   move: 'Move',
   marquee: 'Rectangular Marquee',
   'ellipse-select': 'Elliptical Marquee',
+  'single-row-select': 'Single Row Marquee',
+  'single-column-select': 'Single Column Marquee',
   lasso: 'Lasso',
+  'polygonal-lasso': 'Polygonal Lasso',
+  'magnetic-lasso': 'Magnetic Lasso',
   'magic-wand': 'Magic Wand',
   'object-select': 'Object Select',
   crop: 'Crop',
@@ -85,7 +91,7 @@ function toolForShortcut(key: string, shift: boolean): EditorTool | null {
   switch (key) {
     case 'v': return 'move'
     case 'm': return shift ? 'ellipse-select' : 'marquee'
-    case 'l': return 'lasso'
+    case 'l': return shift ? 'polygonal-lasso' : 'lasso'
     case 'w': return shift ? 'object-select' : 'magic-wand'
     case 'c': return 'crop'
     case 'i': return shift ? 'measure' : 'eyedropper'
@@ -107,9 +113,13 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   switch (tool) {
     case 'marquee': return 'Drag to make a rectangular selection · Shift constrains · Alt draws from centre'
     case 'ellipse-select': return 'Drag to make an elliptical selection · Shift constrains · Alt draws from centre'
+    case 'single-row-select': return 'Click to select one horizontal row of pixels'
+    case 'single-column-select': return 'Click to select one vertical column of pixels'
     case 'lasso': return 'Draw a freehand boundary to select an irregular area'
+    case 'polygonal-lasso': return 'Click to add straight segments · double-click or click the first point to close'
+    case 'magnetic-lasso': return 'Draw near a high-contrast boundary to snap the selection edge locally'
     case 'magic-wand': return 'Click a contiguous colour region to select it'
-    case 'object-select': return 'Click visible pixels to select an object · drag to reposition it'
+    case 'object-select': return 'Click a connected visible object to select its pixel silhouette'
     case 'crop': return context.hasCrop ? 'Adjust the crop region or apply it from the options bar' : 'Drag over the canvas to define a crop region'
     case 'move': return 'Click to select · drag to move · Shift-click for multi-select · drag handles to transform'
     case 'eyedropper': return 'Click the canvas to sample a foreground colour'
@@ -155,7 +165,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
   const selectedLocked = selected ? layerIsLocked(document, selected) : false
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
-  const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'lasso' || tool === 'magic-wand'
+  const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'single-row-select' || tool === 'single-column-select' || tool === 'lasso' || tool === 'polygonal-lasso' || tool === 'magnetic-lasso' || tool === 'magic-wand' || tool === 'object-select'
   const paintTool = tool === 'brush' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
   const selectedBrush = brushes.find((candidate) => candidate.id === brushId) ?? brushes[0]
   const brush = { ...selectedBrush, spacing: brushSpacing }
@@ -405,14 +415,16 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               className={`block h-auto w-auto max-h-[calc(100vh-205px)] max-w-full rounded-sm shadow-[0_28px_80px_rgba(0,0,0,0.5)] transition-opacity ${isLoading ? 'opacity-50' : 'opacity-100'}`}
             />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'marquee' || tool === 'ellipse-select'} kind={tool === 'ellipse-select' ? 'ellipse' : 'rectangle'} mode={selectionMode} selection={selection} onChange={setSelection} />
-            <LassoSelectionOverlay canvasRef={canvasRef} enabled={tool === 'lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
-            <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
+            <SingleMarqueeOverlay canvasRef={canvasRef} enabled={tool === 'single-row-select' || tool === 'single-column-select'} kind={tool === 'single-column-select' ? 'column' : 'row'} mode={selectionMode} selection={selection} onChange={setSelection} />
+            <LassoSelectionOverlay canvasRef={canvasRef} enabled={tool === 'lasso' || tool === 'magnetic-lasso'} magnetic={tool === 'magnetic-lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
+            <PolygonalLassoOverlay canvasRef={canvasRef} enabled={tool === 'polygonal-lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
+            <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand' || tool === 'object-select'} object={tool === 'object-select'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
             <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
             {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
-            <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move' || tool === 'object-select'} />
+            <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
             <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
           </div>
         </div>

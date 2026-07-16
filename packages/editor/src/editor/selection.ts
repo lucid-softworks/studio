@@ -127,6 +127,12 @@ export function applySelectionShape(current: SelectionState | null, shape: Selec
   return applyTemporaryMask(selection, temporary, mode, width, height)
 }
 
+export function applySingleMarquee(current: SelectionState | null, kind: 'row' | 'column', position: number, mode: SelectionMode, width: number, height: number) {
+  return applySelectionShape(current, kind === 'row'
+    ? { kind: 'rectangle', x: 0, y: Math.max(0, Math.min(height - 1, Math.floor(position))), width, height: 1 }
+    : { kind: 'rectangle', x: Math.max(0, Math.min(width - 1, Math.floor(position))), y: 0, width: 1, height }, mode, width, height)
+}
+
 export function applySelectionPolygon(current: SelectionState | null, points: Array<{ x: number; y: number }>, mode: SelectionMode, width: number, height: number): SelectionState {
   const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
   if (points.length < 3) return selection
@@ -167,6 +173,32 @@ export function contiguousColorMask(image: ImageData, startX: number, startY: nu
     )
     if (distance > threshold) continue
     mask[pixel] = 255
+    const pixelX = pixel % width
+    const pixelY = Math.floor(pixel / width)
+    if (pixelX > 0) stack.push(pixel - 1)
+    if (pixelX + 1 < width) stack.push(pixel + 1)
+    if (pixelY > 0) stack.push(pixel - width)
+    if (pixelY + 1 < height) stack.push(pixel + width)
+  }
+  return mask
+}
+
+export function contiguousAlphaMask(image: ImageData, startX: number, startY: number, threshold = 8) {
+  const width = image.width
+  const height = image.height
+  const x = Math.max(0, Math.min(width - 1, Math.floor(startX)))
+  const y = Math.max(0, Math.min(height - 1, Math.floor(startY)))
+  const mask = new Uint8ClampedArray(width * height)
+  if (image.data[(y * width + x) * 4 + 3] <= threshold) return mask
+  const visited = new Uint8Array(width * height)
+  const stack = [y * width + x]
+  while (stack.length) {
+    const pixel = stack.pop()!
+    if (visited[pixel]) continue
+    visited[pixel] = 1
+    const alpha = image.data[pixel * 4 + 3]
+    if (alpha <= threshold) continue
+    mask[pixel] = alpha
     const pixelX = pixel % width
     const pixelY = Math.floor(pixel / width)
     if (pixelX > 0) stack.push(pixel - 1)

@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { applySelectionShape, contiguousColorMask, selectionAlphaAt, selectionAlphaAtPoint } from './selection'
+import { applySelectionShape, contiguousAlphaMask, contiguousColorMask, selectionAlphaAt, selectionAlphaAtPoint } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -42,5 +42,10 @@ describe('selection coverage', () => {
     expect(selectionAlphaAtPoint(selection, 305, 24)).toBe(1)
     expect(selectionAlphaAtPoint(selection, 10, 10)).toBe(0)
     expect(selection.bounds).toEqual({ x: 300, y: 20, width: 10, height: 8 })
+  })
+
+  it('finds a connected non-transparent object without selecting its neighbour', () => {
+    const image = selectionData([255, 255, 0, 255, 255], 5, 1)
+    expect([...contiguousAlphaMask(image, 0, 0)]).toEqual([255, 255, 0, 0, 0])
   })
 })
