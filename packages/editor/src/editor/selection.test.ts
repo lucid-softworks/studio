@@ -1,5 +1,8 @@
+import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { contiguousColorMask, selectionAlphaAt } from './selection'
+import { applySelectionShape, contiguousColorMask, selectionAlphaAt, selectionAlphaAtPoint } from './selection'
+
+Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
 function selectionData(alphas: number[], width: number, height: number) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -30,5 +33,14 @@ describe('selection coverage', () => {
       image.data[pixel * 4 + 3] = 255
     })
     expect([...contiguousColorMask(image, 0, 0, 5)]).toEqual([255, 255, 0, 255, 0, 0])
+  })
+
+  it('stores sparse pixel coverage in addressable tiles', () => {
+    const selection = applySelectionShape(null, { kind: 'rectangle', x: 300, y: 20, width: 10, height: 8 }, 'replace', 1024, 1024)
+    expect(selection.tiles.size).toBe(1)
+    expect([...selection.tiles.keys()]).toEqual(['1:0'])
+    expect(selectionAlphaAtPoint(selection, 305, 24)).toBe(1)
+    expect(selectionAlphaAtPoint(selection, 10, 10)).toBe(0)
+    expect(selection.bounds).toEqual({ x: 300, y: 20, width: 10, height: 8 })
   })
 })
