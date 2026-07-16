@@ -1,10 +1,12 @@
-import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { Fragment, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, type RasterTarget } from '../editor/raster-target'
 import { applyRetouchStamp, sampleAverageColor, type RetouchMode } from '../editor/retouch'
+import { geometryTransformIsIdentity } from '../editor/transform'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position } from '../editor/types'
+import { useRasterStrokePreview } from './useRasterStrokePreview'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -35,6 +37,7 @@ type Stroke = {
   maxX: number
   maxY: number
   selectionData: ImageData | null
+  previewing: boolean
 }
 
 export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, strength, color, selection, locked, onChange, onCommit }: Props) {
@@ -42,6 +45,7 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
   const historyRef = useRef<{ assetId: string; image: ImageData } | null>(null)
   const canvas = canvasRef.current
   const target = canvas ? resolveRasterTarget(canvas, document, assets, undefined, undefined, locked) : null
+  const strokePreview = useRasterStrokePreview({ canvasRef, document, assets, layer: target?.layer, surface: target?.surface })
 
   const canvasPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -74,7 +78,8 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
       stroke.maxY = Math.max(stroke.maxY, region.y + region.height)
     }
     stroke.last = point
-    onChange(stroke.target.layer.assetId, {
+    if (stroke.previewing) strokePreview.schedulePreview()
+    else onChange(stroke.target.layer.assetId, {
       x: Math.max(0, Math.floor(Math.min(previous.x, point.x) - stroke.radius)),
       y: Math.max(0, Math.floor(Math.min(previous.y, point.y) - stroke.radius)),
       width: Math.ceil(Math.abs(point.x - previous.x) + stroke.radius * 2),
@@ -93,6 +98,8 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
     const sampleOffset = (Math.max(0, Math.min(before.height - 1, Math.round(point.y))) * before.width + Math.max(0, Math.min(before.width - 1, Math.round(point.x)))) * 4
     const selectionContext = selection?.bounds ? selection.mask.getContext('2d', { willReadFrequently: true }) : null
     const source = tool === 'history-brush' ? historyRef.current.image : new ImageData(new Uint8ClampedArray(before.data), before.width, before.height)
+    const selectionData = selectionContext && selection ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null
+    const previewing = !selectionData && geometryTransformIsIdentity(target.layer.geometryTransform) && !target.layer.maskAssetId && !target.layer.vectorMask && !target.layer.clipToBelow
     const stroke: Stroke = {
       pointerId: event.pointerId,
       target,
@@ -107,10 +114,13 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
       minY: point.y - radius,
       maxX: point.x + radius,
       maxY: point.y + radius,
-      selectionData: selectionContext && selection ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null,
+      selectionData,
+      previewing,
     }
     strokeRef.current = stroke
+    if (previewing) strokePreview.beginPreview()
     paint(stroke, point)
+    if (previewing) strokePreview.drawPreview()
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
   }
 
@@ -124,19 +134,33 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
     const stroke = strokeRef.current
     if (!stroke || stroke.pointerId !== event.pointerId) return
     strokeRef.current = null
+    strokePreview.cancelScheduledPreview()
     const context = stroke.target.surface.getContext('2d', { willReadFrequently: true })
-    if (!context) return
+    if (!context) {
+      if (stroke.previewing) strokePreview.cancelPreview()
+      return
+    }
     const x = Math.max(0, Math.floor(stroke.minX))
     const y = Math.max(0, Math.floor(stroke.minY))
     const width = Math.min(stroke.target.surface.width - x, Math.ceil(stroke.maxX) - x)
     const height = Math.min(stroke.target.surface.height - y, Math.ceil(stroke.maxY) - y)
-    if (width <= 0 || height <= 0) return
+    if (width <= 0 || height <= 0) {
+      if (stroke.previewing) strokePreview.cancelPreview()
+      return
+    }
     const before = extractImageData(stroke.before, x, y, width, height)
     const after = constrainRasterRegion(before, extractImageData(stroke.after, x, y, width, height), x, y, stroke.target, stroke.selectionData)
     context.putImageData(after, x, y)
     onChange(stroke.target.layer.assetId, { x, y, width, height })
     onCommit({ assetId: stroke.target.layer.assetId, x, y, before, after })
+    if (stroke.previewing) {
+      strokePreview.drawPreview()
+      strokePreview.finishPreview()
+    }
   }
 
-  return <svg aria-label={`${tool} surface`} viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${target && !target.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} />
+  return <Fragment>
+    <canvas ref={strokePreview.previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full" />
+    <svg aria-label={`${tool} surface`} viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${target && !target.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerEnd} onPointerCancel={pointerEnd} />
+  </Fragment>
 }

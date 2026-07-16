@@ -1,7 +1,5 @@
-import { Fragment, useEffect, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { Fragment, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { rasterBounds, type LayerBounds } from '../editor/renderer'
-import { canvas2dCompositionRenderer } from '../editor/rendering/composition-renderer'
-import { layerFilterCss } from '../editor/filters'
 import { geometryTransformIsIdentity } from '../editor/transform'
 import { type RasterEdit, type RasterRegion } from '../editor/raster'
 import { selectionAlphaAt, type SelectionState } from '../editor/selection'
@@ -10,6 +8,7 @@ import type { EditorDocument, Position, RasterLayer } from '../editor/types'
 import type { BrushDynamics, BrushPreset } from '../editor/resources'
 import { brushStampAlpha, brushStampRadius, dynamicBrushStamps, interpolateBrushStamps, normalizePointerInput, smoothBrushPoint, type PointerBrushInput } from '../editor/brush-engine'
 import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
+import { useRasterStrokePreview } from './useRasterStrokePreview'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -53,9 +52,6 @@ type Stroke = {
 
 export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, hardness, opacity, flow, pressureSize, pressureOpacity, dynamics, pressureCalibration, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null)
-  const previewCleanupRef = useRef<(() => void) | null>(null)
-  const previewFrameRef = useRef(0)
   const strokeRef = useRef<Stroke | null>(null)
   const roundTipRef = useRef<{ hardness: number; surface: HTMLCanvasElement } | null>(null)
   const tintedTipRef = useRef<{ tipId: string; color: string; surface: HTMLCanvasElement } | null>(null)
@@ -78,6 +74,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   } : selectedRasterLayer
   const asset = layer ? assets[layer.assetId] : undefined
   const surface = asset?.surface
+  const strokePreview = useRasterStrokePreview({ canvasRef, document, assets, layer, surface, imageSmoothingEnabled: tool !== 'pencil' })
 
   const canvasPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
     const svg = svgRef.current
@@ -122,94 +119,6 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     tipContext.fillRect(0, 0, 128, 128)
     roundTipRef.current = { hardness: effectiveHardness, surface: tip }
     return tip
-  }
-
-  useEffect(() => () => {
-    cancelAnimationFrame(previewFrameRef.current)
-    if (strokeRef.current?.previewing) canvasRef.current?.dispatchEvent(new CustomEvent('studio:transform-preview-end'))
-    previewCleanupRef.current?.()
-  }, [canvasRef])
-
-  const drawStrokePreview = (stroke: Stroke) => {
-    const preview = previewCanvasRef.current
-    if (!canvas || !preview || !surface) return
-    if (preview.width !== canvas.width) preview.width = canvas.width
-    if (preview.height !== canvas.height) preview.height = canvas.height
-    const context = preview.getContext('2d')
-    if (!context) return
-    context.clearRect(0, 0, preview.width, preview.height)
-    const bounds = rasterBounds(canvas, stroke.layer)
-    context.save()
-    context.globalAlpha = stroke.layer.opacity / 100
-    context.filter = layerFilterCss(stroke.layer.filters)
-    context.imageSmoothingEnabled = tool !== 'pencil'
-    context.translate(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
-    context.rotate(bounds.rotation * Math.PI / 180)
-    context.scale(stroke.layer.flipX ? -1 : 1, stroke.layer.flipY ? -1 : 1)
-    context.drawImage(surface, -bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height)
-    context.restore()
-    preview.style.mixBlendMode = stroke.layer.blendMode ?? 'normal'
-    preview.style.display = 'block'
-  }
-
-  const beginStrokePreview = (stroke: Stroke) => {
-    if (!canvas) return
-    previewCleanupRef.current?.()
-    canvas.dispatchEvent(new CustomEvent('studio:transform-preview-start'))
-    const baseDocument: EditorDocument = {
-      ...document,
-      layers: document.layers.map((candidate) => candidate.id === stroke.layer.id ? { ...candidate, visible: false } : candidate),
-      selectedLayerId: null,
-      selectedLayerIds: [],
-      selectedGroupId: null,
-    }
-    canvas2dCompositionRenderer.render(canvas, baseDocument, assets)
-    drawStrokePreview(stroke)
-  }
-
-  const scheduleStrokePreview = (stroke: Stroke) => {
-    if (previewFrameRef.current) return
-    previewFrameRef.current = requestAnimationFrame(() => {
-      previewFrameRef.current = 0
-      if (strokeRef.current === stroke) drawStrokePreview(stroke)
-    })
-  }
-
-  const finishStrokePreview = () => {
-    if (!canvas) return
-    canvas.dispatchEvent(new CustomEvent('studio:transform-preview-end'))
-    const preview = previewCanvasRef.current
-    const cleanup = () => {
-      canvas.removeEventListener('studio:canvas-rendered', rendered)
-      window.clearTimeout(timeout)
-      if (preview) {
-        preview.style.display = 'none'
-        preview.style.mixBlendMode = 'normal'
-        preview.width = 1
-        preview.height = 1
-      }
-      previewCleanupRef.current = null
-    }
-    const rendered = () => cleanup()
-    const timeout = window.setTimeout(cleanup, 2_000)
-    canvas.addEventListener('studio:canvas-rendered', rendered, { once: true })
-    previewCleanupRef.current = cleanup
-  }
-
-  const cancelStrokePreview = () => {
-    if (!canvas) return
-    cancelAnimationFrame(previewFrameRef.current)
-    previewFrameRef.current = 0
-    canvas2dCompositionRenderer.render(canvas, document, assets)
-    canvas.dispatchEvent(new CustomEvent('studio:transform-preview-end'))
-    const preview = previewCanvasRef.current
-    if (preview) {
-      preview.style.display = 'none'
-      preview.style.mixBlendMode = 'normal'
-      preview.width = 1
-      preview.height = 1
-    }
-    previewCleanupRef.current?.()
   }
 
   const draw = (stroke: Stroke, from: Position, to: Position, radius: number, fromPressure: number, input: PointerBrushInput) => {
@@ -297,9 +206,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       seed: Math.floor(performance.now() * 1000),
       previewing,
     }
-    if (previewing) beginStrokePreview(strokeRef.current)
+    if (previewing) strokePreview.beginPreview()
     draw(strokeRef.current, point, point, radius, input.pressure, input)
-    if (previewing) drawStrokePreview(strokeRef.current)
+    if (previewing) strokePreview.drawPreview()
     else onChange(layer.assetId, { x: point.x - radius - 2, y: point.y - radius - 2, width: radius * 2 + 4, height: radius * 2 + 4 })
   }
 
@@ -318,7 +227,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     stroke.minY = Math.min(stroke.minY, point.y - dynamicRadius)
     stroke.maxX = Math.max(stroke.maxX, point.x + dynamicRadius)
     stroke.maxY = Math.max(stroke.maxY, point.y + dynamicRadius)
-    if (stroke.previewing) scheduleStrokePreview(stroke)
+    if (stroke.previewing) strokePreview.schedulePreview()
     else onChange(stroke.layer.assetId, {
       x: Math.min(previous.x, point.x) - dynamicRadius - 2,
       y: Math.min(previous.y, point.y) - dynamicRadius - 2,
@@ -332,10 +241,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!stroke || stroke.pointerId !== event.pointerId || !surface) return
     const context = surface.getContext('2d', { willReadFrequently: true })
     strokeRef.current = null
-    cancelAnimationFrame(previewFrameRef.current)
-    previewFrameRef.current = 0
+    strokePreview.cancelScheduledPreview()
     if (!context) {
-      if (stroke.previewing) cancelStrokePreview()
+      if (stroke.previewing) strokePreview.cancelPreview()
       return
     }
     const x = Math.max(0, Math.floor(stroke.minX - 2))
@@ -343,7 +251,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     const width = Math.min(surface.width - x, Math.ceil(stroke.maxX + 2) - x)
     const height = Math.min(surface.height - y, Math.ceil(stroke.maxY + 2) - y)
     if (width <= 0 || height <= 0) {
-      if (stroke.previewing) cancelStrokePreview()
+      if (stroke.previewing) strokePreview.cancelPreview()
       return
     }
     const before = rasterSnapshotRegion(stroke.before, x, y, width, height)
@@ -370,14 +278,14 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     onChange(stroke.layer.assetId, { x, y, width, height })
     onCommit({ assetId: stroke.layer.assetId, x, y, before, after })
     if (stroke.previewing) {
-      drawStrokePreview(stroke)
-      finishStrokePreview()
+      strokePreview.drawPreview()
+      strokePreview.finishPreview()
     }
   }
 
   return (
     <Fragment>
-      <canvas ref={previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full" />
+      <canvas ref={strokePreview.previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full" />
       <svg
         ref={svgRef}
         aria-label={maskAssetId ? `Mask ${tool} surface` : `${tool === 'brush' ? 'Brush' : tool === 'pencil' ? 'Pencil' : tool === 'eraser' ? 'Eraser' : tool === 'dodge' ? 'Dodge' : 'Burn'} surface`}
