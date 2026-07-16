@@ -31,7 +31,8 @@ type Stroke = {
   pointerId: number
   target: RasterTarget
   before: RasterTileSnapshot
-  mergedSnapshot: HTMLCanvasElement | null
+  mergedDocument: EditorDocument | null
+  mergedTiles: Map<string, { canvas: HTMLCanvasElement; x: number; y: number }>
   sampleCanvas: HTMLCanvasElement
   last: Position
   offset: Position
@@ -77,6 +78,67 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     return sample
   }
 
+  const mergedTile = (stroke: Stroke, tileX: number, tileY: number) => {
+    const key = `${tileX}:${tileY}`
+    const cached = stroke.mergedTiles.get(key)
+    if (cached) return cached
+    const x = tileX * 256
+    const y = tileY * 256
+    const width = Math.min(256, stroke.target.surface.width - x)
+    const height = Math.min(256, stroke.target.surface.height - y)
+    const corners = [
+      sourceToCanvas({ x, y }, stroke.target),
+      sourceToCanvas({ x: x + width, y }, stroke.target),
+      sourceToCanvas({ x: x + width, y: y + height }, stroke.target),
+      sourceToCanvas({ x, y: y + height }, stroke.target),
+    ]
+    const left = Math.floor(Math.min(...corners.map((point) => point.x))) - 2
+    const top = Math.floor(Math.min(...corners.map((point) => point.y))) - 2
+    const right = Math.ceil(Math.max(...corners.map((point) => point.x))) + 2
+    const bottom = Math.ceil(Math.max(...corners.map((point) => point.y))) + 2
+    const viewport = { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+    const rendered = window.document.createElement('canvas')
+    renderComposition(rendered, stroke.mergedDocument!, assets, { viewport })
+    const output = window.document.createElement('canvas')
+    output.width = width
+    output.height = height
+    const context = output.getContext('2d')
+    if (context) {
+      const centerX = stroke.target.bounds.x + stroke.target.bounds.width / 2
+      const centerY = stroke.target.bounds.y + stroke.target.bounds.height / 2
+      context.translate(-x, -y)
+      context.translate(stroke.target.surface.width / 2, stroke.target.surface.height / 2)
+      context.scale(stroke.target.surface.width / stroke.target.bounds.width, stroke.target.surface.height / stroke.target.bounds.height)
+      context.rotate(-stroke.target.bounds.rotation * Math.PI / 180)
+      context.translate(-centerX, -centerY)
+      context.drawImage(rendered, viewport.x, viewport.y)
+    }
+    const tile = { canvas: output, x, y }
+    stroke.mergedTiles.set(key, tile)
+    return tile
+  }
+
+  const mergedSample = (stroke: Stroke, centerX: number, centerY: number) => {
+    const diameter = Math.max(1, Math.ceil(stroke.radius * 2))
+    const left = Math.floor(centerX - stroke.radius)
+    const top = Math.floor(centerY - stroke.radius)
+    const sample = stroke.sampleCanvas
+    if (sample.width !== diameter) sample.width = diameter
+    if (sample.height !== diameter) sample.height = diameter
+    const context = sample.getContext('2d')
+    context?.clearRect(0, 0, diameter, diameter)
+    if (!context) return sample
+    const startTileX = Math.max(0, Math.floor(left / 256))
+    const startTileY = Math.max(0, Math.floor(top / 256))
+    const endTileX = Math.min(Math.ceil(stroke.target.surface.width / 256) - 1, Math.floor((left + diameter - 1) / 256))
+    const endTileY = Math.min(Math.ceil(stroke.target.surface.height / 256) - 1, Math.floor((top + diameter - 1) / 256))
+    for (let tileY = startTileY; tileY <= endTileY; tileY += 1) for (let tileX = startTileX; tileX <= endTileX; tileX += 1) {
+      const tile = mergedTile(stroke, tileX, tileY)
+      context.drawImage(tile.canvas, tile.x - left, tile.y - top)
+    }
+    return sample
+  }
+
   const stamp = (stroke: Stroke, destination: Position) => {
     const context = stroke.target.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
@@ -89,7 +151,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       const y = previous.y + (destination.y - previous.y) * amount
       const sourceX = x + stroke.offset.x
       const sourceY = y + stroke.offset.y
-      const sourceImage = stroke.mergedSnapshot ?? tileSample(stroke, sourceX, sourceY)
+      const sourceImage = stroke.mergedDocument ? mergedSample(stroke, sourceX, sourceY) : tileSample(stroke, sourceX, sourceY)
       captureRasterTiles(stroke.before, x - stroke.radius - 2, y - stroke.radius - 2, stroke.radius * 2 + 4, stroke.radius * 2 + 4)
       context.save()
       context.beginPath()
@@ -100,8 +162,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       context.translate(x, y)
       context.rotate(sourceRotation * Math.PI / 180)
       context.scale(sourceScale / 100, sourceScale / 100)
-      if (stroke.mergedSnapshot) context.drawImage(sourceImage, sourceX - stroke.radius, sourceY - stroke.radius, stroke.radius * 2, stroke.radius * 2, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
-      else context.drawImage(sourceImage, 0, 0, sourceImage.width, sourceImage.height, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
+      context.drawImage(sourceImage, 0, 0, sourceImage.width, sourceImage.height, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
       context.restore()
       stroke.minX = Math.min(stroke.minX, x - stroke.radius)
       stroke.minY = Math.min(stroke.minY, y - stroke.radius)
@@ -129,20 +190,10 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const context = target.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     const before = createRasterTileSnapshot(target.surface)
-    let mergedSnapshot: HTMLCanvasElement | null = null
+    let mergedDocument: EditorDocument | null = null
     if (sampleMode === 'current-and-below' && canvas) {
-      mergedSnapshot = window.document.createElement('canvas')
-      mergedSnapshot.width = target.surface.width
-      mergedSnapshot.height = target.surface.height
-      const snapshotContext = mergedSnapshot.getContext('2d')
-      if (!snapshotContext) return
       const selectedIndex = document.layers.findIndex((layer) => layer.id === target.layer.id)
-      const merged = window.document.createElement('canvas')
-      renderComposition(merged, { ...document, layers: selectedIndex < 0 ? document.layers : document.layers.slice(0, selectedIndex + 1) }, assets)
-      snapshotContext.translate(target.surface.width / 2, target.surface.height / 2)
-      snapshotContext.scale(target.surface.width / target.bounds.width, target.surface.height / target.bounds.height)
-      snapshotContext.rotate(-target.bounds.rotation * Math.PI / 180)
-      snapshotContext.drawImage(merged, -target.bounds.x - target.bounds.width / 2, -target.bounds.y - target.bounds.height / 2)
+      mergedDocument = { ...document, layers: selectedIndex < 0 ? document.layers : document.layers.slice(0, selectedIndex + 1), selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null }
     }
     const radius = Math.max(0.5, size / (target.bounds.width / target.surface.width) / 2)
     const selectionContext = selection?.bounds ? selection.mask.getContext('2d', { willReadFrequently: true }) : null
@@ -153,7 +204,8 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       pointerId: event.pointerId,
       target,
       before,
-      mergedSnapshot,
+      mergedDocument,
+      mergedTiles: new Map(),
       sampleCanvas: window.document.createElement('canvas'),
       last: point,
       offset: strokeOffset,
