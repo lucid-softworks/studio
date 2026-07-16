@@ -151,7 +151,7 @@ type ToolRailProps = {
 
 export function ToolRail({ tool, onChange }: ToolRailProps) {
   return (
-    <aside aria-label="Tools" className="order-0 flex h-12 w-full shrink-0 items-center overflow-x-auto border-b border-white/[0.07] bg-[#111113] px-1.5 lg:h-[calc(100vh-48px)] lg:w-12 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-r lg:border-b-0 lg:px-0 lg:py-1.5">
+    <aside aria-label="Tools" className="order-0 flex h-12 w-full shrink-0 items-center overflow-x-auto border-b border-white/[0.07] bg-[#111113] px-1.5 lg:h-[calc(100vh-84px)] lg:w-12 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-r lg:border-b-0 lg:px-0 lg:py-1.5">
       {tools.map((item) => (
         <div key={item.id} className={`shrink-0 ${item.divider ? 'ml-1.5 border-l border-white/[0.07] pl-1.5 lg:mt-1.5 lg:ml-0 lg:border-t lg:border-l-0 lg:pt-1.5 lg:pl-0' : ''}`}>
           <button

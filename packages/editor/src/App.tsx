@@ -37,9 +37,15 @@ type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
 type AppProps = { onExit?: () => void }
+type DocumentTab = { id: string; name: string; history: HistoryState; assets: AssetMap }
 
 function App({ onExit }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialHistoryState)
+  const initialTabId = useRef<string>(createId()).current
+  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [{ id: initialTabId, name: 'Untitled', history: structuredClone(initialHistoryState), assets: {} }])
+  const documentTabsRef = useRef(documentTabs)
+  const [activeTabId, setActiveTabId] = useState<string>(initialTabId)
+  const [layerTransferTarget, setLayerTransferTarget] = useState('')
   const [, bumpRasterHistory] = useReducer((value: number) => value + 1, 0)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [selectionWorkspaceSource, setSelectionWorkspaceSource] = useState<SelectionState | null>(null)
@@ -122,7 +128,17 @@ function App({ onExit }: AppProps) {
   const rendererCapabilities = useRendererCapabilities(document)
 
   assetsRef.current = assets
+  documentTabsRef.current = documentTabs
   useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
+
+  useEffect(() => {
+    setDocumentTabs((current) => current.map((tab) => tab.id === activeTabId ? { ...tab, history, assets } : tab))
+  }, [activeTabId, assets, history])
+
+  useEffect(() => {
+    const firstOther = documentTabs.find((tab) => tab.id !== activeTabId)?.id ?? ''
+    if (!documentTabs.some((tab) => tab.id === layerTransferTarget && tab.id !== activeTabId)) setLayerTransferTarget(firstOther)
+  }, [activeTabId, documentTabs, layerTransferTarget])
 
   useEffect(() => {
     try { localStorage.setItem('studio.workspace-layout', JSON.stringify(workspaceLayout)) } catch { /* local storage is optional */ }
@@ -477,7 +493,8 @@ function App({ onExit }: AppProps) {
   }, [dispatch, document, duplicateSelection, endHistoryGroup, performRedo, performUndo, selectedGroup, selectedLayers])
 
   useEffect(() => () => {
-    for (const asset of Object.values(assetsRef.current)) {
+    const allAssets = documentTabsRef.current.flatMap((tab) => Object.values(tab.assets)).concat(Object.values(assetsRef.current))
+    for (const asset of new Set(allAssets)) {
       if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl)
     }
   }, [])
@@ -1211,18 +1228,26 @@ function App({ onExit }: AppProps) {
     }
   }
 
+  const openDocumentTab = (name: string, nextDocument: typeof document, nextAssets: AssetMap) => {
+    const id = createId()
+    const nextHistory: HistoryState = { past: [], present: nextDocument, future: [], groupKey: null }
+    setDocumentTabs((current) => [...current.map((tab) => tab.id === activeTabId ? { ...tab, history, assets } : tab), { id, name, history: nextHistory, assets: nextAssets }])
+    setActiveTabId(id)
+    historyDispatch({ type: 'restore', state: nextHistory })
+    setAssets(nextAssets)
+    rasterUndoRef.current = []
+    rasterRedoRef.current = []
+    bumpRasterHistory()
+    setSelection(null)
+    setEditingMaskLayerId(null)
+  }
+
   const openProject = async (file: File) => {
     setIsLoading(true)
     setNotice(null)
     try {
       const loaded = await parseProjectFile(file)
-      for (const asset of Object.values(assetsRef.current)) if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl)
-      setAssets(loaded.assets)
-      rasterUndoRef.current = []
-      rasterRedoRef.current = []
-      bumpRasterHistory()
-      historyDispatch({ type: 'replace', document: loaded.document })
-      setSelection(null)
+      openDocumentTab(file.name.replace(/\.studio$/i, ''), loaded.document, loaded.assets)
       setNotice(`Opened ${file.name} entirely in your browser.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The project could not be opened.')
@@ -1267,13 +1292,7 @@ function App({ onExit }: AppProps) {
           },
         }
       }
-      for (const asset of Object.values(assetsRef.current)) if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl)
-      setAssets(loaded.assets)
-      rasterUndoRef.current = []
-      rasterRedoRef.current = []
-      bumpRasterHistory()
-      historyDispatch({ type: 'replace', document: loaded.document })
-      setSelection(null)
+      openDocumentTab(file.name.replace(/\.[^.]+$/, ''), loaded.document, loaded.assets)
       if (importWarnings.length) {
         setNotice(`Opened ${file.name} with compatibility changes:\n• ${importWarnings.join('\n• ')}`, 'warning')
       } else {
@@ -1287,17 +1306,56 @@ function App({ onExit }: AppProps) {
   }
 
   const newDocument = () => {
-    for (const asset of Object.values(assetsRef.current)) if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl)
-    setAssets({})
+    openDocumentTab(`Untitled ${documentTabs.length + 1}`, structuredClone(initialDocument), {})
+    setTool('move')
+    setZoom(100)
+    setNotice(null)
+  }
+
+  const switchDocumentTab = (id: string) => {
+    if (id === activeTabId) return
+    const tab = documentTabs.find((candidate) => candidate.id === id)
+    if (!tab) return
+    setDocumentTabs((current) => current.map((candidate) => candidate.id === activeTabId ? { ...candidate, history, assets } : candidate))
+    setActiveTabId(id)
+    historyDispatch({ type: 'restore', state: tab.history })
+    setAssets(tab.assets)
     rasterUndoRef.current = []
     rasterRedoRef.current = []
     bumpRasterHistory()
-    historyDispatch({ type: 'replace', document: structuredClone(initialDocument) })
-    setEditingMaskLayerId(null)
-    setTool('move')
-    setZoom(100)
     setSelection(null)
-    setNotice(null)
+    setEditingMaskLayerId(null)
+  }
+
+  const closeDocumentTab = (id: string) => {
+    if (documentTabs.length === 1) return
+    const remaining = documentTabs.filter((tab) => tab.id !== id)
+    setDocumentTabs(remaining)
+    if (id === activeTabId) {
+      const next = remaining.at(-1)!
+      setActiveTabId(next.id)
+      historyDispatch({ type: 'restore', state: next.history })
+      setAssets(next.assets)
+      setSelection(null)
+    }
+  }
+
+  const duplicateDocumentTab = () => {
+    openDocumentTab(`${documentTabs.find((tab) => tab.id === activeTabId)?.name ?? 'Document'} copy`, structuredClone(document), { ...assets })
+  }
+
+  const transferSelectedLayers = (targetId: string, move: boolean) => {
+    if (!targetId || !selectedLayers.length) return
+    const copies = selectedLayers.map((layer) => ({ ...duplicateLayer(layer), groupId: null }))
+    setDocumentTabs((current) => current.map((tab) => {
+      if (tab.id === activeTabId) return { ...tab, history, assets }
+      if (tab.id !== targetId) return tab
+      let nextHistory = tab.history
+      for (const layer of copies) nextHistory = historyReducer(nextHistory, { type: 'apply', action: { type: 'add-layer', layer } })
+      return { ...tab, history: nextHistory, assets: { ...tab.assets, ...assets } }
+    }))
+    if (move) dispatch({ type: 'remove-layers', ids: selectedLayers.map((layer) => layer.id) })
+    setNotice(`${move ? 'Moved' : 'Copied'} ${copies.length} layer${copies.length === 1 ? '' : 's'} to ${documentTabs.find((tab) => tab.id === targetId)?.name ?? 'the other document'}.`, 'success')
   }
 
   const backgroundName = document.background.imageAssetId ? assets[document.background.imageAssetId]?.name : undefined
@@ -1413,6 +1471,28 @@ function App({ onExit }: AppProps) {
           <span className="flex items-center gap-2"><span className={`size-1.5 rounded-full ${saveStatus === 'saving' ? 'bg-amber-400' : saveStatus === 'saved' ? 'bg-emerald-400/70' : 'bg-zinc-700'}`} /><span>{saveStatus === 'saving' ? 'Saving locally…' : saveStatus === 'saved' ? 'Saved locally' : 'Local only'}</span></span>
         </div>
       </header>
+
+      <nav aria-label="Open documents" className="flex h-9 items-stretch border-b border-white/[0.07] bg-[#101012]">
+        <div className="flex min-w-0 flex-1 overflow-x-auto">
+          {documentTabs.map((tab) => (
+            <div key={tab.id} className={`group flex min-w-36 max-w-56 items-center border-r border-white/[0.07] ${tab.id === activeTabId ? 'bg-[#1b1b1f] text-zinc-100' : 'bg-[#121214] text-zinc-500 hover:bg-[#171719] hover:text-zinc-300'}`}>
+              <button type="button" onClick={() => switchDocumentTab(tab.id)} className="min-w-0 flex-1 truncate px-3 text-left text-[11px]" title={tab.name}>{tab.name}</button>
+              {documentTabs.length > 1 && <button type="button" onClick={() => closeDocumentTab(tab.id)} aria-label={`Close ${tab.name}`} title="Close document" className="mr-1 flex size-6 shrink-0 items-center justify-center rounded text-sm text-zinc-600 opacity-0 hover:bg-white/[0.08] hover:text-zinc-200 group-hover:opacity-100 group-focus-within:opacity-100">×</button>}
+            </div>
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-1 border-l border-white/[0.07] px-1.5">
+          {documentTabs.length > 1 && selectedLayers.length > 0 && <>
+            <select aria-label="Layer transfer document" value={layerTransferTarget} onChange={(event) => setLayerTransferTarget(event.target.value)} className="h-6 max-w-36 rounded border border-white/[0.08] bg-[#19191c] px-1.5 text-[10px] text-zinc-400">
+              {documentTabs.filter((tab) => tab.id !== activeTabId).map((tab) => <option key={tab.id} value={tab.id}>{tab.name}</option>)}
+            </select>
+            <button type="button" onClick={() => transferSelectedLayers(layerTransferTarget, false)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Copy layer</button>
+            <button type="button" onClick={() => transferSelectedLayers(layerTransferTarget, true)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Move layer</button>
+          </>}
+          <button type="button" onClick={duplicateDocumentTab} aria-label="Duplicate document" title="Duplicate document" className="flex size-6 items-center justify-center rounded text-xs text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">⧉</button>
+          <button type="button" onClick={newDocument} aria-label="New document" title="New document" className="flex size-6 items-center justify-center rounded text-base text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">+</button>
+        </div>
+      </nav>
 
       {smartObjectSessions.length > 0 && <div className="flex h-10 items-center justify-between border-b border-cyan-300/15 bg-cyan-300/[0.06] px-4 text-[11px]"><span className="text-cyan-100">Editing smart object · {smartObjectSessions.at(-1)?.name}</span><span className="flex gap-2"><button type="button" onClick={() => closeSmartObjectContents(false)} className="rounded-md px-3 py-1 text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Cancel</button><button type="button" onClick={() => closeSmartObjectContents(true)} className="rounded-md bg-cyan-300/15 px-3 py-1 font-medium text-cyan-100 hover:bg-cyan-300/20">Save contents & return</button></span></div>}
 

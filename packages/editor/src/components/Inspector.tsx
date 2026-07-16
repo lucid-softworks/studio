@@ -107,7 +107,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   }
 
   return (
-    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`relative order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-48px)] lg:border-t-0 ${collapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
+    <aside style={{ '--panel-width': `${width}px` } as CSSProperties} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'layers') onSwapPanels() }} className={`relative order-2 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-84px)] lg:border-t-0 ${collapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
       {collapsed ? <CollapsedPanelRail dockSide={dockSide} label="Properties" onClick={onToggleCollapsed} /> : <>
       <PanelResizeHandle dockSide={dockSide} width={width} onChange={onWidthChange} label="Properties panel" />
       <div className="min-h-0 flex-1 overflow-y-auto">

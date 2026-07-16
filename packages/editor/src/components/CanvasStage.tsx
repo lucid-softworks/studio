@@ -345,7 +345,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
 
   return (
     <section
-      className="order-1 flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden bg-[#0b0b0c] lg:order-2 lg:h-[calc(100vh-48px)] lg:min-h-0"
+      className="order-1 flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden bg-[#0b0b0c] lg:order-2 lg:h-[calc(100vh-84px)] lg:min-h-0"
       onDragEnter={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setIsDraggingFile(true) } }}
       onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
       onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setIsDraggingFile(false) }}

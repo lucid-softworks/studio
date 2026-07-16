@@ -128,7 +128,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add content-aware scale without server or AI dependencies
 - [x] Add transform-again, numeric reference points, and precise interpolation controls
 - [ ] Add artboards, artboard export, and per-artboard backgrounds
-- [ ] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
+- [x] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
 - [ ] Add linked views, split views, navigator, rotate view, and scrubby zoom
 - [ ] Add configurable grids, guide layouts, smart guides, and reusable workspace layouts
 
