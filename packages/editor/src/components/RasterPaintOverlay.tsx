@@ -12,7 +12,7 @@ type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
   assets: AssetMap
-  tool: 'brush' | 'eraser' | 'dodge' | 'burn'
+  tool: 'brush' | 'pencil' | 'eraser' | 'dodge' | 'burn'
   brush: BrushPreset
   size: number
   color: string
@@ -101,8 +101,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   }
 
   const roundTip = () => {
+    const effectiveHardness = tool === 'pencil' ? 100 : hardness
     const cached = roundTipRef.current
-    if (cached?.hardness === hardness) return cached.surface
+    if (cached?.hardness === effectiveHardness) return cached.surface
     const tip = globalThis.document.createElement('canvas')
     tip.width = 128
     tip.height = 128
@@ -110,11 +111,11 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!tipContext) return null
     const gradient = tipContext.createRadialGradient(64, 64, 0, 64, 64, 64)
     gradient.addColorStop(0, '#ffffff')
-    if (hardness > 0) gradient.addColorStop(Math.min(0.99, hardness / 100), '#ffffff')
+    if (effectiveHardness > 0) gradient.addColorStop(Math.min(0.99, effectiveHardness / 100), '#ffffff')
     gradient.addColorStop(1, 'rgba(255,255,255,0)')
     tipContext.fillStyle = gradient
     tipContext.fillRect(0, 0, 128, 128)
-    roundTipRef.current = { hardness, surface: tip }
+    roundTipRef.current = { hardness: effectiveHardness, surface: tip }
     return tip
   }
 
@@ -123,6 +124,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     context.save()
+    context.imageSmoothingEnabled = tool !== 'pencil'
     context.globalCompositeOperation = tool === 'eraser' || input.barrel ? 'destination-out' : tool === 'dodge' || tool === 'burn' ? 'soft-light' : 'source-over'
     const strokeColor = tool === 'dodge' ? '#ffffff' : tool === 'burn' ? '#000000' : maskAssetId ? '#ffffff' : color
     context.strokeStyle = strokeColor
@@ -265,7 +267,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   return (
     <svg
       ref={svgRef}
-      aria-label={maskAssetId ? `Mask ${tool} surface` : `${tool === 'brush' ? 'Brush' : tool === 'eraser' ? 'Eraser' : tool === 'dodge' ? 'Dodge' : 'Burn'} surface`}
+      aria-label={maskAssetId ? `Mask ${tool} surface` : `${tool === 'brush' ? 'Brush' : tool === 'pencil' ? 'Pencil' : tool === 'eraser' ? 'Eraser' : tool === 'dodge' ? 'Dodge' : 'Burn'} surface`}
       viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
       preserveAspectRatio="none"
       className={`absolute inset-0 size-full touch-none ${layer && !layer.locked && !locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}

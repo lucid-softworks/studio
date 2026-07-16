@@ -19,11 +19,20 @@ export type EditorTool =
   | 'healing'
   | 'clone-stamp'
   | 'brush'
+  | 'pencil'
+  | 'color-replacement'
+  | 'mixer-brush'
+  | 'history-brush'
   | 'eraser'
   | 'fill'
   | 'gradient'
   | 'dodge'
   | 'burn'
+  | 'pattern-stamp'
+  | 'sponge'
+  | 'blur'
+  | 'sharpen'
+  | 'smudge'
   | 'text'
   | 'pen'
   | 'direct-select'
@@ -97,6 +106,10 @@ function EraserToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M14.7 4.5l4.8 4.8-9.2 9.2H6.5l-3-3 11.2-11z" /><path strokeLinecap="round" d="M10.5 18.5H21M8.8 9.8l5.4 5.4" /></svg>
 }
 
+function PixelToolIcon({ className, mark }: IconProps & { mark: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="12" cy="12" r="8" /><text x="12" y="15" textAnchor="middle" fill="currentColor" stroke="none" fontSize="8" fontWeight="700">{mark}</text></svg>
+}
+
 function HandToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 11V6.7a1.5 1.5 0 013 0V10 5.5a1.5 1.5 0 013 0V10 6.5a1.5 1.5 0 013 0v4-2a1.5 1.5 0 013 0v4.7c0 4.4-2.7 7.3-7 7.3h-.7c-2.2 0-3.8-.8-5.1-2.5L3.9 14a1.6 1.6 0 012.4-2.1l1.2 1.2V11z" /></svg>
 }
@@ -127,11 +140,20 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'healing', label: 'Healing Brush', shortcut: 'J', icon: <HealingToolIcon className="size-[19px]" /> },
   { id: 'clone-stamp', label: 'Clone Stamp', shortcut: 'S', icon: <CloneToolIcon className="size-[19px]" /> },
   { id: 'brush', label: 'Brush', shortcut: 'B', icon: <BrushToolIcon className="size-[19px]" /> },
+  { id: 'pencil', label: 'Pencil', shortcut: 'Shift B', icon: <PixelToolIcon className="size-[19px]" mark="P" /> },
+  { id: 'color-replacement', label: 'Color Replacement', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="C" /> },
+  { id: 'mixer-brush', label: 'Mixer Brush', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="M" /> },
+  { id: 'history-brush', label: 'History Brush', shortcut: 'Y', icon: <PixelToolIcon className="size-[19px]" mark="H" /> },
   { id: 'eraser', label: 'Eraser', shortcut: 'E', icon: <EraserToolIcon className="size-[19px]" /> },
   { id: 'fill', label: 'Paint Bucket', shortcut: 'G', icon: <FillToolIcon className="size-[19px]" /> },
   { id: 'gradient', label: 'Gradient', shortcut: 'Shift G', icon: <GradientToolIcon className="size-[19px]" /> },
   { id: 'dodge', label: 'Dodge', shortcut: 'O', icon: <ToneToolIcon className="size-[19px]" /> },
   { id: 'burn', label: 'Burn', shortcut: 'Shift O', icon: <ToneToolIcon className="size-[19px]" burn /> },
+  { id: 'pattern-stamp', label: 'Pattern Stamp', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="▦" /> },
+  { id: 'sponge', label: 'Sponge', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="S" /> },
+  { id: 'blur', label: 'Blur', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="B" /> },
+  { id: 'sharpen', label: 'Sharpen', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="▲" /> },
+  { id: 'smudge', label: 'Smudge', shortcut: '', icon: <PixelToolIcon className="size-[19px]" mark="~" /> },
   { id: 'text', label: 'Type', shortcut: 'T', icon: <TextIcon className="size-[19px]" />, divider: true },
   { id: 'pen', label: 'Pen', shortcut: 'P', icon: <PenToolIcon className="size-[19px]" /> },
   { id: 'direct-select', label: 'Direct Selection', shortcut: 'A', icon: <PenToolIcon className="size-[19px]" selection /> },

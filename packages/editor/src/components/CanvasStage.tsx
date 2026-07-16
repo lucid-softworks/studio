@@ -26,6 +26,7 @@ import { defaultBrushDynamics, type BrushDynamics, type BrushPreset } from '../e
 import { BrushSettingsPopover } from './BrushSettingsPopover'
 import { CanvasRulers } from './CanvasRulers'
 import { QuickMaskOverlay } from './QuickMaskOverlay'
+import { PixelRetouchOverlay } from './PixelRetouchOverlay'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -81,11 +82,20 @@ const toolNames: Record<EditorTool, string> = {
   healing: 'Healing Brush',
   'clone-stamp': 'Clone Stamp',
   brush: 'Brush',
+  pencil: 'Pencil',
+  'color-replacement': 'Color Replacement',
+  'mixer-brush': 'Mixer Brush',
+  'history-brush': 'History Brush',
   eraser: 'Eraser',
   fill: 'Paint Bucket',
   gradient: 'Gradient',
   dodge: 'Dodge',
   burn: 'Burn',
+  'pattern-stamp': 'Pattern Stamp',
+  sponge: 'Sponge',
+  blur: 'Blur',
+  sharpen: 'Sharpen',
+  smudge: 'Smudge',
   text: 'Type',
   pen: 'Pen',
   'direct-select': 'Direct Selection',
@@ -108,7 +118,8 @@ function toolForShortcut(key: string, shift: boolean): EditorTool | null {
     case 'i': return shift ? 'measure' : 'eyedropper'
     case 'j': return 'healing'
     case 's': return 'clone-stamp'
-    case 'b': return 'brush'
+    case 'b': return shift ? 'pencil' : 'brush'
+    case 'y': return 'history-brush'
     case 'e': return 'eraser'
     case 'g': return shift ? 'gradient' : 'fill'
     case 'o': return shift ? 'burn' : 'dodge'
@@ -144,6 +155,14 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'clone-stamp': return 'Alt-click to choose a source · drag to paint from it'
     case 'dodge': return 'Drag to lighten pixels on the selected raster layer'
     case 'burn': return 'Drag to darken pixels on the selected raster layer'
+    case 'color-replacement': return 'Drag to replace the sampled colour while preserving local edges and alpha'
+    case 'mixer-brush': return 'Drag to mix a sampled paint reservoir into the selected raster layer'
+    case 'history-brush': return 'Drag to restore pixels from the layer state captured when this tool was selected'
+    case 'pattern-stamp': return 'Drag to paint the active local pattern'
+    case 'sponge': return 'Drag to increase local colour saturation'
+    case 'blur': return 'Drag to soften local detail'
+    case 'sharpen': return 'Drag to increase local edge contrast'
+    case 'smudge': return 'Drag pixels along the stroke direction'
     case 'text': return 'Click the canvas to add a text layer'
     case 'pen': return 'Click to add points · drag for Bézier handles · click the first point to close'
     case 'direct-select': return 'Drag anchors or handles · Alt-click an anchor to convert it · Delete removes it'
@@ -155,9 +174,10 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'hand': return 'Drag the workspace to pan around the document'
     case 'zoom': return 'Click to zoom in · Alt-click to zoom out'
     case 'brush':
+    case 'pencil':
     case 'eraser':
-      if (context.editingMaskName) return `${tool === 'brush' ? 'Reveal' : 'Hide'} pixels on ${context.editingMaskName}’s mask${context.hasSelection ? ' inside the current selection' : ''} · undo with ⌘Z`
-      if (context.rasterSelected) return `${tool === 'brush' ? 'Paint' : 'Erase'} ${context.hasSelection ? 'inside the current selection' : 'directly on the selected raster layer'} · undo with ⌘Z`
+      if (context.editingMaskName) return `${tool === 'eraser' ? 'Hide' : 'Reveal'} pixels on ${context.editingMaskName}’s mask${context.hasSelection ? ' inside the current selection' : ''} · undo with ⌘Z`
+      if (context.rasterSelected) return `${tool === 'eraser' ? 'Erase' : tool === 'pencil' ? 'Draw aliased pixels' : 'Paint'} ${context.hasSelection ? 'inside the current selection' : 'directly on the selected raster layer'} · undo with ⌘Z`
       return 'Select a raster layer to paint'
   }
 }
@@ -197,10 +217,11 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const selectedLocked = selected ? layerIsLocked(document, selected) : false
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'single-row-select' || tool === 'single-column-select' || tool === 'lasso' || tool === 'polygonal-lasso' || tool === 'magnetic-lasso' || tool === 'magic-wand' || tool === 'object-select'
-  const paintTool = tool === 'brush' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
+  const paintTool = tool === 'brush' || tool === 'pencil' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
   const selectedBrush = brushes.find((candidate) => candidate.id === brushId) ?? brushes[0]
   const brush = { ...selectedBrush, spacing: brushSpacing }
   const retouchTool = tool === 'healing' || tool === 'clone-stamp'
+  const pixelRetouchTool = tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'history-brush' || tool === 'pattern-stamp' || tool === 'sponge' || tool === 'blur' || tool === 'sharpen' || tool === 'smudge' ? tool : null
   const measurementAngle = measurement ? Math.atan2(measurement.endY - measurement.startY, measurement.endX - measurement.startX) * 180 / Math.PI : 0
   const measurementLength = measurement ? Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY) : 0
 
@@ -432,13 +453,13 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
           {selected?.locked && <span className="rounded bg-amber-400/10 px-1.5 py-0.5 text-[9px] text-amber-300/70">Locked</span>}
         </div>
         <div className="flex items-center gap-3">
-          {(paintTool || retouchTool) && (
+          {(paintTool || retouchTool || pixelRetouchTool) && (
             <div className="hidden items-center gap-2 md:flex">
               {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} dynamics={brushDynamics} onDynamicsChange={setBrushDynamics} calibration={pressureCalibration} onCalibrationChange={setPressureCalibration} /></>}
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
-              {tool === 'brush' && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
-              {(retouchTool || tool === 'dodge' || tool === 'burn') && <><span className="text-[9px] text-zinc-600">Strength</span><input aria-label="Tool strength" type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
+              {(tool === 'brush' || tool === 'pencil' || tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'pattern-stamp') && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
+              {(retouchTool || pixelRetouchTool || tool === 'dodge' || tool === 'burn') && <><span className="text-[9px] text-zinc-600">Strength</span><input aria-label="Tool strength" type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
             </div>
           )}
           {(tool === 'eyedropper' || tool === 'text' || tool === 'rectangle' || tool === 'ellipse' || tool === 'fill' || tool === 'gradient') && (
@@ -526,6 +547,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} dynamics={brushDynamics} pressureCalibration={pressureCalibration} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {pixelRetouchTool && <PixelRetouchOverlay canvasRef={canvasRef} document={document} assets={assets} tool={pixelRetouchTool} size={brushSize} strength={toolStrength} color={foregroundColor} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
