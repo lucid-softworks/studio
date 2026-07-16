@@ -10,12 +10,14 @@
     "dev": "turbo run dev --filter=@studio/web",
     "dev:desktop": "turbo run dev --filter=@studio/web --filter=@studio/desktop",
     "build": "turbo run build",
+    "test:e2e": "playwright test",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "oxlint": "^1.71.0",
     "turbo": "^2.10.5",
     "typescript": "~6.0.2",
