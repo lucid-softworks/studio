@@ -11,6 +11,20 @@ import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode,
 
 let initialized = false
 
+async function mapWithConcurrency<Input, Output>(items: Input[], concurrency: number, mapper: (item: Input) => Promise<Output>) {
+  const output = new Array<Output>(items.length)
+  let nextIndex = 0
+  const worker = async (): Promise<void> => {
+    const index = nextIndex
+    nextIndex += 1
+    if (index >= items.length) return
+    output[index] = await mapper(items[index])
+    return worker()
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()))
+  return output
+}
+
 function abortReason(signal?: AbortSignal) {
   return signal?.reason instanceof Error ? signal.reason : new DOMException('The PSD job was cancelled.', 'AbortError')
 }
@@ -1640,12 +1654,12 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       ...documentState.layers.flatMap((layer) => (layer.groupId ?? null) === parentId ? [{ stackOrder: layer.stackOrder ?? 0, layer }] : []),
       ...documentState.groups.flatMap((group) => (group.parentId ?? null) === parentId ? [{ stackOrder: group.stackOrder ?? 0, group }] : []),
     ]
-    return Promise.all(items.toSorted((left, right) => right.stackOrder - left.stackOrder).map(async (item): Promise<Layer> => {
+    return mapWithConcurrency(items.toSorted((left, right) => right.stackOrder - left.stackOrder), 4, async (item): Promise<Layer> => {
       signal?.throwIfAborted()
       if (item.layer) return exportLayer(item.layer)
       const group = groups.get(item.group!.id)!
       return { name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: await exportChildren(group.id) }
-    }))
+    })
   }
 
   const compositeCanvas = renderCanvas(documentState.layers, true, documentState.groups)

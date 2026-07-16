@@ -25,7 +25,7 @@ test('cancels a layered PSD export without changing the document', async ({ page
 
   await page.getByRole('button', { name: 'File', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Layered PSD', exact: true }).click()
-  await page.waitForTimeout(50)
+  await expect(page.locator('html')).toHaveAttribute('data-studio-worker-job', 'PSD export')
   await page.keyboard.press('Escape')
 
   await expect(page.getByText('PSD export cancelled. The document was not changed.')).toBeVisible()

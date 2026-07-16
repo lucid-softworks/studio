@@ -248,10 +248,14 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
     const job: ActiveWorkerJob = { label, cancel: () => controller.abort() }
     activeWorkerJobRef.current?.cancel()
     activeWorkerJobRef.current = job
+    globalThis.document.documentElement.dataset.studioWorkerJob = label
     try {
       return await task(controller.signal)
     } finally {
-      if (activeWorkerJobRef.current === job) activeWorkerJobRef.current = null
+      if (activeWorkerJobRef.current === job) {
+        activeWorkerJobRef.current = null
+        delete globalThis.document.documentElement.dataset.studioWorkerJob
+      }
     }
   }
 
