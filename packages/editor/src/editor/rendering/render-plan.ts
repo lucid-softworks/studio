@@ -17,6 +17,8 @@ export type LayerRenderNode = {
   effects: LayerEffects | null
   additionalEffects?: LayerEffects[]
   filterGraph: FilterGraphNode[]
+  filterGraphEnabled: boolean
+  filterMaskAssetId: string | null
 }
 
 export type AdjustmentRenderNode = {
@@ -115,6 +117,8 @@ function planNodes(
       filters: layer.filters ? normalizeLayerFilters(layer.filters) : null,
       effects: hasEnabledLayerEffects(layer.effects) ? normalizeLayerEffects(layer.effects) : null,
       filterGraph: layer.filterGraph ?? [],
+      filterGraphEnabled: layer.filterGraphEnabled !== false,
+      filterMaskAssetId: layer.filterMaskAssetId ?? null,
       ...((layer.additionalEffects ?? []).some(hasEnabledLayerEffects) ? { additionalEffects: (layer.additionalEffects ?? []).filter(hasEnabledLayerEffects).map(normalizeLayerEffects) } : {}),
     }]
   })

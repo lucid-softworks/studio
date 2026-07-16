@@ -1,15 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createFilterGraphNode, filterGraphKinds, normalizeFilterGraph } from '../editor/filter-graph'
 import type { FilterGraphKind, FilterGraphNode } from '../editor/types'
 
-type Props = { nodes: FilterGraphNode[] | undefined; renderer: 'webgpu' | 'canvas2d'; onChange: (nodes: FilterGraphNode[], groupKey?: string) => void; onChangeEnd: () => void }
+type FilterPreset = { name: string; nodes: FilterGraphNode[] }
+type Props = { nodes: FilterGraphNode[] | undefined; renderer: 'webgpu' | 'canvas2d'; enabled: boolean; filterMaskAssetId?: string | null; layerMaskAssetId?: string | null; onEnabledChange: (enabled: boolean) => void; onFilterMaskChange: (assetId: string | null) => void; onChange: (nodes: FilterGraphNode[], groupKey?: string) => void; onChangeEnd: () => void }
 
-export function FilterGraphControl({ nodes: source, renderer, onChange, onChangeEnd }: Props) {
+export function FilterGraphControl({ nodes: source, renderer, enabled, filterMaskAssetId, layerMaskAssetId, onEnabledChange, onFilterMaskChange, onChange, onChangeEnd }: Props) {
   const [kind, setKind] = useState<FilterGraphKind>('gaussian-blur')
+  const [presets, setPresets] = useState<FilterPreset[]>(() => { try { const value = JSON.parse(localStorage.getItem('studio.filter-presets') ?? '[]'); return Array.isArray(value) ? value : [] } catch { return [] } })
+  const previewFrameRef = useRef(0)
   const nodes = normalizeFilterGraph(source)
-  const update = (id: string, patch: Partial<FilterGraphNode>, groupKey?: string) => onChange(nodes.map((node) => node.id === id ? { ...node, ...patch } : node), groupKey)
+  useEffect(() => () => window.cancelAnimationFrame(previewFrameRef.current), [])
+  const schedulePreview = (next: FilterGraphNode[], groupKey?: string) => {
+    window.cancelAnimationFrame(previewFrameRef.current)
+    previewFrameRef.current = window.requestAnimationFrame(() => onChange(next, groupKey))
+  }
+  const update = (id: string, patch: Partial<FilterGraphNode>, groupKey?: string) => {
+    const next = nodes.map((node) => node.id === id ? { ...node, ...patch } : node)
+    if (groupKey) schedulePreview(next, groupKey)
+    else onChange(next)
+  }
   return <div className="mt-4 border-t border-white/[0.06] pt-3">
     <div className="flex items-center justify-between"><p className="text-[9px] font-semibold tracking-[0.14em] text-zinc-600 uppercase">Filter graph</p><span className="text-[8px] text-zinc-700">{renderer === 'webgpu' ? 'TypeGPU' : 'Canvas fallback'}</span></div>
+    <div className="mt-2 grid grid-cols-2 gap-1"><button type="button" aria-pressed={enabled} onClick={() => { window.cancelAnimationFrame(previewFrameRef.current); onEnabledChange(!enabled) }} className={`rounded border px-2 py-1.5 text-[8px] ${enabled ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-600'}`}>{enabled ? 'Live preview on' : 'Preview canceled'}</button><button type="button" disabled={!layerMaskAssetId && !filterMaskAssetId} onClick={() => onFilterMaskChange(filterMaskAssetId ? null : layerMaskAssetId ?? null)} className={`rounded border px-2 py-1.5 text-[8px] ${filterMaskAssetId ? 'border-violet-300/20 bg-violet-300/[0.06] text-violet-100' : 'border-white/[0.08] text-zinc-600 disabled:opacity-30'}`}>{filterMaskAssetId ? 'Remove filter mask' : 'Use layer mask'}</button></div>
     <p className="mt-1 text-[9px] leading-relaxed text-zinc-700">Ordered, non-destructive blur, sharpen, noise, distort, stylize, render, and pixelate passes.</p>
     <div className="mt-2 flex gap-2"><select aria-label="Filter graph kind" value={kind} onChange={(event) => setKind(event.target.value as FilterGraphKind)} className="min-w-0 flex-1 rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 text-[9px] text-zinc-500">{filterGraphKinds.map((entry) => <option key={entry.kind} value={entry.kind}>{entry.family} · {entry.label}</option>)}</select><button type="button" onClick={() => onChange([...nodes, createFilterGraphNode(kind)])} className="rounded border border-cyan-300/15 bg-cyan-300/[0.04] px-2 text-[9px] text-cyan-100/70">Add</button></div>
     <div className="mt-2 space-y-2">{nodes.map((node, index) => { const metadata = filterGraphKinds.find((entry) => entry.kind === node.kind)!; return <div key={node.id} className="rounded-lg border border-white/[0.07] bg-black/20 p-2">
@@ -18,5 +31,6 @@ export function FilterGraphControl({ nodes: source, renderer, onChange, onChange
       {(node.kind === 'gaussian-blur' || node.kind === 'pixelate' || node.kind === 'wave' || node.kind === 'emboss' || node.kind === 'clouds') && <label className="mt-2 flex items-center gap-2 text-[8px] text-zinc-700"><span className="w-12">Size</span><input aria-label={`${metadata.label} size`} type="range" min="1" max="128" value={node.size} onChange={(event) => update(node.id, { size: Number(event.target.value) }, `filter-graph-${node.id}`)} onPointerUp={onChangeEnd} className="min-w-0 flex-1 accent-violet-400" /><span className="w-7 font-mono">{node.size}</span></label>}
       {(node.kind === 'noise' || node.kind === 'clouds') && <button type="button" onClick={() => update(node.id, { seed: Math.floor(Math.random() * 65536) })} className="mt-2 rounded border border-white/[0.06] px-2 py-1 text-[8px] text-zinc-600 hover:text-zinc-200">New seed · {node.seed}</button>}
     </div>})}</div>
+    <div className="mt-2 flex gap-1"><select aria-label="Filter preset" defaultValue="" onChange={(event) => { const preset = presets.find((candidate) => candidate.name === event.target.value); if (preset) onChange(preset.nodes.map((node) => ({ ...node, id: globalThis.crypto?.randomUUID?.() ?? `${node.id}-${Date.now()}` }))) }} className="min-w-0 flex-1 rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 text-[8px] text-zinc-600"><option value="">Apply preset…</option>{presets.map((preset) => <option key={preset.name} value={preset.name}>{preset.name}</option>)}</select><button type="button" disabled={!nodes.length} onClick={() => { const name = window.prompt('Filter preset name')?.trim(); if (!name) return; const next = [...presets.filter((preset) => preset.name !== name), { name, nodes }]; setPresets(next); try { localStorage.setItem('studio.filter-presets', JSON.stringify(next)) } catch { /* Local presets are optional. */ } }} className="rounded border border-white/[0.07] px-2 text-[8px] text-zinc-600 hover:text-zinc-200">Save</button></div>
   </div>
 }

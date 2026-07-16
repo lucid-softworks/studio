@@ -44,6 +44,8 @@ describe('composition render plan', () => {
         filters: null,
         effects: null,
         filterGraph: [],
+        filterGraphEnabled: true,
+        filterMaskAssetId: null,
       },
       {
         kind: 'layer',
@@ -56,6 +58,8 @@ describe('composition render plan', () => {
         filters: clipped.filters,
         effects: normalizeLayerEffects(clipped.effects),
         filterGraph: [],
+        filterGraphEnabled: true,
+        filterMaskAssetId: null,
       },
     ])
   })

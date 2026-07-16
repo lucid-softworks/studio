@@ -178,6 +178,7 @@ export type TypeGpuCompositionTextureLayer = {
   source: TypeGpuImageSource
   maskSource?: TypeGpuImageSource
   clipSource?: TypeGpuImageSource
+  filterMaskSource?: TypeGpuImageSource
   blendMode: TypeGpuBlendMode
   opacity?: number
   filters?: {
@@ -276,6 +277,8 @@ export function createTypeGpuLayerCompositor(
     format: 'rgba8unorm',
   }).$usage('sampled', 'render')
   const clipView = clipTexture.createView(d.texture2d(d.f32))
+  const filterMaskTexture = root.createTexture({ size: [width, height], format: 'rgba8unorm' }).$usage('sampled', 'render')
+  const filterMaskView = filterMaskTexture.createView(d.texture2d(d.f32))
   const compositionTextures = [0, 1].map(() => root.createTexture({
     size: [width, height],
     format: 'rgba8unorm',
@@ -291,6 +294,7 @@ export function createTypeGpuLayerCompositor(
   const blendMode = root.createUniform(d.u32, typeGpuBlendModeCodes.normal)
   const hasMask = root.createUniform(d.u32, 0)
   const hasClip = root.createUniform(d.u32, 0)
+  const hasFilterMask = root.createUniform(d.u32, 0)
   const sourceKind = root.createUniform(d.u32, 0)
   const sourceOpacity = root.createUniform(d.f32, 1)
   const hasLayerFilters = root.createUniform(d.u32, 0)
@@ -359,6 +363,7 @@ export function createTypeGpuLayerCompositor(
       let graphUv = std.select(uv, std.add(std.mul(std.floor(std.div(uv, pixelCell)), pixelCell), std.mul(pixelCell, 0.5)), graphPixelate.$ > 1)
       const waveOffset = std.mul(std.sin(std.mul(std.div(graphUv.y, std.mul(texelSize.$.y, std.max(graphWaveSize.$, 1))), 6.283185)), std.mul(graphWave.$, texelSize.$.x))
       graphUv = std.add(graphUv, d.vec2f(waveOffset, 0))
+      const originalSourceSample = std.textureSample(layerView.$, sampler.$, uv)
       let rawSourceSample = std.textureSample(layerView.$, sampler.$, graphUv)
       if (graphSharpen.$ > 0) {
         const neighbors = std.add(std.add(std.textureSample(layerView.$, sampler.$, std.add(graphUv, d.vec2f(texelSize.$.x, 0))), std.textureSample(layerView.$, sampler.$, std.sub(graphUv, d.vec2f(texelSize.$.x, 0)))), std.add(std.textureSample(layerView.$, sampler.$, std.add(graphUv, d.vec2f(0, texelSize.$.y))), std.textureSample(layerView.$, sampler.$, std.sub(graphUv, d.vec2f(0, texelSize.$.y)))))
@@ -420,6 +425,8 @@ export function createTypeGpuLayerCompositor(
         const cloud = gpuProceduralNoise(std.div(graphUv, std.mul(texelSize.$, graphCloudSize.$)), graphSeed.$)
         source = std.mix(source, d.vec3f(cloud), graphClouds.$)
         source = std.clamp(source, d.vec3f(0), d.vec3f(1))
+        const filterMaskAlpha = std.select(1, std.textureSample(filterMaskView.$, sampler.$, uv).w, hasFilterMask.$ === 1)
+        source = std.mix(originalSourceSample.xyz, source, filterMaskAlpha)
       }
       return gpuCompositePixel(backdropSample, source, sourceAlpha, blendMode.$)
     },
@@ -464,6 +471,7 @@ export function createTypeGpuLayerCompositor(
         hasColorOverlay.write(0)
         hasMask.write(0)
         hasClip.write(0)
+        hasFilterMask.write(0)
         effectColor.write(colorVector(color))
         effectOpacity.write(opacity)
         effectOffset.write(d.vec2f(offset.x, offset.y))
@@ -479,6 +487,7 @@ export function createTypeGpuLayerCompositor(
           hasColorOverlay.write(0)
           hasMask.write(0)
           hasClip.write(0)
+          hasFilterMask.write(0)
           adjustmentOpacity.write(layer.opacity)
           adjustmentBrightness.write(layer.brightness)
           adjustmentContrast.write(layer.contrast)
@@ -532,8 +541,10 @@ export function createTypeGpuLayerCompositor(
           }
           if (layer.maskSource) maskTexture.write(layer.maskSource)
           if (layer.clipSource) clipTexture.write(layer.clipSource)
+          if (layer.filterMaskSource) filterMaskTexture.write(layer.filterMaskSource)
           hasMask.write(layer.maskSource ? 1 : 0)
           hasClip.write(layer.clipSource ? 1 : 0)
+          hasFilterMask.write(layer.filterMaskSource ? 1 : 0)
           if (graphBlur > 0) {
             blurLayerSource(graphBlur)
           }
@@ -548,11 +559,13 @@ export function createTypeGpuLayerCompositor(
       layerTexture.destroy()
       maskTexture.destroy()
       clipTexture.destroy()
+      filterMaskTexture.destroy()
       compositionTextures.forEach((texture) => texture.destroy())
       blurTextures.forEach((texture) => texture.destroy())
       blendMode.buffer.destroy()
       hasMask.buffer.destroy()
       hasClip.buffer.destroy()
+      hasFilterMask.buffer.destroy()
       sourceKind.buffer.destroy()
       sourceOpacity.buffer.destroy()
       hasLayerFilters.buffer.destroy()

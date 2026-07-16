@@ -103,6 +103,8 @@ export type BaseLayer = {
   stackOrder?: number
   geometryTransform?: LayerGeometryTransform
   filterGraph?: FilterGraphNode[]
+  filterGraphEnabled?: boolean
+  filterMaskAssetId?: string | null
 }
 
 export type LayerGroup = {
@@ -356,6 +358,8 @@ export type LayerPatch = Partial<{
   stackOrder: number
   geometryTransform: LayerGeometryTransform | null
   filterGraph: FilterGraphNode[]
+  filterGraphEnabled: boolean
+  filterMaskAssetId: string | null
   assetId: string
   padding: number
   scale: number

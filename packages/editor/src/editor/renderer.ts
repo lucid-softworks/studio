@@ -21,6 +21,7 @@ export type NativeTextureLayerPass = {
   source: HTMLCanvasElement
   maskSource?: HTMLCanvasElement | HTMLImageElement
   clipSource?: HTMLCanvasElement
+  filterMaskSource?: HTMLCanvasElement | HTMLImageElement
   blendMode: TypeGpuBlendMode
   opacity?: number
   filters?: LayerFilters | null
@@ -928,7 +929,7 @@ function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext
 
 function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap, resources: RenderResourceRegistry) {
   const maskSource = maskAssetId ? canvasImageResource(resources, assets, maskAssetId)?.source : null
-  const filterGraph = normalizeFilterGraph(layer.filterGraph).filter((node) => node.enabled)
+  const filterGraph = layer.filterGraphEnabled === false ? [] : normalizeFilterGraph(layer.filterGraph).filter((node) => node.enabled)
   if (!maskSource && !layer.vectorMask && !layer.blendIf && filterGraph.length === 0) {
     drawGeometryTransformedLayer(context, canvas, layer, assets, resources)
     return
@@ -943,6 +944,11 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   compositionContext.clearRect(0, 0, composition.width, composition.height)
   drawGeometryTransformedLayer(compositionContext, composition, layer, assets, resources)
   if (filterGraph.length) {
+    const originalCanvas = prepareScratchCanvas(filterGraphOriginalCanvas, canvas)
+    filterGraphOriginalCanvas = originalCanvas
+    const originalContext = originalCanvas.getContext('2d')
+    originalContext?.clearRect(0, 0, canvas.width, canvas.height)
+    originalContext?.drawImage(composition, 0, 0)
     const blur = Math.max(0, ...filterGraph.filter((node) => node.kind === 'gaussian-blur').map((node) => node.size))
     if (blur > 0) {
       filterGraphBlurCanvas = prepareScratchCanvas(filterGraphBlurCanvas, canvas)
@@ -958,6 +964,19 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
     }
     const pixels = compositionContext.getImageData(0, 0, canvas.width, canvas.height)
     compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph), 0, 0)
+    const filterMask = layer.filterMaskAssetId ? canvasImageResource(resources, assets, layer.filterMaskAssetId)?.source : null
+    if (filterMask && originalContext) {
+      const prepared = preparedRasterMask(canvas, filterMask, layer)
+      if (prepared) {
+        compositionContext.save()
+        compositionContext.globalCompositeOperation = 'destination-in'
+        compositionContext.drawImage(prepared, 0, 0)
+        compositionContext.restore()
+        originalContext.drawImage(composition, 0, 0)
+        compositionContext.clearRect(0, 0, canvas.width, canvas.height)
+        compositionContext.drawImage(originalCanvas, 0, 0)
+      }
+    }
   }
   for (const mask of [
     maskSource ? preparedRasterMask(canvas, maskSource, layer) : null,
@@ -982,6 +1001,7 @@ let layerEffectPassCanvas: HTMLCanvasElement | null = null
 let colorOverlayCanvas: HTMLCanvasElement | null = null
 let strokeEffectsCanvas: HTMLCanvasElement | null = null
 let filterGraphBlurCanvas: HTMLCanvasElement | null = null
+let filterGraphOriginalCanvas: HTMLCanvasElement | null = null
 
 function prepareScratchCanvas(current: HTMLCanvasElement | null, canvas: HTMLCanvasElement) {
   const scratch = current ?? document.createElement('canvas')
@@ -1889,6 +1909,7 @@ export function renderNativeLayerPasses(
     const maskSource = node.maskAssetId && !bakedSource
       ? canvasImageResource(resources, assets, node.maskAssetId)?.source
       : undefined
+    const filterMaskSource = node.filterMaskAssetId ? canvasImageResource(resources, assets, node.filterMaskAssetId)?.source : undefined
     let clipSource: HTMLCanvasElement | undefined
     const clippingBase = node.clipBaseLayerId && !bakedSource ? layers.get(node.clipBaseLayerId) : null
     if (clippingBase && clippingBase.type !== 'adjustment') {
@@ -1914,7 +1935,8 @@ export function renderNativeLayerPasses(
       blendMode: node.blendMode as TypeGpuBlendMode,
       filters: node.filters,
       effects: node.effects,
-      filterGraph: node.filterGraph,
+      filterGraph: node.filterGraphEnabled ? node.filterGraph : [],
+      filterMaskSource,
     })
   })
   if (passCount > plan.layers.length + 1) {

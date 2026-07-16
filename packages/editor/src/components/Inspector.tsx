@@ -364,7 +364,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
             <RangeControl label="Sepia" value={filters.sepia} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, sepia: value } }, `sepia-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Invert" value={filters.invert} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, invert: value } }, `invert-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-            <FilterGraphControl nodes={selected.filterGraph} renderer={renderer} onChange={(filterGraph, groupKey) => updateLayer(selected, { filterGraph }, groupKey)} onChangeEnd={endHistoryGroup} />
+            <FilterGraphControl nodes={selected.filterGraph} renderer={renderer} enabled={selected.filterGraphEnabled !== false} filterMaskAssetId={selected.filterMaskAssetId} layerMaskAssetId={selected.maskAssetId} onEnabledChange={(filterGraphEnabled) => updateLayer(selected, { filterGraphEnabled })} onFilterMaskChange={(filterMaskAssetId) => updateLayer(selected, { filterMaskAssetId })} onChange={(filterGraph, groupKey) => updateLayer(selected, { filterGraph }, groupKey)} onChangeEnd={endHistoryGroup} />
           </ControlSection>}
 
           {selected.type !== 'adjustment' && <LayerEffectsControl layer={selected} onUpdate={(patch, groupKey) => updateLayer(selected, patch, groupKey)} onChangeEnd={endHistoryGroup} />}
