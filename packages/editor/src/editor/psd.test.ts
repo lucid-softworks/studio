@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { LayerCompCapturedInfo, readPsd, writePsd, type Layer, type Psd } from 'ag-psd'
 import { createLayerGroup, createShapeLayer, createTextLayer, initialDocument } from './presets'
-import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdTextLayer, psdVectorMask } from './psd'
+import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdSmartObjectSource, psdTextLayer, psdVectorMask } from './psd'
 import { iccLookupProfile } from './fixtures/icc-fixtures'
 
 Object.assign(globalThis, {
@@ -593,7 +593,8 @@ describe('PSD layer ordering', () => {
     }
     const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'metadata.psd')
     expect(imported.document.guides).toEqual([{ id: 'psd-guide-0', direction: 'vertical', position: 2 }])
-    expect(imported.document.layers[0]).toMatchObject({ psdLayerId: 77, psdPlacedLayer: { id: linkedId, type: 'raster' } })
+    expect(imported.document.layers[0]).toMatchObject({ type: 'smart-object', source: { kind: 'embedded', fileName: 'artwork.psb', linkedFileId: linkedId }, psdLayerId: 77, psdPlacedLayer: { id: linkedId, type: 'raster' } })
+    expect(imported.warnings).not.toContain(expect.stringContaining('Smart objects'))
     expect(imported.document.psdMetadata).toMatchObject({ imageResources: { xmpMetadata: '<x:xmpmeta>local metadata</x:xmpmeta>' }, linkedFiles: [{ id: linkedId, name: 'artwork.psb', data: { __studioBytes: [8, 66, 80, 83, 0, 1] } }] })
 
     const blob = await exportPsdDocument(imported.document, imported.assets)
@@ -607,5 +608,13 @@ describe('PSD layer ordering', () => {
       xmpMetadata: '<x:xmpmeta>local metadata</x:xmpmeta>',
       layerComps: { list: [{ id: 5, name: 'Hero', capturedInfo: 7 }], lastApplied: 5 },
     })
+  })
+
+  it('maps externally linked placed layers to linked smart-object sources', () => {
+    const linkedId = '20953ddb-9391-11ec-b4f1-c15674f50bc5'
+    expect(psdSmartObjectSource(
+      { id: linkedId, type: 'raster', transform: [0, 0, 2, 0, 2, 2, 0, 2] },
+      { id: linkedId, name: 'linked.png', linkedFile: { fileSize: 128, name: 'linked.png', fullPath: '/Artwork/linked.png', originalPath: '/Artwork/linked.png', relativePath: './linked.png' } },
+    )).toEqual({ kind: 'linked', fileName: 'linked.png', linkedFileId: linkedId, path: '/Artwork/linked.png', lastModified: undefined })
   })
 })

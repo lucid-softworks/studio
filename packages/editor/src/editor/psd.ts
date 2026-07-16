@@ -2,11 +2,11 @@ import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, t
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { bakeIccColorLookup } from './icc'
-import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
+import { createAdjustmentLayer, createId, createRasterLayer, createSmartObjectLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap, SourceImage } from './runtime-assets'
-import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, TextLayer, VectorMask } from './types'
+import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, SmartObjectSource, TextLayer, VectorMask } from './types'
 
 let initialized = false
 
@@ -16,6 +16,16 @@ function serializePsdValue(value: unknown): SerializedPsdValue {
   if (Array.isArray(value)) return value.map(serializePsdValue)
   if (typeof value === 'object') return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => [key, serializePsdValue(entry)]))
   return null
+}
+
+export function psdSmartObjectSource(placedLayer: PlacedLayer, linkedFile?: LinkedFile): SmartObjectSource {
+  return {
+    kind: linkedFile?.linkedFile && !linkedFile.data ? 'linked' : 'embedded',
+    fileName: linkedFile?.name || placedLayer.placed || placedLayer.id,
+    linkedFileId: placedLayer.id,
+    path: linkedFile?.linkedFile?.fullPath || linkedFile?.linkedFile?.relativePath,
+    lastModified: linkedFile?.assetModTime,
+  }
 }
 
 function revivePsdValue(value: SerializedPsdValue): unknown {
@@ -831,7 +841,6 @@ export function psdImportWarnings(psd: Psd, previewedColorLookups = new Set<Laye
       const name = layer.name?.trim() || `Layer ${index + 1}`
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.text && !canImportPsdText(layer)) add('text', 'Complex text was rasterized', path)
-      if (layer.placedLayer) add('smart-object-preview', 'Smart objects use raster previews while their placed and linked metadata remains preserved', path)
       const editableShape = canImportPsdShape(layer, psd.width, psd.height)
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
@@ -1012,29 +1021,44 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       const top = layer.top ?? 0
       const centerX = left + canvas.width / 2
       const centerY = top + canvas.height / 2
-      const raster = createRasterLayer(assetId, name, canvas.width, canvas.height, {
+      const position = {
         x: (centerX - psd.width / 2) / psd.width,
         y: (centerY - psd.height / 2) / psd.height,
-      })
-      raster.visible = !layer.hidden
-      raster.locked = Boolean(layer.protected?.position || layer.protected?.composite)
-      raster.opacity = Math.round((layer.opacity ?? 1) * 100)
-      raster.blendMode = psdBlendMode(layer.blendMode)
-      raster.clipToBelow = Boolean(layer.clipping)
-      raster.groupId = parentId
-      raster.stackOrder = stackOrder
-      raster.effects = psdLayerEffects(layer)
-      applyPsdLayerMetadata(raster, layer, psd.width, psd.height)
+      }
+      const placedLayer = layer.placedLayer
+      const linkedFile = placedLayer ? psd.linkedFiles?.find((file) => file.id === placedLayer.id) : undefined
+      const importedLayer = placedLayer
+        ? createSmartObjectLayer(assetId, name, canvas.width, canvas.height, psdSmartObjectSource(placedLayer, linkedFile), position)
+        : createRasterLayer(assetId, name, canvas.width, canvas.height, position)
+      if (importedLayer.type === 'smart-object') {
+        importedLayer.smartFilters = (placedLayer?.filter?.list ?? []).map((filter, index) => ({
+          id: `${placedLayer!.id}-filter-${index}`,
+          name: filter.name || filter.type,
+          visible: filter.enabled,
+          opacity: Math.round(filter.opacity * 100),
+          blendMode: psdBlendMode(filter.blendMode),
+          descriptor: serializePsdValue(filter),
+        }))
+      }
+      importedLayer.visible = !layer.hidden
+      importedLayer.locked = Boolean(layer.protected?.position || layer.protected?.composite)
+      importedLayer.opacity = Math.round((layer.opacity ?? 1) * 100)
+      importedLayer.blendMode = psdBlendMode(layer.blendMode)
+      importedLayer.clipToBelow = Boolean(layer.clipping)
+      importedLayer.groupId = parentId
+      importedLayer.stackOrder = stackOrder
+      importedLayer.effects = psdLayerEffects(layer)
+      applyPsdLayerMetadata(importedLayer, layer, psd.width, psd.height)
       const mask = layer.realMask ?? layer.mask
       if (mask && !mask.disabled) {
         const maskAssetId = createId()
         const maskSource = await sourceFromMask(mask, psd.width, psd.height, `${path} mask`)
         if (maskSource) {
           assets[maskAssetId] = maskSource
-          raster.maskAssetId = maskAssetId
+          importedLayer.maskAssetId = maskAssetId
         }
       }
-      layers.push(raster)
+      layers.push(importedLayer)
     }
   }
 

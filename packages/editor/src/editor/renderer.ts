@@ -8,7 +8,7 @@ import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
-import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, TextLayer, TextStyleRun } from './types'
+import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, SmartObjectLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -282,7 +282,7 @@ function drawImageLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
   context.globalAlpha = 1
 }
 
-function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer): LayerBounds {
+function rasterBounds(canvas: HTMLCanvasElement, layer: RasterLayer | SmartObjectLayer): LayerBounds {
   const width = layer.width * layer.scale / 100
   const height = layer.height * layer.scale / 100
   return {
@@ -321,7 +321,7 @@ function rasterRegionToDocument(canvas: HTMLCanvasElement, layer: RasterLayer, s
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
-function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: RasterLayer, assets: AssetMap, resources: RenderResourceRegistry) {
+function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: RasterLayer | SmartObjectLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   const asset = canvasImageResource(resources, assets, layer.assetId)
   if (!asset) return
   const bounds = rasterBounds(canvas, layer)
@@ -508,7 +508,7 @@ function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
 
 function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   if (layer.type === 'image') drawImageLayer(context, canvas, layer, assets, resources)
-  else if (layer.type === 'raster') drawRasterLayer(context, canvas, layer, assets, resources)
+  else if (layer.type === 'raster' || layer.type === 'smart-object') drawRasterLayer(context, canvas, layer, assets, resources)
   else if (layer.type === 'text') drawTextLayer(context, canvas, layer)
   else if (layer.type === 'shape') drawShapeLayer(context, canvas, layer)
 }
@@ -1280,7 +1280,7 @@ export function getLayerBounds(
     const asset = assets[layer.assetId]
     return asset ? calculateImageRect(canvas.width, canvas.height, asset.element.naturalWidth, asset.element.naturalHeight, layer) : null
   }
-  if (layer.type === 'raster') return rasterBounds(canvas, layer)
+  if (layer.type === 'raster' || layer.type === 'smart-object') return rasterBounds(canvas, layer)
   if (layer.type === 'shape') return shapeBounds(canvas, layer)
   if (layer.type === 'adjustment') return null
   const metrics = textMetrics(context, layer)

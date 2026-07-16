@@ -91,7 +91,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M2 — smart objects and non-destructive filters
 
-- [ ] Add embedded and linked smart-object layer types
+- [x] Add embedded and linked smart-object layer types
 - [ ] Open smart-object contents as nested documents and propagate saved edits
 - [ ] Add replace/relink/export-contents actions
 - [ ] Add non-destructive transform matrices independent of source pixels

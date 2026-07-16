@@ -9,6 +9,7 @@ type MenuBarProps = {
   onOpen: () => void
   onSave: () => void
   onAddImage: () => void
+  onPlaceLinkedSmartObject: () => void
   onLoadFont: () => void
   onLoadBrush: () => void
   onExport: (format: ExportFormat) => void
@@ -20,6 +21,7 @@ type MenuBarProps = {
   onNewGroup: () => void
   onDuplicateLayer: () => void
   onRasterizeLayer: () => void
+  onConvertToSmartObject: () => void
   onClearLayerEffects: () => void
   onDeleteLayer: () => void
   onSelectAll: () => void
@@ -41,6 +43,7 @@ type MenuBarProps = {
   canRedo: boolean
   hasLayerSelection: boolean
   canRasterize: boolean
+  canConvertToSmartObject: boolean
   hasLayerEffects: boolean
   hasPixelSelection: boolean
   hasFilterTarget: boolean
@@ -125,6 +128,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem shortcut="⌘O" onSelect={() => select(props.onOpen)}>Open…</MenuItem>
         <Separator />
         <MenuItem onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
+        <MenuItem onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
         <Separator />
@@ -156,6 +160,7 @@ export function MenuBar(props: MenuBarProps) {
         <Separator />
         <MenuItem shortcut="⌘J" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
         <MenuItem disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
+        <MenuItem disabled={!props.canConvertToSmartObject} onSelect={() => select(props.onConvertToSmartObject)}>Convert to smart object</MenuItem>
         <MenuItem disabled={!props.hasLayerEffects} onSelect={() => select(props.onClearLayerEffects)}>Clear layer effects</MenuItem>
         <Separator />
         <MenuItem shortcut="⌫" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDeleteLayer)}>Delete layer or group</MenuItem>

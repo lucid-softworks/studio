@@ -7,7 +7,7 @@ import { isTypeGpuBlendMode } from './typegpu-blend-modes'
 export type LayerRenderNode = {
   kind: 'layer'
   layerId: string
-  layerType: 'image' | 'raster' | 'text' | 'shape'
+  layerType: 'image' | 'raster' | 'smart-object' | 'text' | 'shape'
   opacity: number
   blendMode: BlendMode
   maskAssetId: string | null

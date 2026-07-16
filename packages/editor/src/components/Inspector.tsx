@@ -322,6 +322,18 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
             </ControlSection>
           )}
 
+          {selected.type === 'smart-object' && (
+            <ControlSection title="Smart object">
+              <div className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] p-3">
+                <div className="flex items-center justify-between gap-3"><span className="text-[10px] font-semibold tracking-wide text-cyan-200 uppercase">{selected.source.kind}</span><span className="truncate font-mono text-[9px] text-zinc-600">{selected.source.fileName}</span></div>
+                {selected.source.path && <p className="mt-2 truncate font-mono text-[9px] text-zinc-700" title={selected.source.path}>{selected.source.path}</p>}
+                <p className="mt-2 text-[10px] leading-relaxed text-zinc-500">Source pixels stay untouched while Studio renders this layer from its local preview.</p>
+              </div>
+              <RangeControl label="Scale" value={selected.scale} min={10} max={300} suffix="%" onChange={(value) => updateLayer(selected, { scale: value }, `scale-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <p className="mt-2 font-mono text-[9px] text-zinc-700">{selected.width} × {selected.height} px · {selected.smartFilters.length} smart filter{selected.smartFilters.length === 1 ? '' : 's'}</p>
+            </ControlSection>
+          )}
+
           {selected.type === 'text' && (
             <ControlSection title="Text">
               <label className="block">

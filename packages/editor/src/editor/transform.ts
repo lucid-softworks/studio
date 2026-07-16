@@ -65,7 +65,7 @@ export function calculateLayerResize(
   if (layer.type !== 'shape' || options.preserveAspect) {
     const { ratio, shift } = uniformRatio(snapshot, point, options.fromCenter)
     const position = positionWithShift(layer, shift, snapshot)
-    if (layer.type === 'image' || layer.type === 'raster') return { scale: Math.round(clamp(layer.scale * ratio, 10, 300)), position }
+    if (layer.type === 'image' || layer.type === 'raster' || layer.type === 'smart-object') return { scale: Math.round(clamp(layer.scale * ratio, 10, 300)), position }
     if (layer.type === 'text') return { fontSize: Math.round(clamp(layer.fontSize * ratio, 8, 300)), position }
     return {
       width: Math.round(clamp(layer.width * ratio, 2, 150) * 10) / 10,

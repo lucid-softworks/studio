@@ -111,6 +111,36 @@ export type RasterLayer = BaseLayer & {
   scale: number
 }
 
+export type SmartObjectSource = {
+  kind: 'embedded' | 'linked'
+  fileName: string
+  linkedFileId?: string
+  mimeType?: string
+  path?: string
+  lastModified?: number
+}
+
+export type SmartFilter = {
+  id: string
+  name: string
+  visible: boolean
+  opacity: number
+  blendMode: BlendMode
+  maskAssetId?: string | null
+  descriptor: SerializedPsdValue
+}
+
+export type SmartObjectLayer = BaseLayer & {
+  type: 'smart-object'
+  assetId: string
+  width: number
+  height: number
+  scale: number
+  source: SmartObjectSource
+  smartFilters: SmartFilter[]
+  contentHash?: string
+}
+
 export type TextStyleRun = {
   start: number
   length: number
@@ -225,7 +255,7 @@ export type AdjustmentLayer = BaseLayer & {
   adjustment?: AdjustmentDescriptor
 }
 
-export type EditorLayer = ImageLayer | RasterLayer | TextLayer | ShapeLayer | AdjustmentLayer
+export type EditorLayer = ImageLayer | RasterLayer | SmartObjectLayer | TextLayer | ShapeLayer | AdjustmentLayer
 
 export type BackgroundSettings = {
   kind: BackgroundKind
@@ -296,6 +326,9 @@ export type LayerPatch = Partial<{
   fillStyle: NonNullable<ShapeLayer['fillStyle']> | null
   strokeStyle: NonNullable<ShapeLayer['strokeStyle']> | null
   adjustment: AdjustmentDescriptor | null
+  source: SmartObjectSource
+  smartFilters: SmartFilter[]
+  contentHash: string
   shadow: number
   flipX: boolean
   flipY: boolean

@@ -1,4 +1,4 @@
-import { EDITOR_DOCUMENT_SCHEMA_VERSION, type AdjustmentLayer, type EditorDocument, type EditorLayer, type ImageLayer, type LayerGroup, type RasterLayer, type ShapeKind, type ShapeLayer, type TextLayer } from './types'
+import { EDITOR_DOCUMENT_SCHEMA_VERSION, type AdjustmentLayer, type EditorDocument, type EditorLayer, type ImageLayer, type LayerGroup, type RasterLayer, type ShapeKind, type ShapeLayer, type SmartObjectLayer, type SmartObjectSource, type TextLayer } from './types'
 
 export const canvasPresets = [
   { id: 'landscape', label: 'Landscape', shortLabel: '16:10', width: 1600, height: 1000 },
@@ -80,6 +80,20 @@ export function createRasterLayer(assetId: string, name: string, width: number, 
     height,
     scale: 100,
     position,
+  }
+}
+
+export function createSmartObjectLayer(assetId: string, name: string, width: number, height: number, source: SmartObjectSource, position = { x: 0, y: 0 }): SmartObjectLayer {
+  return {
+    ...layerBase(name),
+    type: 'smart-object',
+    assetId,
+    width,
+    height,
+    scale: 100,
+    position,
+    source,
+    smartFilters: [],
   }
 }
 

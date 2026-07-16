@@ -143,7 +143,7 @@ function transactionRequest<T>(mode: IDBTransactionMode, operation: (store: IDBO
 
 async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): Promise<AssetMap> {
   const rasterAssetIds = new Set([
-    ...document.layers.filter((layer) => layer.type === 'raster').map((layer) => layer.assetId),
+    ...document.layers.filter((layer) => layer.type === 'raster' || layer.type === 'smart-object').map((layer) => layer.assetId),
     ...document.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : []),
     ...(document.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : []),
   ])

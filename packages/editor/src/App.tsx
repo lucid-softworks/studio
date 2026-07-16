@@ -9,7 +9,7 @@ import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
 import { hasEnabledLayerEffects } from './editor/effects'
 import { cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, surfaceToBlob } from './editor/image'
-import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
+import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createSmartObjectLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
 import { calculateImageRect, getLayerBounds } from './editor/renderer'
 import { canvas2dCompositionRenderer } from './editor/rendering/composition-renderer'
@@ -94,6 +94,7 @@ function App({ onExit }: AppProps) {
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const linkedSmartObjectInputRef = useRef<HTMLInputElement>(null)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
   const projectInputRef = useRef<HTMLInputElement>(null)
   const fontInputRef = useRef<HTMLInputElement>(null)
@@ -200,6 +201,30 @@ function App({ onExit }: AppProps) {
       dispatch({ type: 'add-layer', layer: createImageLayer(assetId, file.name.replace(/\.[^.]+$/, '')) })
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'That image could not be loaded.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [dispatch, setNotice])
+
+  const addLinkedSmartObjectFile = useCallback(async (file: File) => {
+    setIsLoading(true)
+    setNotice(null)
+    try {
+      const source = await loadImageFile(file)
+      const assetId = createId()
+      const width = source.element.naturalWidth || source.surface?.width || 1
+      const height = source.element.naturalHeight || source.surface?.height || 1
+      const layer = createSmartObjectLayer(assetId, file.name.replace(/\.[^.]+$/, ''), width, height, {
+        kind: 'linked',
+        fileName: file.name,
+        mimeType: file.type || undefined,
+        lastModified: file.lastModified,
+      })
+      setAssets((current) => ({ ...current, [assetId]: source }))
+      dispatch({ type: 'add-layer', layer })
+      setNotice(`Placed ${file.name} as a linked smart object. Use Relink to refresh its local snapshot.`, 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That smart-object source could not be loaded.')
     } finally {
       setIsLoading(false)
     }
@@ -687,6 +712,46 @@ function App({ onExit }: AppProps) {
     dispatch({ type: 'replace-layer', id: layer.id, layer: raster })
   }
 
+  const convertSelectedToSmartObject = () => {
+    const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
+    if (!layer || layer.type === 'adjustment' || layer.type === 'smart-object') return
+    const { width, height } = getDocumentSize(document)
+    const canvas = window.document.createElement('canvas')
+    canvas2dCompositionRenderer.render(canvas, {
+      ...document,
+      background: { ...document.background, kind: 'transparent' },
+      pattern: { ...document.pattern, kind: 'none' },
+      groups: [],
+      layers: [{ ...layer, groupId: null, stackOrder: 0, visible: true, locked: false, clipToBelow: false }],
+      selectedLayerId: null,
+      selectedLayerIds: [],
+      selectedGroupId: null,
+    }, assets)
+    const assetId = createId()
+    const source = createEmptyRasterSource(width, height, `${layer.name} smart-object preview`)
+    source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
+    const smartObject = {
+      ...createSmartObjectLayer(assetId, layer.name, width, height, { kind: 'embedded', fileName: `${layer.name}.studio` }),
+      id: layer.id,
+      visible: layer.visible,
+      locked: layer.locked,
+      opacity: layer.opacity,
+      blendMode: layer.blendMode,
+      groupId: layer.groupId,
+      stackOrder: layer.stackOrder,
+      maskAssetId: layer.maskAssetId,
+      maskSettings: layer.maskSettings,
+      vectorMask: layer.vectorMask,
+      blendIf: layer.blendIf,
+      clipToBelow: layer.clipToBelow,
+      effects: layer.effects,
+      additionalEffects: layer.additionalEffects,
+    }
+    setAssets((current) => ({ ...current, [assetId]: source }))
+    dispatch({ type: 'replace-layer', id: layer.id, layer: smartObject })
+    setNotice(`Converted ${layer.name} to an embedded smart object.`, 'success')
+  }
+
   const applyFilter = (patch: Partial<LayerFilters>) => {
     const targets = selectedLayers.filter((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))
     if (!targets.length) return
@@ -888,6 +953,7 @@ function App({ onExit }: AppProps) {
             onOpen={() => projectInputRef.current?.click()}
             onSave={() => void saveProject()}
             onAddImage={() => imageInputRef.current?.click()}
+            onPlaceLinkedSmartObject={() => linkedSmartObjectInputRef.current?.click()}
             onLoadFont={() => fontInputRef.current?.click()}
             onLoadBrush={() => brushInputRef.current?.click()}
             onExport={(format) => void exportImage(format)}
@@ -899,6 +965,7 @@ function App({ onExit }: AppProps) {
             onNewGroup={addLayerGroup}
             onDuplicateLayer={duplicateSelection}
             onRasterizeLayer={rasterizeSelectedLayer}
+            onConvertToSmartObject={convertSelectedToSmartObject}
             onClearLayerEffects={() => dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { effects: null } })) })}
             onDeleteLayer={deleteSelection}
             onSelectAll={applySelectAll}
@@ -927,6 +994,7 @@ function App({ onExit }: AppProps) {
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
             canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
+            canConvertToSmartObject={selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type)}
             hasLayerEffects={selectedLayers.some((layer) => hasEnabledLayerEffects(layer.effects))}
             hasPixelSelection={Boolean(selection?.bounds)}
             hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
@@ -954,6 +1022,7 @@ function App({ onExit }: AppProps) {
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
+      <input ref={linkedSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addLinkedSmartObjectFile(file); event.target.value = '' }} />
       <input ref={backgroundInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
       <input ref={projectInputRef} type="file" className="sr-only" accept=".studio,.psd,image/png,image/jpeg,image/webp,application/json,application/x-studio+json,image/vnd.adobe.photoshop" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
       <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />

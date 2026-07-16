@@ -82,6 +82,7 @@ function FolderIcon({ open = false }: { open?: boolean }) {
 
 function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   if (layer.type === 'image' || layer.type === 'raster') return <ImageIcon className="size-3.5" />
+  if (layer.type === 'smart-object') return <span className="relative"><ImageIcon className="size-3.5" /><span className="absolute -right-1 -bottom-1 text-[7px] leading-none">◇</span></span>
   if (layer.type === 'text') return <TextIcon className="size-3.5" />
   if (layer.type === 'adjustment') return <span className="text-xs">◐</span>
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
