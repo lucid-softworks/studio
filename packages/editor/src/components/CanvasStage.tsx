@@ -19,6 +19,7 @@ import { SelectionOverlay } from './SelectionOverlay'
 import { SingleMarqueeOverlay } from './SingleMarqueeOverlay'
 import type { EditorTool } from './ToolRail'
 import { TransformOverlay } from './TransformOverlay'
+import { PathEditorOverlay } from './PathEditorOverlay'
 import type { BrushPreset } from '../editor/resources'
 import { BrushSettingsPopover } from './BrushSettingsPopover'
 import { CanvasRulers } from './CanvasRulers'
@@ -82,6 +83,9 @@ const toolNames: Record<EditorTool, string> = {
   dodge: 'Dodge',
   burn: 'Burn',
   text: 'Type',
+  pen: 'Pen',
+  'direct-select': 'Direct Selection',
+  'path-select': 'Path Selection',
   rectangle: 'Rectangle',
   ellipse: 'Ellipse',
   hand: 'Hand',
@@ -103,6 +107,8 @@ function toolForShortcut(key: string, shift: boolean): EditorTool | null {
     case 'g': return shift ? 'gradient' : 'fill'
     case 'o': return shift ? 'burn' : 'dodge'
     case 't': return 'text'
+    case 'p': return 'pen'
+    case 'a': return shift ? 'path-select' : 'direct-select'
     case 'u': return shift ? 'ellipse' : 'rectangle'
     case 'h': return 'hand'
     case 'z': return 'zoom'
@@ -132,6 +138,9 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'dodge': return 'Drag to lighten pixels on the selected raster layer'
     case 'burn': return 'Drag to darken pixels on the selected raster layer'
     case 'text': return 'Click the canvas to add a text layer'
+    case 'pen': return 'Click to add points · drag for Bézier handles · click the first point to close'
+    case 'direct-select': return 'Drag anchors or handles · Alt-click an anchor to convert it · Delete removes it'
+    case 'path-select': return 'Drag a complete path component to reposition it'
     case 'rectangle': return 'Click the canvas to add a rectangle layer'
     case 'ellipse': return 'Click the canvas to add an ellipse layer'
     case 'hand': return 'Drag the workspace to pan around the document'
@@ -434,6 +443,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
             <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
           </div>

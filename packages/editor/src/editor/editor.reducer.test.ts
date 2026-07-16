@@ -145,6 +145,17 @@ describe('documentReducer', () => {
 })
 
 describe('historyReducer', () => {
+  it('stores path edits as undoable document commands', () => {
+    const path = { id: 'work', name: 'Work Path', kind: 'work' as const, paths: [] }
+    const changed = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'set-paths', paths: [path], selectedPathId: path.id } })
+    const undone = historyReducer(changed, { type: 'undo' })
+    const redone = historyReducer(undone, { type: 'redo' })
+
+    expect(changed.present.paths).toEqual([path])
+    expect(undone.present.paths).toBeUndefined()
+    expect(redone.present.selectedPathId).toBe(path.id)
+  })
+
   it('groups continuous changes into one undo step', () => {
     const added = historyReducer(initialHistoryState, { type: 'apply', action: { type: 'add-layer', layer: textLayer } })
     const first = historyReducer(added, { type: 'apply', action: { type: 'update-layer', id: textLayer.id, patch: { fontSize: 80 } }, groupKey: 'font-size' })

@@ -27,6 +27,13 @@ export type VectorPath = {
   knots: Array<{ linked: boolean; in: Position; anchor: Position; out: Position }>
 }
 
+export type DocumentPath = {
+  id: string
+  name: string
+  kind: 'work' | 'saved' | 'clipping'
+  paths: VectorPath[]
+}
+
 export type LayerMaskSettings = {
   density: number
   feather: number
@@ -298,6 +305,8 @@ export type EditorDocument = {
   selectedLayerIds: string[]
   selectedGroupId: string | null
   channels?: DocumentChannel[]
+  paths?: DocumentPath[]
+  selectedPathId?: string | null
   guides?: DocumentGuide[]
   psdMetadata?: PsdDocumentMetadata
 }
@@ -373,6 +382,7 @@ export type DocumentAction =
   | { type: 'set-background'; patch: Partial<BackgroundSettings> }
   | { type: 'set-pattern'; patch: Partial<PatternSettings> }
   | { type: 'set-channels'; channels: DocumentChannel[] }
+  | { type: 'set-paths'; paths: DocumentPath[]; selectedPathId: string | null }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }
   | { type: 'add-group'; group: LayerGroup; layerIds: string[] }

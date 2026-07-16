@@ -9,7 +9,7 @@ import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { ComponentChannel, SelectionMode, SelectionState } from '../editor/selection'
 import { defaultSwatches } from '../editor/swatches'
-import type { DocumentChannel, DocumentHistoryCommand, EditorDocument, PatternSettings } from '../editor/types'
+import type { DocumentChannel, DocumentHistoryCommand, DocumentPath, EditorDocument, PatternSettings, VectorPath } from '../editor/types'
 
 export type AlphaChannelTransform = 'invert' | 'flip-horizontal' | 'flip-vertical' | 'rotate-clockwise'
 
@@ -59,6 +59,44 @@ export function ChannelsPanel({ channels, hasSelection, onLoadComponent, onSaveS
       </section>
       {selectedAlpha && <section className="mt-3 rounded-lg border border-white/[0.07] bg-black/15 p-2.5"><div className="grid grid-cols-3 gap-1"><button type="button" onClick={() => onLoadAlpha(selectedAlpha, combineMode)} className="rounded-md bg-white/[0.04] py-2 text-[8px] text-zinc-500 hover:text-zinc-200">Load</button><button type="button" onClick={() => onDuplicateAlpha(selectedAlpha)} className="rounded-md bg-white/[0.04] py-2 text-[8px] text-zinc-500 hover:text-zinc-200">Duplicate</button><button type="button" onClick={() => { onDeleteAlpha(selectedAlpha); setSelectedAlphaIndex(null) }} className="rounded-md bg-red-400/[0.05] py-2 text-[8px] text-zinc-500 hover:text-red-300">Delete</button></div><div className="mt-1 grid grid-cols-4 gap-1"><button type="button" title="Invert channel" onClick={() => onTransformAlpha(selectedAlpha, 'invert')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">±</button><button type="button" title="Flip channel horizontally" onClick={() => onTransformAlpha(selectedAlpha, 'flip-horizontal')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↔</button><button type="button" title="Flip channel vertically" onClick={() => onTransformAlpha(selectedAlpha, 'flip-vertical')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↕</button><button type="button" title="Rotate channel clockwise" onClick={() => onTransformAlpha(selectedAlpha, 'rotate-clockwise')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↻</button></div></section>}
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Click a colour component or double-click an alpha channel to load it as a selection.</p>
+    </div>
+  )
+}
+
+export function PathsPanel({ paths, selectedPathId, onChange, onFill, onStroke }: {
+  paths: DocumentPath[]
+  selectedPathId: string | null
+  onChange: (paths: DocumentPath[], selectedPathId: string | null) => void
+  onFill: (path: DocumentPath) => void
+  onStroke: (path: DocumentPath) => void
+}) {
+  const [name, setName] = useState('')
+  const selected = paths.find((path) => path.id === selectedPathId) ?? paths.at(-1)
+  const selectedIndex = selected ? paths.indexOf(selected) : -1
+  const mutateSelected = (mutate: (path: DocumentPath) => DocumentPath) => {
+    if (selectedIndex < 0 || !selected) return
+    onChange(paths.map((path, index) => index === selectedIndex ? mutate(path) : path), selected.id)
+  }
+  const setOperation = (operation: VectorPath['operation']) => mutateSelected((path) => ({ ...path, paths: path.paths.map((component) => ({ ...component, operation })) }))
+  const save = () => {
+    if (!selected) return
+    mutateSelected((path) => ({ ...path, kind: 'saved', name: name.trim() || (path.kind === 'work' ? `Path ${paths.filter((candidate) => candidate.kind !== 'work').length + 1}` : path.name) }))
+    setName('')
+  }
+  const addPath = () => {
+    const path: DocumentPath = { id: crypto.randomUUID(), name: 'Work Path', kind: 'work', paths: [] }
+    onChange([...paths, path], path.id)
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Paths" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="flex items-center justify-between"><div><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Document paths</h3><p className="mt-1 text-[9px] text-zinc-700">Work, saved, and clipping paths</p></div><button type="button" onClick={addPath} className="rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">+ New</button></div>
+      {paths.length ? <div className="mt-3 space-y-1">{[...paths].reverse().map((path) => <button key={path.id} type="button" aria-pressed={selected?.id === path.id} onClick={() => onChange(paths, path.id)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2.5 text-left transition ${selected?.id === path.id ? 'border-cyan-300/25 bg-cyan-400/[0.07]' : 'border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]'}`}><svg viewBox="0 0 28 20" aria-hidden="true" className="h-5 w-7 rounded bg-black/25"><path d="M3 16C8 2 18 2 25 14" fill="none" stroke="currentColor" className="text-cyan-300/70" /><circle cx="3" cy="16" r="1.5" fill="currentColor" /><circle cx="25" cy="14" r="1.5" fill="currentColor" /></svg><span className="min-w-0 flex-1"><span className="block truncate text-[10px] text-zinc-400">{path.name}</span><span className="block text-[8px] capitalize text-zinc-700">{path.kind} · {path.paths.length} component{path.paths.length === 1 ? '' : 's'}</span></span>{path.kind === 'clipping' && <span className="text-[8px] text-amber-300/70">Clip</span>}</button>)}</div> : <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-6 text-center text-[9px] leading-relaxed text-zinc-700">Choose the Pen tool and click the canvas to create a work path.</div>}
+      {selected && <>
+        <section className="mt-4 rounded-lg border border-white/[0.07] bg-black/15 p-2.5"><label className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Path operation</label><div className="mt-2 grid grid-cols-4 gap-1">{([['combine', '+'], ['subtract', '−'], ['intersect', '∩'], ['exclude', '⊕']] as Array<[VectorPath['operation'], string]>).map(([operation, label]) => <button key={operation} type="button" title={operation} aria-pressed={selected.paths.every((path) => path.operation === operation)} onClick={() => setOperation(operation)} className={`rounded-md py-2 text-[10px] ${selected.paths.every((path) => path.operation === operation) ? 'bg-cyan-400/15 text-cyan-200' : 'bg-white/[0.03] text-zinc-600 hover:text-zinc-200'}`}>{label}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1"><button type="button" disabled={!selected.paths.length} onClick={() => onFill(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Fill path</button><button type="button" disabled={!selected.paths.length} onClick={() => onStroke(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Stroke path</button></div></section>
+        <section className="mt-3"><div className="flex gap-2"><input aria-label="Saved path name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save() }} placeholder={selected.name} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[9px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-400/40" /><button type="button" onClick={save} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:text-zinc-200">Save</button></div><div className="mt-2 grid grid-cols-3 gap-1"><button type="button" onClick={() => { const copy = { ...structuredClone(selected), id: crypto.randomUUID(), name: `${selected.name} copy`, kind: 'saved' as const }; onChange([...paths, copy], copy.id) }} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-zinc-200">Duplicate</button><button type="button" onClick={() => mutateSelected((path) => ({ ...path, kind: path.kind === 'clipping' ? 'saved' : 'clipping' }))} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-amber-200">{selected.kind === 'clipping' ? 'Unclip' : 'Clipping'}</button><button type="button" onClick={() => { const next = paths.filter((path) => path.id !== selected.id); onChange(next, next.at(-1)?.id ?? null) }} className="rounded-md bg-red-400/[0.04] py-2 text-[8px] text-zinc-600 hover:text-red-300">Delete</button></div></section>
+      </>}
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Pen edits are saved in the document and can be undone from History.</p>
     </div>
   )
 }

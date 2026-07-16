@@ -112,9 +112,9 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M4 — paths, vectors, and shapes
 
-- [ ] Add a Pen tool with Bézier handles, path continuation, and point conversion
-- [ ] Add direct/path selection tools and keyboard editing
-- [ ] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
+- [x] Add a Pen tool with Bézier handles, path continuation, and point conversion
+- [x] Add direct/path selection tools and keyboard editing
+- [x] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
 - [ ] Support compound paths and boolean shape operations
 - [ ] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
 - [ ] Add custom shape import/export and a reusable local shape library
@@ -183,8 +183,9 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
   - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
-  - [ ] Add Actions and Paths panels
+  - [ ] Add Actions panel
   - [x] Add Channels panel
+  - [x] Add Paths panel
 - [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server

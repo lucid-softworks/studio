@@ -114,7 +114,9 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     return withSmartFilters.groupId && !groupIds.has(withSmartFilters.groupId) ? { ...withSmartFilters, groupId: null } : withSmartFilters
   })
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
-  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId }
+  const paths = Array.isArray(value.paths) ? value.paths : []
+  const selectedPathId = value.selectedPathId && paths.some((path) => path.id === value.selectedPathId) ? value.selectedPathId : null
+  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {
     const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
     normalized = {

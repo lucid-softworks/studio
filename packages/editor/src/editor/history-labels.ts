@@ -6,6 +6,7 @@ const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
   'set-background': 'Change background',
   'set-pattern': 'Change pattern',
   'set-channels': 'Edit channels',
+  'set-paths': 'Edit paths',
   'add-layer': 'Add layer',
   'replace-layer': 'Rasterize layer',
   'add-group': 'Add layer group',

@@ -24,6 +24,9 @@ export type EditorTool =
   | 'dodge'
   | 'burn'
   | 'text'
+  | 'pen'
+  | 'direct-select'
+  | 'path-select'
   | 'rectangle'
   | 'ellipse'
   | 'hand'
@@ -99,6 +102,10 @@ function ZoomToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path strokeLinecap="round" d="M15.5 15.5L21 21M7.5 10.5h6M10.5 7.5v6" /></svg>
 }
 
+function PenToolIcon({ className, selection = false }: IconProps & { selection?: boolean }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">{selection ? <><path strokeLinecap="round" strokeLinejoin="round" d="M5 3.5l12.5 8-5.2 1.3-2.8 5.4L5 3.5z" /><circle cx="18.5" cy="18.5" r="2" /></> : <><path strokeLinecap="round" strokeLinejoin="round" d="M12 3l6.5 6.5L12 21 5.5 9.5 12 3z" /><circle cx="12" cy="10" r="2" /><path strokeLinecap="round" d="M12 12v9" /></>}</svg>
+}
+
 const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: ReactNode; divider?: boolean }> = [
   { id: 'move', label: 'Move', shortcut: 'V', icon: <MoveToolIcon className="size-[19px]" /> },
   { id: 'marquee', label: 'Rectangular Marquee', shortcut: 'M', icon: <MarqueeToolIcon className="size-[19px]" />, divider: true },
@@ -122,6 +129,9 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'dodge', label: 'Dodge', shortcut: 'O', icon: <ToneToolIcon className="size-[19px]" /> },
   { id: 'burn', label: 'Burn', shortcut: 'Shift O', icon: <ToneToolIcon className="size-[19px]" burn /> },
   { id: 'text', label: 'Type', shortcut: 'T', icon: <TextIcon className="size-[19px]" />, divider: true },
+  { id: 'pen', label: 'Pen', shortcut: 'P', icon: <PenToolIcon className="size-[19px]" /> },
+  { id: 'direct-select', label: 'Direct Selection', shortcut: 'A', icon: <PenToolIcon className="size-[19px]" selection /> },
+  { id: 'path-select', label: 'Path Selection', shortcut: 'Shift A', icon: <MoveToolIcon className="size-[19px]" /> },
   { id: 'rectangle', label: 'Rectangle', shortcut: 'U', icon: <RectangleIcon className="size-[19px]" /> },
   { id: 'ellipse', label: 'Ellipse', shortcut: 'Shift U', icon: <CircleIcon className="size-[19px]" /> },
   { id: 'hand', label: 'Hand', shortcut: 'H', icon: <HandToolIcon className="size-[19px]" />, divider: true },

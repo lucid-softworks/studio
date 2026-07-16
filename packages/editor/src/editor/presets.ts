@@ -113,7 +113,7 @@ export function createTextLayer(index: number): TextLayer {
 
 export function createShapeLayer(shape: ShapeKind, index: number): ShapeLayer {
   return {
-    ...layerBase(`${shape === 'ellipse' ? 'Ellipse' : 'Rectangle'} ${index}`),
+    ...layerBase(`${shape === 'ellipse' ? 'Ellipse' : shape === 'path' ? 'Path' : 'Rectangle'} ${index}`),
     type: 'shape',
     shape,
     width: shape === 'ellipse' ? 22 : 28,
