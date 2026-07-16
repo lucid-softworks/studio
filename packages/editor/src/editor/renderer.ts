@@ -444,12 +444,12 @@ function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCan
       const maskContext = alphaMask.getContext('2d', { willReadFrequently: true })
       if (maskContext) {
         maskContext.drawImage(mask.source, 0, 0, layer.width, layer.height)
-        const pixels = maskContext.getImageData(0, 0, layer.width, layer.height)
-        for (let index = 0; index < pixels.data.length; index += 4) {
-          const luminance = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114
-          pixels.data[index + 3] = Math.round(luminance * pixels.data[index + 3] / 255)
-        }
-        maskContext.putImageData(pixels, 0, 0)
+        mutateCanvasStripes(maskContext, alphaMask, (pixels) => {
+          for (let index = 0; index < pixels.data.length; index += 4) {
+            const luminance = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114
+            pixels.data[index + 3] = Math.round(luminance * pixels.data[index + 3] / 255)
+          }
+        })
         filteredContext.globalCompositeOperation = 'destination-in'
         filteredContext.drawImage(alphaMask, 0, 0)
         filteredContext.globalCompositeOperation = 'source-over'
@@ -914,6 +914,16 @@ let maskCompositionCanvas: HTMLCanvasElement | null = null
 let processedMaskCanvas: HTMLCanvasElement | null = null
 let vectorMaskCanvas: HTMLCanvasElement | null = null
 
+function mutateCanvasStripes(context: CanvasRenderingContext2D, canvas: Pick<HTMLCanvasElement, 'width' | 'height'>, mutate: (pixels: ImageData) => void) {
+  const rowsPerStripe = Math.max(1, Math.floor((4 * 1024 * 1024) / Math.max(4, canvas.width * 4)))
+  for (let y = 0; y < canvas.height; y += rowsPerStripe) {
+    const height = Math.min(rowsPerStripe, canvas.height - y)
+    const pixels = context.getImageData(0, y, canvas.width, height)
+    mutate(pixels)
+    context.putImageData(pixels, 0, y)
+  }
+}
+
 function traceVectorMaskPath(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, path: NonNullable<EditorLayer['vectorMask']>['paths'][number]) {
   const first = path.knots[0]
   if (!first) return
@@ -941,11 +951,9 @@ function traceVectorMaskPath(context: CanvasRenderingContext2D, canvas: HTMLCanv
 function applyMaskDensity(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, density: number) {
   const amount = Math.max(0, Math.min(1, density / 100))
   if (amount >= 1) return
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
-  for (let index = 3; index < pixels.data.length; index += 4) {
-    pixels.data[index] = Math.round((1 - amount) * 255 + amount * pixels.data[index])
-  }
-  context.putImageData(pixels, 0, 0)
+  mutateCanvasStripes(context, canvas, (pixels) => {
+    for (let index = 3; index < pixels.data.length; index += 4) pixels.data[index] = Math.round((1 - amount) * 255 + amount * pixels.data[index])
+  })
 }
 
 function preparedRasterMask(canvas: HTMLCanvasElement, source: CanvasImageSource, layer: EditorLayer) {
@@ -989,9 +997,9 @@ function preparedVectorMask(canvas: HTMLCanvasElement, layer: EditorLayer) {
   }
   context.globalCompositeOperation = 'source-over'
   if (settings.inverted) {
-    const inverted = context.getImageData(0, 0, mask.width, mask.height)
-    for (let index = 3; index < inverted.data.length; index += 4) inverted.data[index] = 255 - inverted.data[index]
-    context.putImageData(inverted, 0, 0)
+    mutateCanvasStripes(context, mask, (pixels) => {
+      for (let index = 3; index < pixels.data.length; index += 4) pixels.data[index] = 255 - pixels.data[index]
+    })
   }
   if (settings.feather > 0) {
     const snapshot = document.createElement('canvas')
@@ -1018,11 +1026,11 @@ function blendIfOpacity(value: number, range: number[]) {
   return 1
 }
 
-function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer) {
+function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext: CanvasRenderingContext2D, layer: EditorLayer, region: RasterRegion | null) {
   const settings = layer.blendIf
-  if (!settings) return
-  const source = layerContext.getImageData(0, 0, canvas.width, canvas.height)
-  const destination = destinationContext.getImageData(0, 0, canvas.width, canvas.height)
+  if (!settings || !region) return
+  const source = layerContext.getImageData(region.x, region.y, region.width, region.height)
+  const destination = destinationContext.getImageData(region.x, region.y, region.width, region.height)
   for (let index = 0; index < source.data.length; index += 4) {
     const sourceGray = Math.round(source.data[index] * 0.299 + source.data[index + 1] * 0.587 + source.data[index + 2] * 0.114)
     const destinationGray = Math.round(destination.data[index] * 0.299 + destination.data[index + 1] * 0.587 + destination.data[index + 2] * 0.114)
@@ -1033,7 +1041,7 @@ function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext
     }
     source.data[index + 3] = Math.round(source.data[index + 3] * opacity)
   }
-  layerContext.putImageData(source, 0, 0)
+  layerContext.putImageData(source, region.x, region.y)
 }
 
 export function filterGraphRasterRegion(canvas: Pick<HTMLCanvasElement, 'width' | 'height'>, bounds: LayerBounds, filterGraph: FilterGraphNode[]): RasterRegion | null {
@@ -1070,6 +1078,12 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   if (!compositionContext) return
   compositionContext.clearRect(0, 0, composition.width, composition.height)
   drawGeometryTransformedLayer(compositionContext, composition, layer, assets, resources)
+  const bounds = getLayerBounds(compositionContext, canvas, layer, assets)
+  const rasterRegion = !bounds
+    ? null
+    : geometryTransformIsIdentity(layer.geometryTransform)
+      ? filterGraphRasterRegion(canvas, bounds, filterGraph)
+      : { x: 0, y: 0, width: canvas.width, height: canvas.height }
   if (filterGraph.length) {
     const originalCanvas = prepareScratchCanvas(filterGraphOriginalCanvas, canvas)
     filterGraphOriginalCanvas = originalCanvas
@@ -1089,13 +1103,9 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
         compositionContext.drawImage(filterGraphBlurCanvas, 0, 0)
       }
     }
-    const bounds = getLayerBounds(compositionContext, canvas, layer, assets)
-    const filterRegion = bounds && geometryTransformIsIdentity(layer.geometryTransform)
-      ? filterGraphRasterRegion(canvas, bounds, filterGraph)
-      : { x: 0, y: 0, width: canvas.width, height: canvas.height }
-    if (filterRegion) {
-      const pixels = compositionContext.getImageData(filterRegion.x, filterRegion.y, filterRegion.width, filterRegion.height)
-      compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph, { x: filterRegion.x, y: filterRegion.y }), filterRegion.x, filterRegion.y)
+    if (rasterRegion) {
+      const pixels = compositionContext.getImageData(rasterRegion.x, rasterRegion.y, rasterRegion.width, rasterRegion.height)
+      compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph, { x: rasterRegion.x, y: rasterRegion.y }), rasterRegion.x, rasterRegion.y)
     }
     const filterMask = layer.filterMaskAssetId ? canvasImageResource(resources, assets, layer.filterMaskAssetId)?.source : null
     if (filterMask && originalContext) {
@@ -1122,7 +1132,7 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
     compositionContext.drawImage(mask, 0, 0, composition.width, composition.height)
     compositionContext.restore()
   }
-  applyBlendIf(compositionContext, context, canvas, layer)
+  applyBlendIf(compositionContext, context, layer, rasterRegion)
   context.drawImage(composition, 0, 0)
 }
 
@@ -1710,9 +1720,7 @@ function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanv
   adjustmentContext.drawImage(canvas, 0, 0)
   const advanced = adjustment.adjustment && adjustment.adjustment.type !== 'brightness/contrast' && adjustment.adjustment.type !== 'hue/saturation'
   if (advanced) {
-    const pixels = adjustmentContext.getImageData(0, 0, canvas.width, canvas.height)
-    applyAdvancedAdjustment(pixels, adjustment.adjustment!)
-    adjustmentContext.putImageData(pixels, 0, 0)
+    mutateCanvasStripes(adjustmentContext, canvas, (pixels) => applyAdvancedAdjustment(pixels, adjustment.adjustment!))
   }
   context.save()
   context.globalAlpha = adjustment.opacity / 100
@@ -1726,43 +1734,43 @@ function applyDocumentColorOutput(context: CanvasRenderingContext2D, canvas: HTM
   const mode = documentState.colorMode ?? 'rgb'
   const settings = documentState.colorSettings
   if (mode === 'rgb' && !settings?.proofEnabled && !settings?.gamutWarning) return
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
   const proof = settings?.proofLut
   const proofLut: CubeLut | null = proof ? { size: proof.size, values: Array.from({ length: proof.size ** 3 }, (_, index) => [proof.data[index * 3] / 255, proof.data[index * 3 + 1] / 255, proof.data[index * 3 + 2] / 255]), domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'red-fastest' } : null
   const indexedSteps = Math.max(2, Math.round(Math.cbrt(documentState.indexedColors ?? 256)))
-  for (let offset = 0; offset < pixels.data.length; offset += 4) {
-    if (pixels.data[offset + 3] === 0) continue
-    let red = pixels.data[offset]
-    let green = pixels.data[offset + 1]
-    let blue = pixels.data[offset + 2]
-    if (mode === 'grayscale') red = green = blue = Math.round(red * 0.299 + green * 0.587 + blue * 0.114)
-    else if (mode === 'indexed') {
-      red = Math.round(red / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
-      green = Math.round(green / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
-      blue = Math.round(blue / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
-    } else if (mode === 'cmyk') {
-      const black = 1 - Math.max(red, green, blue) / 255
-      const cyan = (1 - red / 255 - black) / Math.max(0.0001, 1 - black)
-      const magenta = (1 - green / 255 - black) / Math.max(0.0001, 1 - black)
-      const yellow = (1 - blue / 255 - black) / Math.max(0.0001, 1 - black)
-      const inkScale = Math.min(1, 3 / Math.max(0.0001, cyan + magenta + yellow + black))
-      red = 255 * (1 - Math.min(1, cyan * inkScale) * (1 - black * inkScale) - black * inkScale)
-      green = 255 * (1 - Math.min(1, magenta * inkScale) * (1 - black * inkScale) - black * inkScale)
-      blue = 255 * (1 - Math.min(1, yellow * inkScale) * (1 - black * inkScale) - black * inkScale)
-    }
-    if (proofLut && (settings?.proofEnabled || settings?.gamutWarning)) {
-      const original: [number, number, number] = [red, green, blue]
-      if (settings.proofEnabled) [red, green, blue] = sampleCubeLut(proofLut, red, green, blue)
-      if (settings.gamutWarning && proof) {
-        const r = Math.round(original[0] / 255 * (proof.size - 1)); const g = Math.round(original[1] / 255 * (proof.size - 1)); const b = Math.round(original[2] / 255 * (proof.size - 1))
-        if (proof.gamut[r + g * proof.size + b * proof.size * proof.size]) [red, green, blue] = [255, 0, 255]
+  mutateCanvasStripes(context, canvas, (pixels) => {
+    for (let offset = 0; offset < pixels.data.length; offset += 4) {
+      if (pixels.data[offset + 3] === 0) continue
+      let red = pixels.data[offset]
+      let green = pixels.data[offset + 1]
+      let blue = pixels.data[offset + 2]
+      if (mode === 'grayscale') red = green = blue = Math.round(red * 0.299 + green * 0.587 + blue * 0.114)
+      else if (mode === 'indexed') {
+        red = Math.round(red / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+        green = Math.round(green / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+        blue = Math.round(blue / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+      } else if (mode === 'cmyk') {
+        const black = 1 - Math.max(red, green, blue) / 255
+        const cyan = (1 - red / 255 - black) / Math.max(0.0001, 1 - black)
+        const magenta = (1 - green / 255 - black) / Math.max(0.0001, 1 - black)
+        const yellow = (1 - blue / 255 - black) / Math.max(0.0001, 1 - black)
+        const inkScale = Math.min(1, 3 / Math.max(0.0001, cyan + magenta + yellow + black))
+        red = 255 * (1 - Math.min(1, cyan * inkScale) * (1 - black * inkScale) - black * inkScale)
+        green = 255 * (1 - Math.min(1, magenta * inkScale) * (1 - black * inkScale) - black * inkScale)
+        blue = 255 * (1 - Math.min(1, yellow * inkScale) * (1 - black * inkScale) - black * inkScale)
       }
+      if (proofLut && (settings?.proofEnabled || settings?.gamutWarning)) {
+        const original: [number, number, number] = [red, green, blue]
+        if (settings.proofEnabled) [red, green, blue] = sampleCubeLut(proofLut, red, green, blue)
+        if (settings.gamutWarning && proof) {
+          const r = Math.round(original[0] / 255 * (proof.size - 1)); const g = Math.round(original[1] / 255 * (proof.size - 1)); const b = Math.round(original[2] / 255 * (proof.size - 1))
+          if (proof.gamut[r + g * proof.size + b * proof.size * proof.size]) [red, green, blue] = [255, 0, 255]
+        }
+      }
+      pixels.data[offset] = Math.max(0, Math.min(255, Math.round(red)))
+      pixels.data[offset + 1] = Math.max(0, Math.min(255, Math.round(green)))
+      pixels.data[offset + 2] = Math.max(0, Math.min(255, Math.round(blue)))
     }
-    pixels.data[offset] = Math.max(0, Math.min(255, Math.round(red)))
-    pixels.data[offset + 1] = Math.max(0, Math.min(255, Math.round(green)))
-    pixels.data[offset + 2] = Math.max(0, Math.min(255, Math.round(blue)))
-  }
-  context.putImageData(pixels, 0, 0)
+  })
 }
 
 const groupCompositionCanvases: HTMLCanvasElement[] = []
