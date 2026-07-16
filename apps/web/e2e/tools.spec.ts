@@ -286,6 +286,49 @@ test.describe('built-in tools', () => {
     expect(runtimeErrors).toEqual([])
   })
 
+  test('every pixel-retouch mode commits tiled edits on a rotated masked target', async ({ page }) => {
+    const runtimeErrors: string[] = []
+    page.on('pageerror', (error) => runtimeErrors.push(error.message))
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    await page.getByRole('button', { name: 'Brush tool', exact: true }).click()
+    const brush = page.getByLabel('Brush surface')
+    const bounds = await brush.boundingBox()
+    expect(bounds).not.toBeNull()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.32, bounds!.y + bounds!.height * 0.4)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.68, bounds!.y + bounds!.height * 0.62, { steps: 18 })
+    await page.mouse.up()
+    await page.getByRole('slider', { name: 'Rotation', exact: true }).fill('12')
+    await page.getByRole('button', { name: '+ Vector mask', exact: true }).click()
+
+    const canvas = page.getByLabel('Composition canvas')
+    const modes = [
+      ['Color Replacement', 'color-replacement'],
+      ['Mixer Brush', 'mixer-brush'],
+      ['History Brush', 'history-brush'],
+      ['Pattern Stamp', 'pattern-stamp'],
+      ['Sponge', 'sponge'],
+      ['Blur', 'blur'],
+      ['Sharpen', 'sharpen'],
+      ['Smudge', 'smudge'],
+    ] as const
+    for (let index = 0; index < modes.length; index += 1) {
+      const [label, mode] = modes[index]
+      await page.getByRole('button', { name: `${label} tool`, exact: true }).click()
+      const overlay = page.getByLabel(`${mode} surface`)
+      const revisionBefore = await canvas.getAttribute('data-render-revision')
+      const y = bounds!.y + bounds!.height * (0.43 + index * 0.018)
+      await page.mouse.move(bounds!.x + bounds!.width * 0.4, y)
+      await page.mouse.down()
+      await page.mouse.move(bounds!.x + bounds!.width * 0.6, y + 12, { steps: 8 })
+      await expect(overlay).toBeVisible()
+      await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBefore)
+      await page.mouse.up()
+    }
+    expect(runtimeErrors).toEqual([])
+  })
+
   test('paint bucket and contiguous selections complete through cancellable workers', async ({ page }) => {
     const runtimeErrors: string[] = []
     page.on('pageerror', (error) => runtimeErrors.push(error.message))
