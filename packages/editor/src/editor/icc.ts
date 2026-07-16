@@ -1,4 +1,5 @@
 import type { AdjustmentDescriptor } from './types'
+import type { DocumentColorSettings, IccProfileReference } from './types'
 
 type ColorLookup = Extract<AdjustmentDescriptor, { type: 'color lookup' }>
 type LittleCms = typeof import('@kittl/little-cms')
@@ -20,6 +21,73 @@ async function littleCms() {
     })
   }
   return modulePromise
+}
+
+function intentValue(lcms: LittleCms, intent: DocumentColorSettings['intent']) {
+  return intent === 'perceptual' ? lcms.CmsIntent.Percepttual : intent === 'absolute' ? lcms.CmsIntent.AbsoluteColorimetric : lcms.CmsIntent.RelativeColorimetric
+}
+
+function profileFormat(lcms: LittleCms, formats: Formats, profile: Parameters<LittleCms['cmsGetColorSpace']>[0]) {
+  const space = lcms.cmsGetColorSpace(profile).valueOrThrow
+  if (space === lcms.IccColorSpaceMap.CMYK) return formats.TYPE_CMYK_8
+  if (space === lcms.IccColorSpaceMap.GRAY) return formats.TYPE_GRAY_8
+  return formats.TYPE_RGB_8
+}
+
+export async function inspectIccProfile(bytes: Uint8Array): Promise<IccProfileReference> {
+  const fallback = new TextDecoder('ascii').decode(bytes.slice(16, 20)).trim() || 'ICC profile'
+  const { lcms } = await littleCms()
+  const profile = lcms.cmsOpenProfileFromMem(bytes).valueOrThrow
+  try {
+    const description = lcms.cmsGetProfileInfoASCII(profile, lcms.CmsPrintInfoType.Description, 'en', 'US').value
+    return { name: description?.trim() || fallback, bytes: [...bytes] }
+  } finally { lcms.cmsCloseProfile(profile) }
+}
+
+export async function convertIccImageData(pixels: ImageData, source: IccProfileReference | undefined, target: IccProfileReference, intent: DocumentColorSettings['intent'], blackPointCompensation: boolean) {
+  const { lcms, formats, flags } = await littleCms()
+  const sourceProfile = source?.bytes.length ? lcms.cmsOpenProfileFromMem(Uint8Array.from(source.bytes)).valueOrThrow : lcms.cmsCreate_sRGBProfile().valueOrThrow
+  const targetProfile = lcms.cmsOpenProfileFromMem(Uint8Array.from(target.bytes)).valueOrThrow
+  const displayProfile = lcms.cmsCreate_sRGBProfile().valueOrThrow
+  let toTarget: ReturnType<typeof lcms.cmsCreateTransform>['value']
+  let toDisplay: ReturnType<typeof lcms.cmsCreateTransform>['value']
+  try {
+    let transformFlags = flags.iniFlags()
+    transformFlags = flags.setBlackPointCompensation(transformFlags, blackPointCompensation)
+    const targetFormat = profileFormat(lcms, formats, targetProfile)
+    toTarget = lcms.cmsCreateTransform(sourceProfile, formats.TYPE_RGB_8, targetProfile, targetFormat, intentValue(lcms, intent), transformFlags).valueOrThrow
+    toDisplay = lcms.cmsCreateTransform(targetProfile, targetFormat, displayProfile, formats.TYPE_RGB_8, intentValue(lcms, intent), transformFlags).valueOrThrow
+    const rgb = new Uint8Array(pixels.width * pixels.height * 3)
+    for (let pixel = 0; pixel < pixels.width * pixels.height; pixel += 1) rgb.set(pixels.data.slice(pixel * 4, pixel * 4 + 3), pixel * 3)
+    const encoded = lcms.cmsDoTransform(toTarget, rgb, pixels.width * pixels.height).valueOrThrow
+    const display = lcms.cmsDoTransform(toDisplay, encoded, pixels.width * pixels.height).valueOrThrow
+    const output = new ImageData(pixels.width, pixels.height)
+    for (let pixel = 0; pixel < pixels.width * pixels.height; pixel += 1) {
+      output.data.set(display.slice(pixel * 3, pixel * 3 + 3), pixel * 4)
+      output.data[pixel * 4 + 3] = pixels.data[pixel * 4 + 3]
+    }
+    return output
+  } finally {
+    if (toTarget) lcms.cmsDeleteTransform(toTarget)
+    if (toDisplay) lcms.cmsDeleteTransform(toDisplay)
+    lcms.cmsCloseProfile(sourceProfile)
+    lcms.cmsCloseProfile(targetProfile)
+    lcms.cmsCloseProfile(displayProfile)
+  }
+}
+
+export async function bakeProofProfile(profile: IccProfileReference, intent: DocumentColorSettings['intent'], blackPointCompensation: boolean, size = 17) {
+  const input = lutInputs(size)
+  const pixels = new ImageData(size ** 3, 1)
+  for (let pixel = 0; pixel < size ** 3; pixel += 1) { pixels.data.set(input.slice(pixel * 3, pixel * 3 + 3), pixel * 4); pixels.data[pixel * 4 + 3] = 255 }
+  const converted = await convertIccImageData(pixels, undefined, profile, intent, blackPointCompensation)
+  const data: number[] = []
+  const gamut: number[] = []
+  for (let pixel = 0; pixel < size ** 3; pixel += 1) {
+    data.push(converted.data[pixel * 4], converted.data[pixel * 4 + 1], converted.data[pixel * 4 + 2])
+    gamut.push(Math.abs(converted.data[pixel * 4] - input[pixel * 3]) + Math.abs(converted.data[pixel * 4 + 1] - input[pixel * 3 + 1]) + Math.abs(converted.data[pixel * 4 + 2] - input[pixel * 3 + 2]) > 36 ? 1 : 0)
+  }
+  return { size, data, gamut }
 }
 
 function lutInputs(size: number) {

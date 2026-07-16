@@ -1589,6 +1589,49 @@ function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanv
   context.restore()
 }
 
+function applyDocumentColorOutput(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, documentState: EditorDocument) {
+  const mode = documentState.colorMode ?? 'rgb'
+  const settings = documentState.colorSettings
+  if (mode === 'rgb' && !settings?.proofEnabled && !settings?.gamutWarning) return
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height)
+  const proof = settings?.proofLut
+  const proofLut: CubeLut | null = proof ? { size: proof.size, values: Array.from({ length: proof.size ** 3 }, (_, index) => [proof.data[index * 3] / 255, proof.data[index * 3 + 1] / 255, proof.data[index * 3 + 2] / 255]), domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'red-fastest' } : null
+  const indexedSteps = Math.max(2, Math.round(Math.cbrt(documentState.indexedColors ?? 256)))
+  for (let offset = 0; offset < pixels.data.length; offset += 4) {
+    if (pixels.data[offset + 3] === 0) continue
+    let red = pixels.data[offset]
+    let green = pixels.data[offset + 1]
+    let blue = pixels.data[offset + 2]
+    if (mode === 'grayscale') red = green = blue = Math.round(red * 0.299 + green * 0.587 + blue * 0.114)
+    else if (mode === 'indexed') {
+      red = Math.round(red / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+      green = Math.round(green / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+      blue = Math.round(blue / 255 * (indexedSteps - 1)) / (indexedSteps - 1) * 255
+    } else if (mode === 'cmyk') {
+      const black = 1 - Math.max(red, green, blue) / 255
+      const cyan = (1 - red / 255 - black) / Math.max(0.0001, 1 - black)
+      const magenta = (1 - green / 255 - black) / Math.max(0.0001, 1 - black)
+      const yellow = (1 - blue / 255 - black) / Math.max(0.0001, 1 - black)
+      const inkScale = Math.min(1, 3 / Math.max(0.0001, cyan + magenta + yellow + black))
+      red = 255 * (1 - Math.min(1, cyan * inkScale) * (1 - black * inkScale) - black * inkScale)
+      green = 255 * (1 - Math.min(1, magenta * inkScale) * (1 - black * inkScale) - black * inkScale)
+      blue = 255 * (1 - Math.min(1, yellow * inkScale) * (1 - black * inkScale) - black * inkScale)
+    }
+    if (proofLut && (settings?.proofEnabled || settings?.gamutWarning)) {
+      const original: [number, number, number] = [red, green, blue]
+      if (settings.proofEnabled) [red, green, blue] = sampleCubeLut(proofLut, red, green, blue)
+      if (settings.gamutWarning && proof) {
+        const r = Math.round(original[0] / 255 * (proof.size - 1)); const g = Math.round(original[1] / 255 * (proof.size - 1)); const b = Math.round(original[2] / 255 * (proof.size - 1))
+        if (proof.gamut[r + g * proof.size + b * proof.size * proof.size]) [red, green, blue] = [255, 0, 255]
+      }
+    }
+    pixels.data[offset] = Math.max(0, Math.min(255, Math.round(red)))
+    pixels.data[offset + 1] = Math.max(0, Math.min(255, Math.round(green)))
+    pixels.data[offset + 2] = Math.max(0, Math.min(255, Math.round(blue)))
+  }
+  context.putImageData(pixels, 0, 0)
+}
+
 const groupCompositionCanvases: HTMLCanvasElement[] = []
 
 function drawRenderPlan(
@@ -1765,6 +1808,7 @@ export function renderComposition(
   drawPattern(context, canvas.width, canvas.height, document)
 
   drawRenderPlan(context, canvas, document, assets, resources, buildCompositionRenderPlan(document).nodes)
+  applyDocumentColorOutput(context, canvas, document)
 
   if (document.artboards?.length) {
     context.save()

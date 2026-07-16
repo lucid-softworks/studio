@@ -11,6 +11,8 @@ const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
   'set-guides': 'Edit guides',
   'set-grid': 'Change grid',
   'set-artboards': 'Edit artboards',
+  'set-color-mode': 'Change color mode',
+  'set-color-settings': 'Change color management',
   'replace-document': 'Replace document',
   'add-layer': 'Add layer',
   'replace-layer': 'Rasterize layer',

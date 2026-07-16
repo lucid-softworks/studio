@@ -72,6 +72,9 @@ export type SerializedPsdValue = null | boolean | number | string | SerializedPs
 export type DocumentGuide = { id: string; direction: 'horizontal' | 'vertical'; position: number }
 export type DocumentGridSettings = { visible: boolean; spacing: number; subdivisions: number; color: string; snap: boolean }
 export type DocumentArtboard = { id: string; name: string; x: number; y: number; width: number; height: number; background: { kind: 'transparent' | 'color'; color: string } }
+export type DocumentColorMode = 'rgb' | 'grayscale' | 'indexed' | 'cmyk'
+export type IccProfileReference = { name: string; bytes: number[] }
+export type DocumentColorSettings = { workingProfile?: IccProfileReference; proofProfile?: IccProfileReference; intent: 'perceptual' | 'relative' | 'absolute'; blackPointCompensation: boolean; proofEnabled: boolean; gamutWarning: boolean; proofLut?: { size: number; data: number[]; gamut: number[] } }
 export type PsdDocumentMetadata = {
   imageResources?: SerializedPsdValue
   linkedFiles?: SerializedPsdValue[]
@@ -332,6 +335,9 @@ export type EditorDocument = {
   guides?: DocumentGuide[]
   grid?: DocumentGridSettings
   artboards?: DocumentArtboard[]
+  colorMode?: DocumentColorMode
+  indexedColors?: number
+  colorSettings?: DocumentColorSettings
   psdMetadata?: PsdDocumentMetadata
 }
 
@@ -415,6 +421,8 @@ export type DocumentAction =
   | { type: 'set-guides'; guides: DocumentGuide[] }
   | { type: 'set-grid'; patch: Partial<DocumentGridSettings> }
   | { type: 'set-artboards'; artboards: DocumentArtboard[] }
+  | { type: 'set-color-mode'; mode: DocumentColorMode; indexedColors?: number }
+  | { type: 'set-color-settings'; patch: Partial<DocumentColorSettings> }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

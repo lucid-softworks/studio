@@ -121,6 +121,8 @@ function App({ onExit }: AppProps) {
   const fontInputRef = useRef<HTMLInputElement>(null)
   const brushInputRef = useRef<HTMLInputElement>(null)
   const shapeInputRef = useRef<HTMLInputElement>(null)
+  const profileInputRef = useRef<HTMLInputElement>(null)
+  const profileActionRef = useRef<'assign' | 'convert' | 'proof'>('assign')
   const hydratedRef = useRef(false)
   const rasterUndoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
@@ -1416,6 +1418,42 @@ function App({ onExit }: AppProps) {
     setNotice(`Converted the document working precision to ${bitDepth} bits/channel.`, 'success')
   }
 
+  const chooseColorProfile = (action: 'assign' | 'convert' | 'proof') => {
+    profileActionRef.current = action
+    profileInputRef.current?.click()
+  }
+
+  const loadColorProfile = async (file: File) => {
+    setIsLoading(true)
+    try {
+      const { bakeProofProfile, convertIccImageData, inspectIccProfile } = await import('./editor/icc')
+      const profile = await inspectIccProfile(new Uint8Array(await file.arrayBuffer()))
+      const settings = document.colorSettings ?? { intent: 'relative' as const, blackPointCompensation: true, proofEnabled: false, gamutWarning: false }
+      if (profileActionRef.current === 'proof') {
+        const proofLut = await bakeProofProfile(profile, settings.intent, settings.blackPointCompensation)
+        dispatch({ type: 'set-color-settings', patch: { proofProfile: profile, proofLut, proofEnabled: true } })
+        setNotice(`Loaded ${profile.name} for local soft proofing.`, 'success')
+      } else {
+        if (profileActionRef.current === 'convert') {
+          for (const [assetId, asset] of Object.entries(assetsRef.current)) {
+            const surface = asset.surface
+            const context = surface?.getContext('2d', { willReadFrequently: true })
+            if (!surface || !context) continue
+            const before = context.getImageData(0, 0, surface.width, surface.height)
+            const after = await convertIccImageData(before, settings.workingProfile, profile, settings.intent, settings.blackPointCompensation)
+            context.putImageData(after, 0, 0)
+            refreshRasterAsset(assetId, { x: 0, y: 0, width: surface.width, height: surface.height })
+            commitRasterEdit({ assetId, x: 0, y: 0, before, after })
+          }
+        }
+        dispatch({ type: 'set-color-settings', patch: { workingProfile: profile } })
+        setNotice(`${profileActionRef.current === 'convert' ? 'Converted to' : 'Assigned'} ${profile.name}.`, 'success')
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That ICC profile could not be loaded.')
+    } finally { setIsLoading(false) }
+  }
+
   const applyWorkspace = (workspace: WorkspacePreset) => {
     setWorkspaceLayout(normalizeWorkspaceLayout(workspace.layout))
     setNotice(`Applied the ${workspace.name} workspace.`, 'success')
@@ -1556,7 +1594,7 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} onContentAwareScale={(layerId, width, height) => void contentAwareScaleLayer(layerId, width, height)} canvasRef={canvasRef} renderer={rendererCapabilities.activeRenderer} onBitDepthChange={changeDocumentBitDepth} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} onContentAwareScale={(layerId, width, height) => void contentAwareScaleLayer(layerId, width, height)} canvasRef={canvasRef} renderer={rendererCapabilities.activeRenderer} onBitDepthChange={changeDocumentBitDepth} onChooseColorProfile={chooseColorProfile} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} onPerspectiveCrop={perspectiveCropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} customShapes={customShapes} onSaveCustomShape={saveCustomShape} onApplyCustomShape={applyCustomShape} onRemoveCustomShape={(id) => setCustomShapes((current) => current.filter((shape) => shape.id !== id))} onImportCustomShape={() => shapeInputRef.current?.click()} onExportPath={exportDocumentPath} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>
@@ -1570,6 +1608,7 @@ function App({ onExit }: AppProps) {
       <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
       <input ref={brushInputRef} type="file" className="sr-only" accept=".studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
       <input ref={shapeInputRef} type="file" className="sr-only" accept=".studio-shape,application/json,application/x-studio-shape+json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadCustomShapeFile(file); event.target.value = '' }} />
+      <input ref={profileInputRef} type="file" className="sr-only" accept=".icc,.icm,application/vnd.iccprofile" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadColorProfile(file); event.target.value = '' }} />
 
       {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
       {selectionWorkspaceSource && <SelectAndMaskWorkspace source={selectionWorkspaceSource} onPreview={setSelection} onApply={() => setSelectionWorkspaceSource(null)} onCancel={() => { setSelection(cloneSelection(selectionWorkspaceSource)); setSelectionWorkspaceSource(null) }} />}

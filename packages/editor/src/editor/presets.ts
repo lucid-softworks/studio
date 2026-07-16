@@ -44,6 +44,9 @@ export const initialDocument: EditorDocument = {
   guides: [],
   grid: { visible: false, spacing: 100, subdivisions: 4, color: '#38bdf8', snap: true },
   artboards: [],
+  colorMode: 'rgb',
+  indexedColors: 256,
+  colorSettings: { intent: 'relative', blackPointCompensation: true, proofEnabled: false, gamutWarning: false },
 }
 
 export function createId() {

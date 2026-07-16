@@ -82,6 +82,10 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
     }
     case 'set-artboards':
       return { ...state, artboards: action.artboards }
+    case 'set-color-mode':
+      return { ...state, colorMode: action.mode, indexedColors: action.indexedColors ?? state.indexedColors ?? 256 }
+    case 'set-color-settings':
+      return { ...state, colorSettings: { ...(state.colorSettings ?? { intent: 'relative', blackPointCompensation: true, proofEnabled: false, gamutWarning: false }), ...action.patch } }
     case 'replace-document':
       return action.document
     case 'add-layer': {
@@ -238,6 +242,9 @@ const documentFields = [
   'guides',
   'grid',
   'artboards',
+  'colorMode',
+  'indexedColors',
+  'colorSettings',
   'psdMetadata',
 ] as const satisfies readonly (keyof EditorDocument)[]
 

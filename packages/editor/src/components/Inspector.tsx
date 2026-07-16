@@ -31,6 +31,7 @@ type InspectorProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   renderer: 'webgpu' | 'canvas2d'
   onBitDepthChange: (bitDepth: 8 | 16 | 32) => void
+  onChooseColorProfile: (action: 'assign' | 'convert' | 'proof') => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -69,7 +70,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, renderer, onBitDepthChange, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, renderer, onBitDepthChange, onChooseColorProfile, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
   const [guideLayout, setGuideLayout] = useState({ columns: 3, rows: 3, margin: 80, gutter: 24 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
@@ -275,6 +276,16 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 <RangeControl label="Darken" value={document.background.imageOverlay} min={0} max={80} suffix="%" onChange={(value) => dispatch({ type: 'set-background', patch: { imageOverlay: value } }, { groupKey: 'background-overlay' })} onChangeEnd={endHistoryGroup} />
               </div>
             )}
+          </ControlSection>
+
+          <ControlSection title="Color management">
+            <label className="block text-[9px] text-zinc-600">Document mode<select aria-label="Document color mode" value={document.colorMode ?? 'rgb'} onChange={(event) => dispatch({ type: 'set-color-mode', mode: event.target.value as 'rgb' | 'grayscale' | 'indexed' | 'cmyk' })} className={`${fieldClass} mt-1`}><option value="rgb">RGB</option><option value="grayscale">Grayscale</option><option value="indexed">Indexed colour</option><option value="cmyk">CMYK preview</option></select></label>
+            {document.colorMode === 'indexed' && <RangeControl label="Indexed colours" value={document.indexedColors ?? 256} min={2} max={256} onChange={(indexedColors) => dispatch({ type: 'set-color-mode', mode: 'indexed', indexedColors }, { groupKey: 'indexed-colors' })} onChangeEnd={endHistoryGroup} />}
+            <div className="mt-3 rounded-lg border border-white/[0.07] bg-black/20 p-2.5"><p className="truncate text-[10px] text-zinc-400">Working · {document.colorSettings?.workingProfile?.name ?? 'sRGB'}</p><div className="mt-2 grid grid-cols-2 gap-1"><button type="button" onClick={() => onChooseColorProfile('assign')} className="rounded border border-white/[0.07] px-2 py-1.5 text-[8px] text-zinc-600 hover:text-zinc-200">Assign ICC…</button><button type="button" onClick={() => onChooseColorProfile('convert')} className="rounded border border-white/[0.07] px-2 py-1.5 text-[8px] text-zinc-600 hover:text-zinc-200">Convert to ICC…</button></div></div>
+            <div className="mt-2 rounded-lg border border-white/[0.07] bg-black/20 p-2.5"><p className="truncate text-[10px] text-zinc-400">Proof · {document.colorSettings?.proofProfile?.name ?? 'None'}</p><button type="button" onClick={() => onChooseColorProfile('proof')} className="mt-2 w-full rounded border border-white/[0.07] px-2 py-1.5 text-[8px] text-zinc-600 hover:text-zinc-200">Load proof ICC…</button></div>
+            <div className="mt-2 grid grid-cols-2 gap-1"><button type="button" disabled={!document.colorSettings?.proofLut} aria-pressed={document.colorSettings?.proofEnabled === true} onClick={() => dispatch({ type: 'set-color-settings', patch: { proofEnabled: !document.colorSettings?.proofEnabled } })} className={`rounded border px-2 py-1.5 text-[8px] ${document.colorSettings?.proofEnabled ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-600 disabled:opacity-30'}`}>Proof colours</button><button type="button" disabled={!document.colorSettings?.proofLut} aria-pressed={document.colorSettings?.gamutWarning === true} onClick={() => dispatch({ type: 'set-color-settings', patch: { gamutWarning: !document.colorSettings?.gamutWarning } })} className={`rounded border px-2 py-1.5 text-[8px] ${document.colorSettings?.gamutWarning ? 'border-fuchsia-300/20 bg-fuchsia-300/[0.06] text-fuchsia-100' : 'border-white/[0.08] text-zinc-600 disabled:opacity-30'}`}>Gamut warning</button></div>
+            <label className="mt-2 block text-[9px] text-zinc-600">Rendering intent<select aria-label="Rendering intent" value={document.colorSettings?.intent ?? 'relative'} onChange={(event) => dispatch({ type: 'set-color-settings', patch: { intent: event.target.value as 'perceptual' | 'relative' | 'absolute' } })} className={`${fieldClass} mt-1`}><option value="perceptual">Perceptual</option><option value="relative">Relative colorimetric</option><option value="absolute">Absolute colorimetric</option></select></label>
+            <button type="button" aria-pressed={document.colorSettings?.blackPointCompensation !== false} onClick={() => dispatch({ type: 'set-color-settings', patch: { blackPointCompensation: document.colorSettings?.blackPointCompensation === false } })} className={`mt-2 w-full rounded border px-2 py-1.5 text-[8px] ${document.colorSettings?.blackPointCompensation !== false ? 'border-violet-300/20 bg-violet-300/[0.06] text-violet-100' : 'border-white/[0.08] text-zinc-600'}`}>Black point compensation</button>
           </ControlSection>
 
           <ControlSection title="Pattern">

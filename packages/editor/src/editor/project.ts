@@ -127,7 +127,9 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
     if (!artboard || typeof artboard !== 'object' || typeof artboard.id !== 'string') return []
     return [{ ...artboard, name: typeof artboard.name === 'string' ? artboard.name : 'Artboard', x: Number(artboard.x) || 0, y: Number(artboard.y) || 0, width: Math.max(1, Number(artboard.width) || canvasSize.width), height: Math.max(1, Number(artboard.height) || canvasSize.height), background: { kind: artboard.background?.kind === 'color' ? 'color' as const : 'transparent' as const, color: typeof artboard.background?.color === 'string' ? artboard.background.color : '#ffffff' } }]
   }) : []
-  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId, guides: Array.isArray(value.guides) ? value.guides : [], grid, artboards }
+  const colorMode: NonNullable<EditorDocument['colorMode']> = value.colorMode === 'grayscale' || value.colorMode === 'indexed' || value.colorMode === 'cmyk' ? value.colorMode : 'rgb'
+  const colorSettings = { intent: value.colorSettings?.intent === 'perceptual' || value.colorSettings?.intent === 'absolute' ? value.colorSettings.intent : 'relative' as const, blackPointCompensation: value.colorSettings?.blackPointCompensation !== false, proofEnabled: value.colorSettings?.proofEnabled === true, gamutWarning: value.colorSettings?.gamutWarning === true, ...value.colorSettings }
+  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId, guides: Array.isArray(value.guides) ? value.guides : [], grid, artboards, colorMode, indexedColors: Math.max(2, Math.min(256, value.indexedColors ?? 256)), colorSettings }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {
     const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
     normalized = {
