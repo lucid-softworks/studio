@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { browserPerformanceBudgets, type PerformanceFixtureId } from '@studio/editor'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 const fixtures: Array<{ id: PerformanceFixtureId; width: number; height: number; objects: number; folders: number }> = [
   { id: '2k', width: 2560, height: 1440, objects: 12, folders: 0 },
@@ -63,8 +65,12 @@ for (const fixture of fixtures) {
     expect(snapshot!.durations.render.p95Ms).toBeLessThanOrEqual(budget.renderP95Ms)
     expect(snapshot!.durations['pointer-latency'].p95Ms).toBeLessThanOrEqual(budget.pointerP95Ms)
     expect(snapshot!.durations.save.p95Ms).toBeLessThanOrEqual(budget.saveP95Ms)
+    const report = JSON.stringify({ fixture: fixture.id, readyMs, budget, snapshot }, null, 2)
+    const reportDirectory = resolve('test-results/performance')
+    await mkdir(reportDirectory, { recursive: true })
+    await writeFile(resolve(reportDirectory, `${fixture.id}.json`), report)
     await testInfo.attach(`studio-performance-${fixture.id}.json`, {
-      body: JSON.stringify({ fixture: fixture.id, readyMs, budget, snapshot }, null, 2),
+      body: report,
       contentType: 'application/json',
     })
   })
