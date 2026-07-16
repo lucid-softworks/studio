@@ -29,6 +29,7 @@ import { QuickMaskOverlay } from './QuickMaskOverlay'
 import { PixelRetouchOverlay } from './PixelRetouchOverlay'
 import type { GradientStop } from '../editor/gradients'
 import { commandForEvent, type ShortcutMap } from '../editor/shortcuts'
+import { documentRegionToSourceRegion } from '../editor/raster-target'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -343,27 +344,31 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         : selected ? getLayerBounds(context, canvas, selected, assets) : null
       const surfaceContext = surface.getContext('2d', { willReadFrequently: true })
       if (!bounds || !surfaceContext) return true
-      const beforeFull = surfaceContext.getImageData(0, 0, surface.width, surface.height)
-      const afterFull = surfaceContext.getImageData(0, 0, surface.width, surface.height)
+      const sourceRegion = documentRegionToSourceRegion(selection.bounds, bounds, surface.width, surface.height)
+      if (!sourceRegion) return true
+      const beforeRegion = surfaceContext.getImageData(sourceRegion.x, sourceRegion.y, sourceRegion.width, sourceRegion.height)
+      const afterRegion = new ImageData(new Uint8ClampedArray(beforeRegion.data), beforeRegion.width, beforeRegion.height)
       const centerX = bounds.x + bounds.width / 2
       const centerY = bounds.y + bounds.height / 2
       const angle = bounds.rotation * Math.PI / 180
-      let left = surface.width
-      let top = surface.height
+      let left = sourceRegion.width
+      let top = sourceRegion.height
       let right = -1
       let bottom = -1
-      for (let y = 0; y < surface.height; y += 1) {
-        for (let x = 0; x < surface.width; x += 1) {
-          const localX = (x / surface.width - 0.5) * bounds.width
-          const localY = (y / surface.height - 0.5) * bounds.height
+      for (let y = 0; y < sourceRegion.height; y += 1) {
+        for (let x = 0; x < sourceRegion.width; x += 1) {
+          const sourceX = sourceRegion.x + x
+          const sourceY = sourceRegion.y + y
+          const localX = (sourceX / surface.width - 0.5) * bounds.width
+          const localY = (sourceY / surface.height - 0.5) * bounds.height
           const documentX = centerX + localX * Math.cos(angle) - localY * Math.sin(angle)
           const documentY = centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
           const coverage = selectionAlphaAt(maskData, documentX, documentY)
           if (coverage === 0) continue
-          const alphaOffset = (y * surface.width + x) * 4 + 3
-          const nextAlpha = Math.round(afterFull.data[alphaOffset] * (1 - coverage))
-          if (nextAlpha === afterFull.data[alphaOffset]) continue
-          afterFull.data[alphaOffset] = nextAlpha
+          const alphaOffset = (y * sourceRegion.width + x) * 4 + 3
+          const nextAlpha = Math.round(afterRegion.data[alphaOffset] * (1 - coverage))
+          if (nextAlpha === afterRegion.data[alphaOffset]) continue
+          afterRegion.data[alphaOffset] = nextAlpha
           left = Math.min(left, x)
           top = Math.min(top, y)
           right = Math.max(right, x)
@@ -371,11 +376,13 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         }
       }
       if (right >= left) {
-        surfaceContext.putImageData(afterFull, 0, 0)
         const width = right - left + 1
         const height = bottom - top + 1
-        onRasterChange(targetAssetId, { x: left, y: top, width, height })
-        onRasterCommit({ assetId: targetAssetId, x: left, y: top, before: extractImageData(beforeFull, left, top, width, height), after: extractImageData(afterFull, left, top, width, height) })
+        const dirtyX = sourceRegion.x + left
+        const dirtyY = sourceRegion.y + top
+        surfaceContext.putImageData(afterRegion, sourceRegion.x, sourceRegion.y, left, top, width, height)
+        onRasterChange(targetAssetId, { x: dirtyX, y: dirtyY, width, height })
+        onRasterCommit({ assetId: targetAssetId, x: dirtyX, y: dirtyY, before: extractImageData(beforeRegion, left, top, width, height), after: extractImageData(afterRegion, left, top, width, height) })
       }
       return true
     }

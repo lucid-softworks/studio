@@ -34,7 +34,7 @@ A feature is complete only when it has:
 
 - [ ] Extend path and warp interaction coverage from representative anchors, pins, Shift constraints, Alt handle conversion, deletion, and Escape cancellation to exhaustive multi-anchor, linked/unlinked-handle, and every-grid-point cases.
 - [ ] Extend tiled dirty-region regression coverage across every retouch mode and transformed/masked targets; Current & Below sampling now renders and caches only touched 256px source tiles.
-- [ ] Replace remaining full-canvas raster mutation paths with sparse tiles and dirty regions.
+- [ ] Replace remaining whole-surface raster operations (notably content-aware fill, plugin color matrices, ICC conversion, and full-layer filters) with sparse tiles or explicitly bounded jobs; selected-pixel clearing now scans and commits only the inverse-transformed selection bounds.
 - [ ] Replace ag-psd's remaining contiguous PSD/PSB writer buffer with a segmented or seekable worker writer; browser file-handle saves and Studio project serialization now stream incrementally.
 - [ ] Make all long filters, imports, exports, and batch jobs cancelable without corrupting document state.
 - [ ] Meet the interaction budgets defined by the performance fixtures on supported browsers.

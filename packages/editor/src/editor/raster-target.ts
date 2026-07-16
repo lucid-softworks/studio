@@ -56,6 +56,30 @@ export function sourceToCanvas(point: Position, target: RasterTarget) {
   }
 }
 
+export function documentRegionToSourceRegion(region: { x: number; y: number; width: number; height: number }, bounds: LayerBounds, sourceWidth: number, sourceHeight: number) {
+  const centerX = bounds.x + bounds.width / 2
+  const centerY = bounds.y + bounds.height / 2
+  const angle = -bounds.rotation * Math.PI / 180
+  const sourcePoint = (point: Position) => {
+    const dx = point.x - centerX
+    const dy = point.y - centerY
+    const localX = dx * Math.cos(angle) - dy * Math.sin(angle)
+    const localY = dx * Math.sin(angle) + dy * Math.cos(angle)
+    return { x: (localX / bounds.width + 0.5) * sourceWidth, y: (localY / bounds.height + 0.5) * sourceHeight }
+  }
+  const points = [
+    sourcePoint({ x: region.x, y: region.y }),
+    sourcePoint({ x: region.x + region.width, y: region.y }),
+    sourcePoint({ x: region.x + region.width, y: region.y + region.height }),
+    sourcePoint({ x: region.x, y: region.y + region.height }),
+  ]
+  const x = Math.max(0, Math.floor(Math.min(...points.map((point) => point.x))))
+  const y = Math.max(0, Math.floor(Math.min(...points.map((point) => point.y))))
+  const right = Math.min(sourceWidth, Math.ceil(Math.max(...points.map((point) => point.x))))
+  const bottom = Math.min(sourceHeight, Math.ceil(Math.max(...points.map((point) => point.y))))
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null
+}
+
 export function constrainRasterRegion(before: ImageData, after: ImageData, x: number, y: number, target: RasterTarget, selectionData: ImageData | null) {
   if (!selectionData) return after
   const angle = target.bounds.rotation * Math.PI / 180
