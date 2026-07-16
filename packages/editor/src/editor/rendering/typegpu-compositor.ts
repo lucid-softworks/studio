@@ -1,5 +1,6 @@
 import { common, d, std, tgpu, type TgpuRoot } from 'typegpu'
 import { typeGpuBlendModeCodes, type TypeGpuBlendMode } from './typegpu-blend-modes'
+import type { FilterGraphNode } from '../types'
 
 type TypeGpuImageSource = HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | ImageBitmap | ImageData | OffscreenCanvas | VideoFrame
 
@@ -99,6 +100,11 @@ export const gpuTintEffect = tgpu.fn(
   return d.vec4f(color, std.mul(sourceAlpha, opacity))
 })
 
+const gpuProceduralNoise = tgpu.fn([d.vec2f, d.f32], d.f32)((position, seed) => {
+  'use gpu'
+  return std.fract(std.mul(std.sin(std.add(std.dot(position, d.vec2f(12.9898, 78.233)), seed)), 43758.5453))
+})
+
 export function calculateEffectOffset(angle: number, distance: number, width: number, height: number) {
   const radians = angle * Math.PI / 180
   return {
@@ -189,6 +195,7 @@ export type TypeGpuCompositionTextureLayer = {
     dropShadow: { enabled: boolean; color: string; opacity: number; angle: number; distance: number; blur: number }
     outerGlow: { enabled: boolean; color: string; opacity: number; size: number }
   } | null
+  filterGraph?: FilterGraphNode[]
 }
 
 export type TypeGpuCompositionAdjustment = {
@@ -294,6 +301,16 @@ export function createTypeGpuLayerCompositor(
   const filterGrayscale = root.createUniform(d.f32, 0)
   const filterSepia = root.createUniform(d.f32, 0)
   const filterInvert = root.createUniform(d.f32, 0)
+  const graphPixelate = root.createUniform(d.f32, 0)
+  const graphNoise = root.createUniform(d.f32, 0)
+  const graphWave = root.createUniform(d.f32, 0)
+  const graphWaveSize = root.createUniform(d.f32, 1)
+  const graphSharpen = root.createUniform(d.f32, 0)
+  const graphEmboss = root.createUniform(d.f32, 0)
+  const graphEmbossSize = root.createUniform(d.f32, 1)
+  const graphClouds = root.createUniform(d.f32, 0)
+  const graphCloudSize = root.createUniform(d.f32, 1)
+  const graphSeed = root.createUniform(d.f32, 0)
   const hasColorOverlay = root.createUniform(d.u32, 0)
   const colorOverlayColor = root.createUniform(d.vec3f, d.vec3f(0))
   const colorOverlayOpacity = root.createUniform(d.f32, 0)
@@ -338,7 +355,15 @@ export function createTypeGpuLayerCompositor(
     vertex: common.fullScreenTriangle,
     fragment: ({ uv }) => {
       'use gpu'
-      const rawSourceSample = std.textureSample(layerView.$, sampler.$, uv)
+      const pixelCell = std.mul(texelSize.$, std.max(graphPixelate.$, 1))
+      let graphUv = std.select(uv, std.add(std.mul(std.floor(std.div(uv, pixelCell)), pixelCell), std.mul(pixelCell, 0.5)), graphPixelate.$ > 1)
+      const waveOffset = std.mul(std.sin(std.mul(std.div(graphUv.y, std.mul(texelSize.$.y, std.max(graphWaveSize.$, 1))), 6.283185)), std.mul(graphWave.$, texelSize.$.x))
+      graphUv = std.add(graphUv, d.vec2f(waveOffset, 0))
+      let rawSourceSample = std.textureSample(layerView.$, sampler.$, graphUv)
+      if (graphSharpen.$ > 0) {
+        const neighbors = std.add(std.add(std.textureSample(layerView.$, sampler.$, std.add(graphUv, d.vec2f(texelSize.$.x, 0))), std.textureSample(layerView.$, sampler.$, std.sub(graphUv, d.vec2f(texelSize.$.x, 0)))), std.add(std.textureSample(layerView.$, sampler.$, std.add(graphUv, d.vec2f(0, texelSize.$.y))), std.textureSample(layerView.$, sampler.$, std.sub(graphUv, d.vec2f(0, texelSize.$.y)))))
+        rawSourceSample = std.sub(std.mul(rawSourceSample, std.add(1, std.mul(graphSharpen.$, 4))), std.mul(neighbors, graphSharpen.$))
+      }
       const blurredSourceSample = std.textureSample(blurSampleViews[1].$, sampler.$, uv)
       const filteredSourceSample = std.select(rawSourceSample, blurredSourceSample, blurRadius.$ > 0)
       const sourceSample = std.select(filteredSourceSample, rawSourceSample, sourceKind.$ === 1)
@@ -386,6 +411,15 @@ export function createTypeGpuLayerCompositor(
             filterInvert.$,
           )
         }
+        const noise = std.sub(gpuProceduralNoise(std.div(graphUv, texelSize.$), graphSeed.$), 0.5)
+        source = std.add(source, d.vec3f(std.mul(noise, graphNoise.$)))
+        if (graphEmboss.$ > 0) {
+          const embossSample = std.textureSample(layerView.$, sampler.$, std.sub(graphUv, std.mul(texelSize.$, graphEmbossSize.$))).xyz
+          source = std.mix(source, std.add(d.vec3f(0.5), std.sub(source, embossSample)), graphEmboss.$)
+        }
+        const cloud = gpuProceduralNoise(std.div(graphUv, std.mul(texelSize.$, graphCloudSize.$)), graphSeed.$)
+        source = std.mix(source, d.vec3f(cloud), graphClouds.$)
+        source = std.clamp(source, d.vec3f(0), d.vec3f(1))
       }
       return gpuCompositePixel(backdropSample, source, sourceAlpha, blendMode.$)
     },
@@ -476,7 +510,20 @@ export function createTypeGpuLayerCompositor(
             filterSepia.write(layer.filters.sepia / 100)
             filterInvert.write(layer.filters.invert / 100)
           }
-          blurRadius.write(layer.filters?.blur ?? 0)
+          const graph = (layer.filterGraph ?? []).filter((node) => node.enabled)
+          const graphValue = (kind: FilterGraphNode['kind'], field: 'amount' | 'size', fallback = 0) => graph.findLast((node) => node.kind === kind)?.[field] ?? fallback
+          graphPixelate.write(graphValue('pixelate', 'size'))
+          graphNoise.write(graphValue('noise', 'amount') / 100)
+          graphWave.write(graphValue('wave', 'amount') / 5)
+          graphWaveSize.write(graphValue('wave', 'size', 1))
+          graphSharpen.write(graphValue('sharpen', 'amount') / 100)
+          graphEmboss.write(graphValue('emboss', 'amount') / 100)
+          graphEmbossSize.write(graphValue('emboss', 'size', 1))
+          graphClouds.write(graphValue('clouds', 'amount') / 100)
+          graphCloudSize.write(graphValue('clouds', 'size', 1))
+          graphSeed.write(graph.findLast((node) => node.kind === 'noise' || node.kind === 'clouds')?.seed ?? 0)
+          const graphBlur = Math.max(layer.filters?.blur ?? 0, graphValue('gaussian-blur', 'size'))
+          blurRadius.write(graphBlur)
           const overlay = layer.effects?.colorOverlay
           hasColorOverlay.write(overlay?.enabled ? 1 : 0)
           if (overlay?.enabled) {
@@ -487,8 +534,8 @@ export function createTypeGpuLayerCompositor(
           if (layer.clipSource) clipTexture.write(layer.clipSource)
           hasMask.write(layer.maskSource ? 1 : 0)
           hasClip.write(layer.clipSource ? 1 : 0)
-          if ((layer.filters?.blur ?? 0) > 0) {
-            blurLayerSource(layer.filters?.blur ?? 0)
+          if (graphBlur > 0) {
+            blurLayerSource(graphBlur)
           }
         }
         blendMode.write(typeGpuBlendModeCodes[layer.blendMode])
@@ -516,6 +563,16 @@ export function createTypeGpuLayerCompositor(
       filterGrayscale.buffer.destroy()
       filterSepia.buffer.destroy()
       filterInvert.buffer.destroy()
+      graphPixelate.buffer.destroy()
+      graphNoise.buffer.destroy()
+      graphWave.buffer.destroy()
+      graphWaveSize.buffer.destroy()
+      graphSharpen.buffer.destroy()
+      graphEmboss.buffer.destroy()
+      graphEmbossSize.buffer.destroy()
+      graphClouds.buffer.destroy()
+      graphCloudSize.buffer.destroy()
+      graphSeed.buffer.destroy()
       hasColorOverlay.buffer.destroy()
       colorOverlayColor.buffer.destroy()
       colorOverlayOpacity.buffer.destroy()

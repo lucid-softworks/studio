@@ -13,6 +13,7 @@ import { useState, type CSSProperties, type DragEvent, type RefObject } from 're
 import { normalizeGeometryTransform } from '../editor/transform'
 import { CurvesControl } from './CurvesControl'
 import { AdvancedAdjustmentControls } from './AdvancedAdjustmentControls'
+import { FilterGraphControl } from './FilterGraphControl'
 
 type InspectorProps = {
   document: EditorDocument
@@ -28,6 +29,7 @@ type InspectorProps = {
   onExportSmartObject: () => void
   onContentAwareScale: (layerId: string, width: number, height: number) => void
   canvasRef: RefObject<HTMLCanvasElement | null>
+  renderer: 'webgpu' | 'canvas2d'
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -66,7 +68,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, renderer, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
   const [guideLayout, setGuideLayout] = useState({ columns: 3, rows: 3, margin: 80, gutter: 24 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
@@ -362,6 +364,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
             <RangeControl label="Sepia" value={filters.sepia} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, sepia: value } }, `sepia-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Invert" value={filters.invert} min={0} max={100} suffix="%" onChange={(value) => updateLayer(selected, { filters: { ...filters, invert: value } }, `invert-${selected.id}`)} onChangeEnd={endHistoryGroup} />
             <RangeControl label="Blur" value={filters.blur} min={0} max={40} suffix="px" onChange={(value) => updateLayer(selected, { filters: { ...filters, blur: value } }, `filter-blur-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+            <FilterGraphControl nodes={selected.filterGraph} renderer={renderer} onChange={(filterGraph, groupKey) => updateLayer(selected, { filterGraph }, groupKey)} onChangeEnd={endHistoryGroup} />
           </ControlSection>}
 
           {selected.type !== 'adjustment' && <LayerEffectsControl layer={selected} onUpdate={(patch, groupKey) => updateLayer(selected, patch, groupKey)} onChangeEnd={endHistoryGroup} />}

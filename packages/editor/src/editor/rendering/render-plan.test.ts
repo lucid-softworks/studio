@@ -43,6 +43,7 @@ describe('composition render plan', () => {
         clipBaseLayerId: null,
         filters: null,
         effects: null,
+        filterGraph: [],
       },
       {
         kind: 'layer',
@@ -54,6 +55,7 @@ describe('composition render plan', () => {
         clipBaseLayerId: 'base',
         filters: clipped.filters,
         effects: normalizeLayerEffects(clipped.effects),
+        filterGraph: [],
       },
     ])
   })

@@ -1,7 +1,7 @@
 import { hasEnabledLayerEffects, normalizeLayerEffects } from '../effects'
 import { normalizeLayerFilters } from '../filters'
 import { getStackChildren, type StackItem } from '../stack'
-import type { AdjustmentDescriptor, BlendMode, EditorDocument, LayerEffects, LayerFilters } from '../types'
+import type { AdjustmentDescriptor, BlendMode, EditorDocument, FilterGraphNode, LayerEffects, LayerFilters } from '../types'
 import { isTypeGpuBlendMode } from './typegpu-blend-modes'
 import { geometryTransformIsIdentity } from '../transform'
 
@@ -16,6 +16,7 @@ export type LayerRenderNode = {
   filters: LayerFilters | null
   effects: LayerEffects | null
   additionalEffects?: LayerEffects[]
+  filterGraph: FilterGraphNode[]
 }
 
 export type AdjustmentRenderNode = {
@@ -113,6 +114,7 @@ function planNodes(
       clipBaseLayerId: clippingBase?.id ?? null,
       filters: layer.filters ? normalizeLayerFilters(layer.filters) : null,
       effects: hasEnabledLayerEffects(layer.effects) ? normalizeLayerEffects(layer.effects) : null,
+      filterGraph: layer.filterGraph ?? [],
       ...((layer.additionalEffects ?? []).some(hasEnabledLayerEffects) ? { additionalEffects: (layer.additionalEffects ?? []).filter(hasEnabledLayerEffects).map(normalizeLayerEffects) } : {}),
     }]
   })

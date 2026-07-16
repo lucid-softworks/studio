@@ -10,7 +10,8 @@ import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
 import { quadBounds, smartObjectDisplayQuad, smartObjectSourceQuad } from './smart-objects'
 import { geometryMesh, geometryTransformIsIdentity } from './transform'
-import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, SmartObjectLayer, TextLayer, TextStyleRun } from './types'
+import { applyPixelFilterGraph, normalizeFilterGraph } from './filter-graph'
+import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, FilterGraphNode, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, SmartObjectLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -24,6 +25,7 @@ export type NativeTextureLayerPass = {
   opacity?: number
   filters?: LayerFilters | null
   effects?: LayerEffects | null
+  filterGraph?: FilterGraphNode[]
 }
 export type NativeAdjustmentPass = {
   kind: 'adjustment'
@@ -926,7 +928,8 @@ function applyBlendIf(layerContext: CanvasRenderingContext2D, destinationContext
 
 function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, maskAssetId: string | null, assets: AssetMap, resources: RenderResourceRegistry) {
   const maskSource = maskAssetId ? canvasImageResource(resources, assets, maskAssetId)?.source : null
-  if (!maskSource && !layer.vectorMask && !layer.blendIf) {
+  const filterGraph = normalizeFilterGraph(layer.filterGraph).filter((node) => node.enabled)
+  if (!maskSource && !layer.vectorMask && !layer.blendIf && filterGraph.length === 0) {
     drawGeometryTransformedLayer(context, canvas, layer, assets, resources)
     return
   }
@@ -939,6 +942,23 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   if (!compositionContext) return
   compositionContext.clearRect(0, 0, composition.width, composition.height)
   drawGeometryTransformedLayer(compositionContext, composition, layer, assets, resources)
+  if (filterGraph.length) {
+    const blur = Math.max(0, ...filterGraph.filter((node) => node.kind === 'gaussian-blur').map((node) => node.size))
+    if (blur > 0) {
+      filterGraphBlurCanvas = prepareScratchCanvas(filterGraphBlurCanvas, canvas)
+      const blurContext = filterGraphBlurCanvas.getContext('2d')
+      if (blurContext) {
+        blurContext.clearRect(0, 0, canvas.width, canvas.height)
+        blurContext.filter = `blur(${blur}px)`
+        blurContext.drawImage(composition, 0, 0)
+        blurContext.filter = 'none'
+        compositionContext.clearRect(0, 0, canvas.width, canvas.height)
+        compositionContext.drawImage(filterGraphBlurCanvas, 0, 0)
+      }
+    }
+    const pixels = compositionContext.getImageData(0, 0, canvas.width, canvas.height)
+    compositionContext.putImageData(applyPixelFilterGraph(pixels, filterGraph), 0, 0)
+  }
   for (const mask of [
     maskSource ? preparedRasterMask(canvas, maskSource, layer) : null,
     preparedVectorMask(canvas, layer),
@@ -961,6 +981,7 @@ let layerEffectsCanvas: HTMLCanvasElement | null = null
 let layerEffectPassCanvas: HTMLCanvasElement | null = null
 let colorOverlayCanvas: HTMLCanvasElement | null = null
 let strokeEffectsCanvas: HTMLCanvasElement | null = null
+let filterGraphBlurCanvas: HTMLCanvasElement | null = null
 
 function prepareScratchCanvas(current: HTMLCanvasElement | null, canvas: HTMLCanvasElement) {
   const scratch = current ?? document.createElement('canvas')
@@ -1893,6 +1914,7 @@ export function renderNativeLayerPasses(
       blendMode: node.blendMode as TypeGpuBlendMode,
       filters: node.filters,
       effects: node.effects,
+      filterGraph: node.filterGraph,
     })
   })
   if (passCount > plan.layers.length + 1) {

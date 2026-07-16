@@ -59,6 +59,9 @@ export type LayerGeometryTransform = {
   referencePoint: Position
 }
 
+export type FilterGraphKind = 'gaussian-blur' | 'sharpen' | 'noise' | 'wave' | 'emboss' | 'clouds' | 'pixelate'
+export type FilterGraphNode = { id: string; kind: FilterGraphKind; enabled: boolean; amount: number; size: number; seed: number }
+
 export type BlendIfSettings = {
   source: number[]
   destination: number[]
@@ -99,6 +102,7 @@ export type BaseLayer = {
   groupId?: string | null
   stackOrder?: number
   geometryTransform?: LayerGeometryTransform
+  filterGraph?: FilterGraphNode[]
 }
 
 export type LayerGroup = {
@@ -351,6 +355,7 @@ export type LayerPatch = Partial<{
   groupId: string | null
   stackOrder: number
   geometryTransform: LayerGeometryTransform | null
+  filterGraph: FilterGraphNode[]
   assetId: string
   padding: number
   scale: number
