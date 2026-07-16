@@ -13,6 +13,7 @@ export type EditorTool =
   | 'magic-wand'
   | 'object-select'
   | 'crop'
+  | 'perspective-crop'
   | 'eyedropper'
   | 'measure'
   | 'healing'
@@ -120,6 +121,7 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'magic-wand', label: 'Magic Wand', shortcut: 'W', icon: <WandToolIcon className="size-[19px]" /> },
   { id: 'object-select', label: 'Object Select', shortcut: 'Shift W', icon: <ObjectSelectToolIcon className="size-[19px]" /> },
   { id: 'crop', label: 'Crop', shortcut: 'C', icon: <CropToolIcon className="size-[19px]" /> },
+  { id: 'perspective-crop', label: 'Perspective Crop', shortcut: 'Shift C', icon: <CropToolIcon className="size-[19px]" /> },
   { id: 'eyedropper', label: 'Eyedropper', shortcut: 'I', icon: <EyedropperToolIcon className="size-[19px]" />, divider: true },
   { id: 'measure', label: 'Measure / Straighten', shortcut: 'Shift I', icon: <MeasureToolIcon className="size-[19px]" /> },
   { id: 'healing', label: 'Healing Brush', shortcut: 'J', icon: <HealingToolIcon className="size-[19px]" /> },

@@ -82,6 +82,30 @@ export function geometryMesh(value?: LayerGeometryTransform | null) {
   return { columns, rows, source, destination }
 }
 
+export function perspectiveCropPixels(source: ImageData, quad: [Position, Position, Position, Position], width: number, height: number) {
+  const output = new ImageData(width, height)
+  const [topLeft, topRight, bottomRight, bottomLeft] = quad
+  const sample = (x: number, y: number, channel: number) => {
+    const left = Math.max(0, Math.min(source.width - 1, Math.floor(x)))
+    const top = Math.max(0, Math.min(source.height - 1, Math.floor(y)))
+    const right = Math.min(source.width - 1, left + 1)
+    const bottom = Math.min(source.height - 1, top + 1)
+    const fx = x - left
+    const fy = y - top
+    const at = (px: number, py: number) => source.data[(py * source.width + px) * 4 + channel]
+    return Math.round((at(left, top) * (1 - fx) + at(right, top) * fx) * (1 - fy) + (at(left, bottom) * (1 - fx) + at(right, bottom) * fx) * fy)
+  }
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const u = width === 1 ? 0 : x / (width - 1)
+    const v = height === 1 ? 0 : y / (height - 1)
+    const sourceX = topLeft.x * (1 - u) * (1 - v) + topRight.x * u * (1 - v) + bottomRight.x * u * v + bottomLeft.x * (1 - u) * v
+    const sourceY = topLeft.y * (1 - u) * (1 - v) + topRight.y * u * (1 - v) + bottomRight.y * u * v + bottomLeft.y * (1 - u) * v
+    const offset = (y * width + x) * 4
+    for (let channel = 0; channel < 4; channel += 1) output.data[offset + channel] = sample(sourceX, sourceY, channel)
+  }
+  return output
+}
+
 function rotate(position: Position, degrees: number): Position {
   const angle = degrees * Math.PI / 180
   return {

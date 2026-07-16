@@ -397,6 +397,7 @@ export type DocumentAction =
   | { type: 'set-pattern'; patch: Partial<PatternSettings> }
   | { type: 'set-channels'; channels: DocumentChannel[] }
   | { type: 'set-paths'; paths: DocumentPath[]; selectedPathId: string | null }
+  | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }
   | { type: 'add-group'; group: LayerGroup; layerIds: string[] }

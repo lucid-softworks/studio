@@ -72,6 +72,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, channels: action.channels }
     case 'set-paths':
       return { ...state, paths: action.paths, selectedPathId: action.selectedPathId }
+    case 'replace-document':
+      return action.document
     case 'add-layer': {
       const parentId = action.layer.groupId !== undefined ? action.layer.groupId : state.selectedGroupId ?? null
       const layer = { ...action.layer, groupId: parentId, stackOrder: siblingRefs(state, parentId).length } as EditorLayer

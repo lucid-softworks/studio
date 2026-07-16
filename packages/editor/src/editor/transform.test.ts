@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { calculateLayerResize, calculateRotation, geometryMesh, geometryTransformIsIdentity } from './transform'
+import { ImageData } from '@napi-rs/canvas'
+import { calculateLayerResize, calculateRotation, geometryMesh, geometryTransformIsIdentity, perspectiveCropPixels } from './transform'
 import type { ShapeLayer } from './types'
+
+Object.assign(globalThis, { ImageData })
 
 const shape: ShapeLayer = {
   id: 'shape', type: 'shape', shape: 'rectangle', name: 'Shape', visible: true, locked: false,
@@ -23,6 +26,12 @@ describe('transform calculations', () => {
     expect(mesh.source).toHaveLength(9)
     expect(mesh.destination[8]).toEqual({ x: 1, y: 1 })
     expect(geometryTransformIsIdentity({ skewX: 1 } as never)).toBe(false)
+  })
+
+  it('rectifies a perspective crop quad entirely in local pixels', () => {
+    const source = new ImageData(Uint8ClampedArray.from([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]), 2, 2)
+    const output = perspectiveCropPixels(source as unknown as globalThis.ImageData, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }], 2, 2)
+    expect([...output.data]).toEqual([...source.data])
   })
 
   it('resizes one edge while keeping its opposite edge anchored', () => {
