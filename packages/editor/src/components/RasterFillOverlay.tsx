@@ -32,6 +32,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
   const requestRef = useRef(0)
   const [preview, setPreview] = useState<{ start: Position; end: Position } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
   const canvas = canvasRef.current
   const target = canvas ? resolveRasterTarget(canvas, document, assets, maskAssetId, maskLocked, locked) : null
 
@@ -50,6 +51,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     workerRef.current = null
     requestRef.current += 1
     setBusy(false)
+    setProgress(0)
   }
 
   useEffect(() => {
@@ -67,8 +69,10 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     const worker = new Worker(new URL('../editor/workers/raster-ops.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     setBusy(true)
-    worker.onmessage = (message: MessageEvent<{ id: number; region?: RasterRegion | null; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
+    setProgress(0)
+    worker.onmessage = (message: MessageEvent<{ id: number; progress?: number; region?: RasterRegion | null; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
       if (message.data.id !== id || workerRef.current !== worker) return
+      if (typeof message.data.progress === 'number') { setProgress(message.data.progress); return }
       worker.terminate()
       workerRef.current = null
       setBusy(false)
@@ -90,26 +94,35 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     const context = current.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     const stops = maskAssetId ? [{ color: '#ffffff', position: 0 }, { color: '#000000', position: 100 }] : gradientStops.length >= 2 ? gradientStops : [{ color, position: 0 }, { color: secondaryColor, position: 100 }]
+    const selected = selectionData()
     cancelWorker()
     const id = requestRef.current
     const worker = new Worker(new URL('../editor/workers/raster-ops.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     setBusy(true)
-    worker.onmessage = (message: MessageEvent<{ id: number; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
+    setProgress(0)
+    worker.onmessage = (message: MessageEvent<{ id: number; progress?: number; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
       if (message.data.id !== id || workerRef.current !== worker) return
+      if (typeof message.data.progress === 'number') { setProgress(message.data.progress); return }
       worker.terminate()
       workerRef.current = null
       setBusy(false)
       if (!message.data.before || !message.data.after) return
       const before = new ImageData(new Uint8ClampedArray(message.data.before), current.surface.width, current.surface.height)
-      const generated = new ImageData(new Uint8ClampedArray(message.data.after), current.surface.width, current.surface.height)
-      const after = constrainRasterRegion(before, generated, 0, 0, current, selectionData())
+      const after = new ImageData(new Uint8ClampedArray(message.data.after), current.surface.width, current.surface.height)
       context.putImageData(after, 0, 0)
       onChange(current.layer.assetId, { x: 0, y: 0, width: after.width, height: after.height })
       onCommit({ assetId: current.layer.assetId, x: 0, y: 0, before, after })
     }
     worker.onerror = () => { if (workerRef.current === worker) { workerRef.current = null; setBusy(false) }; worker.terminate() }
-    worker.postMessage({ id, operation: 'gradient', data: drag.before.data.buffer, width: drag.before.width, height: drag.before.height, start: drag.start, end, stops: stops.map((stop) => ({ position: stop.position, color: hexToRgba(stop.color) })) }, [drag.before.data.buffer])
+    const selectionPayload = selected ? {
+      data: selected.data.buffer,
+      width: selected.width,
+      height: selected.height,
+      target: { surfaceWidth: current.surface.width, surfaceHeight: current.surface.height, bounds: current.bounds },
+    } : undefined
+    const transfers = selected ? [drag.before.data.buffer, selected.data.buffer] : [drag.before.data.buffer]
+    worker.postMessage({ id, operation: 'gradient', data: drag.before.data.buffer, width: drag.before.width, height: drag.before.height, start: drag.start, end, stops: stops.map((stop) => ({ position: stop.position, color: hexToRgba(stop.color) })), selection: selectionPayload }, transfers)
   }
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -155,6 +168,7 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
       onPointerCancel={() => { dragRef.current = null; setPreview(null) }}
     >
       {preview && <><line x1={preview.start.x} y1={preview.start.y} x2={preview.end.x} y2={preview.end.y} stroke="#ffffff" strokeWidth="3" vectorEffect="non-scaling-stroke" /><circle cx={preview.start.x} cy={preview.start.y} r="7" fill="#18181b" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><circle cx={preview.end.x} cy={preview.end.y} r="7" fill="#18181b" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" /></>}
+      {busy && <text x="50%" y="28" textAnchor="middle" fill="#ffffff" stroke="#18181b" strokeWidth="3" paintOrder="stroke" fontSize="13" fontWeight="600" pointerEvents="none">Processing {Math.round(progress * 100)}% · Esc to cancel</text>}
     </svg>
   )
 }

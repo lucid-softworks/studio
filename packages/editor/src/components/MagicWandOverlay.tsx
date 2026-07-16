@@ -15,11 +15,13 @@ export function MagicWandOverlay({ canvasRef, enabled, mode, tolerance, selectio
   const workerRef = useRef<Worker | null>(null)
   const requestRef = useRef(0)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState(0)
   const cancel = () => {
     workerRef.current?.terminate()
     workerRef.current = null
     requestRef.current += 1
     setBusy(false)
+    setProgress(0)
   }
 
   useEffect(() => {
@@ -27,6 +29,8 @@ export function MagicWandOverlay({ canvasRef, enabled, mode, tolerance, selectio
     window.addEventListener('keydown', keyDown)
     return () => { window.removeEventListener('keydown', keyDown); workerRef.current?.terminate() }
   }, [])
+
+  useEffect(() => { if (!enabled) cancel() }, [enabled])
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const canvas = canvasRef.current
@@ -41,8 +45,10 @@ export function MagicWandOverlay({ canvasRef, enabled, mode, tolerance, selectio
     const worker = new Worker(new URL('../editor/workers/raster-ops.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     setBusy(true)
-    worker.onmessage = (message: MessageEvent<{ id: number; mask?: ArrayBuffer; error?: string }>) => {
+    setProgress(0)
+    worker.onmessage = (message: MessageEvent<{ id: number; progress?: number; mask?: ArrayBuffer; error?: string }>) => {
       if (message.data.id !== id || workerRef.current !== worker) return
+      if (typeof message.data.progress === 'number') { setProgress(message.data.progress); return }
       worker.terminate()
       workerRef.current = null
       setBusy(false)
@@ -60,6 +66,8 @@ export function MagicWandOverlay({ canvasRef, enabled, mode, tolerance, selectio
       preserveAspectRatio="none"
       className={`absolute inset-0 size-full touch-none ${enabled ? busy ? 'cursor-progress' : 'cursor-crosshair' : 'pointer-events-none'}`}
       onPointerDown={pointerDown}
-    />
+    >
+      {busy && <text x="50%" y="28" textAnchor="middle" fill="#ffffff" stroke="#18181b" strokeWidth="3" paintOrder="stroke" fontSize="13" fontWeight="600" pointerEvents="none">Processing {Math.round(progress * 100)}% · Esc to cancel</text>}
+    </svg>
   )
 }

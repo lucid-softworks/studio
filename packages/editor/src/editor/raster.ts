@@ -16,7 +16,7 @@ export function hexToRgba(hex: string, alpha = 255): [number, number, number, nu
   return [(parsed >> 16) & 255, (parsed >> 8) & 255, parsed & 255, alpha]
 }
 
-export function floodFillImageData(image: ImageData, startX: number, startY: number, replacement: [number, number, number, number], tolerance: number): RasterRegion | null {
+export function floodFillImageData(image: ImageData, startX: number, startY: number, replacement: [number, number, number, number], tolerance: number, onProgress?: (progress: number) => void): RasterRegion | null {
   const width = image.width
   const height = image.height
   const x = Math.max(0, Math.min(width - 1, Math.floor(startX)))
@@ -31,11 +31,14 @@ export function floodFillImageData(image: ImageData, startX: number, startY: num
   let top = height
   let right = -1
   let bottom = -1
+  let visitedCount = 0
 
   while (stack.length) {
     const pixel = stack.pop()!
     if (visited[pixel]) continue
     visited[pixel] = 1
+    visitedCount += 1
+    if (visitedCount % 65_536 === 0) onProgress?.(visitedCount / visited.length)
     const offset = pixel * 4
     const distance = Math.max(
       Math.abs(image.data[offset] - target[0]),
@@ -57,6 +60,7 @@ export function floodFillImageData(image: ImageData, startX: number, startY: num
     if (pixelY + 1 < height) stack.push(pixel + width)
   }
 
+  onProgress?.(1)
   return right < left ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
 }
 

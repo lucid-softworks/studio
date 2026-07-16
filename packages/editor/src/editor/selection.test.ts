@@ -1,5 +1,5 @@
 import { createCanvas } from '@napi-rs/canvas'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { applySelectionShape, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
@@ -33,6 +33,16 @@ describe('selection coverage', () => {
       image.data[pixel * 4 + 3] = 255
     })
     expect([...contiguousColorMask(image, 0, 0, 5)]).toEqual([255, 255, 0, 255, 0, 0])
+  })
+
+  it('reports completion for worker-driven wand and object masks', () => {
+    const image = selectionData([255, 255], 2, 1)
+    const colorProgress = vi.fn()
+    const alphaProgress = vi.fn()
+    contiguousColorMask(image, 0, 0, 0, colorProgress)
+    contiguousAlphaMask(image, 0, 0, 0, alphaProgress)
+    expect(colorProgress).toHaveBeenLastCalledWith(1)
+    expect(alphaProgress).toHaveBeenLastCalledWith(1)
   })
 
   it('stores sparse pixel coverage in addressable tiles', () => {

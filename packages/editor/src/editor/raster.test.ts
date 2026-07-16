@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { extractImageData, floodFillImageData, hexToRgba } from './raster'
 
 class TestImageData {
@@ -33,6 +33,14 @@ describe('raster region history', () => {
     })
     expect(floodFillImageData(image, 0, 0, [255, 0, 0, 255], 2)).toEqual({ x: 0, y: 0, width: 2, height: 2 })
     expect([image.data[0], image.data[4], image.data[12], image.data[16]]).toEqual([255, 255, 255, 210])
+  })
+
+  it('reports completion for worker-driven flood fills', () => {
+    const image = new ImageData(2, 1)
+    image.data.set([0, 0, 0, 255, 0, 0, 0, 255])
+    const progress = vi.fn()
+    floodFillImageData(image, 0, 0, [255, 0, 0, 255], 0, progress)
+    expect(progress).toHaveBeenLastCalledWith(1)
   })
 
   it('parses foreground colours for raster operations', () => {

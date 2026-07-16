@@ -224,8 +224,24 @@ test.describe('built-in tools', () => {
     await expect(wand).toHaveAttribute('aria-busy', 'false')
     await page.getByRole('button', { name: 'Clear selection', exact: true }).click()
 
+    await page.getByRole('button', { name: 'Object Select tool', exact: true }).click()
+    const objectSelect = page.getByLabel('Object selection surface')
+    await objectSelect.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+    await expect(page.getByRole('button', { name: 'Clear selection', exact: true })).toBeVisible()
+    await expect(objectSelect).toHaveAttribute('aria-busy', 'false')
+    await page.getByRole('button', { name: 'Clear selection', exact: true }).click()
+
+    await page.getByRole('button', { name: 'Rectangular Marquee tool', exact: true }).click()
+    const marquee = page.getByLabel('Rectangular selection surface')
+    await page.mouse.move(bounds!.x + bounds!.width * 0.35, bounds!.y + bounds!.height * 0.3)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.65, bounds!.y + bounds!.height * 0.7)
+    await page.mouse.up()
+    const outsideBefore = await canvas.evaluate((element: HTMLCanvasElement) => [...element.getContext('2d')!.getImageData(100, 500, 1, 1).data])
+
     await page.getByRole('button', { name: 'Gradient tool', exact: true }).click()
     const gradient = page.getByLabel('Gradient surface')
+    await page.waitForTimeout(150)
     const revisionBeforeGradient = await canvas.getAttribute('data-render-revision')
     await page.mouse.move(bounds!.x + bounds!.width * 0.25, bounds!.y + bounds!.height * 0.5)
     await page.mouse.down()
@@ -233,6 +249,12 @@ test.describe('built-in tools', () => {
     await page.mouse.up()
     await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBeforeGradient)
     await expect(gradient).toHaveAttribute('aria-busy', 'false')
+    const pixelsAfter = await canvas.evaluate((element: HTMLCanvasElement) => ({
+      outside: [...element.getContext('2d')!.getImageData(100, 500, 1, 1).data],
+      inside: [...element.getContext('2d')!.getImageData(800, 500, 1, 1).data],
+    }))
+    expect(pixelsAfter.outside).toEqual(outsideBefore)
+    expect(pixelsAfter.inside).not.toEqual(outsideBefore)
     expect(runtimeErrors).toEqual([])
   })
 })

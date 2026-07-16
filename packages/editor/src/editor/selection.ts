@@ -158,7 +158,7 @@ export function applySelectionPolygon(current: SelectionState | null, points: Ar
   return applyTemporaryMask(selection, temporary, mode, width, height)
 }
 
-export function contiguousColorMask(image: ImageData, startX: number, startY: number, tolerance: number) {
+export function contiguousColorMask(image: ImageData, startX: number, startY: number, tolerance: number, onProgress?: (progress: number) => void) {
   const width = image.width
   const height = image.height
   const x = Math.max(0, Math.min(width - 1, Math.floor(startX)))
@@ -169,11 +169,14 @@ export function contiguousColorMask(image: ImageData, startX: number, startY: nu
   const visited = new Uint8Array(width * height)
   const stack = [y * width + x]
   const threshold = Math.max(0, Math.min(255, tolerance))
+  let visitedCount = 0
 
   while (stack.length) {
     const pixel = stack.pop()!
     if (visited[pixel]) continue
     visited[pixel] = 1
+    visitedCount += 1
+    if (visitedCount % 65_536 === 0) onProgress?.(visitedCount / visited.length)
     const offset = pixel * 4
     const distance = Math.max(
       Math.abs(image.data[offset] - target[0]),
@@ -190,10 +193,11 @@ export function contiguousColorMask(image: ImageData, startX: number, startY: nu
     if (pixelY > 0) stack.push(pixel - width)
     if (pixelY + 1 < height) stack.push(pixel + width)
   }
+  onProgress?.(1)
   return mask
 }
 
-export function contiguousAlphaMask(image: ImageData, startX: number, startY: number, threshold = 8) {
+export function contiguousAlphaMask(image: ImageData, startX: number, startY: number, threshold = 8, onProgress?: (progress: number) => void) {
   const width = image.width
   const height = image.height
   const x = Math.max(0, Math.min(width - 1, Math.floor(startX)))
@@ -202,10 +206,13 @@ export function contiguousAlphaMask(image: ImageData, startX: number, startY: nu
   if (image.data[(y * width + x) * 4 + 3] <= threshold) return mask
   const visited = new Uint8Array(width * height)
   const stack = [y * width + x]
+  let visitedCount = 0
   while (stack.length) {
     const pixel = stack.pop()!
     if (visited[pixel]) continue
     visited[pixel] = 1
+    visitedCount += 1
+    if (visitedCount % 65_536 === 0) onProgress?.(visitedCount / visited.length)
     const alpha = image.data[pixel * 4 + 3]
     if (alpha <= threshold) continue
     mask[pixel] = alpha
@@ -216,6 +223,7 @@ export function contiguousAlphaMask(image: ImageData, startX: number, startY: nu
     if (pixelY > 0) stack.push(pixel - width)
     if (pixelY + 1 < height) stack.push(pixel + width)
   }
+  onProgress?.(1)
   return mask
 }
 
