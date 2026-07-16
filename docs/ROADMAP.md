@@ -38,7 +38,6 @@ A feature is complete only when it has:
 - [ ] Extend the new path, direct-selection, warp, and puppet-warp local-preview coverage to every anchor, handle, pin, cancel, and modifier-key path.
 - [ ] Replace the remaining Current & Below clone/healing composition snapshot with a tiled or viewport sample; extend dirty-region regression coverage across every retouch mode and transformed/masked targets.
 - [ ] Replace remaining full-canvas raster mutation paths with sparse tiles and dirty regions.
-- [ ] Add OPFS-backed scratch storage and recovery for documents that exceed the safe memory budget.
 - [ ] Stream large project and PSD/PSB saves instead of constructing every payload in memory.
 - [ ] Make all long filters, imports, exports, and batch jobs cancelable without corrupting document state.
 - [ ] Meet the interaction budgets defined by the performance fixtures on supported browsers.

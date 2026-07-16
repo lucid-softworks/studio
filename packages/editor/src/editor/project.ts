@@ -3,6 +3,7 @@ import { normalizeLayerFilters } from './filters'
 import { getCanvasPreset, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
 import type { RasterRegion } from './raster'
+import { loadOpfsRecovery, saveOpfsRecovery, type RecoveryStoredAsset, type RecoveryStoredProject } from './opfs-recovery'
 import { flattenStackLayers, getStackChildren } from './stack'
 import { EDITOR_DOCUMENT_SCHEMA_VERSION, type EditorDocument } from './types'
 
@@ -10,9 +11,10 @@ export const STUDIO_PROJECT_VERSION = 3 as const
 const DATABASE_NAME = 'studio-client-projects'
 const STORE_NAME = 'recovery'
 const RECOVERY_KEY = 'current-document'
+export const OPFS_RECOVERY_THRESHOLD_BYTES = 128 * 1024 * 1024
 
-type StoredAsset = { id: string; name: string; blob: Blob; contentBounds?: RasterRegion | null; precision?: Blob; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
-type StoredProject = { version: number; savedAt: string; document: unknown; assets: StoredAsset[] }
+type StoredAsset = RecoveryStoredAsset
+type StoredProject = RecoveryStoredProject
 type PortableAsset = { id: string; name: string; data: string; contentBounds?: RasterRegion | null; precision?: string; bitDepth?: 16 | 32; precisionWidth?: number; precisionHeight?: number; precisionRevision?: number }
 type PortableProject = { app: 'studio'; version: number; savedAt: string; document: unknown; assets: PortableAsset[] }
 
@@ -155,6 +157,27 @@ function documentTree(document: EditorDocument): EditorDocument[] {
   return [document, ...document.layers.flatMap((layer) => layer.type === 'smart-object' && layer.embeddedDocument ? documentTree(layer.embeddedDocument) : [])]
 }
 
+function referencedAssetIds(document: EditorDocument) {
+  const documents = documentTree(document)
+  return new Set([
+    ...documents.flatMap((nested) => nested.layers.flatMap((layer) => [
+      ...('assetId' in layer ? [layer.assetId] : []),
+      ...(layer.maskAssetId ? [layer.maskAssetId] : []),
+    ])),
+    ...documents.flatMap((nested) => nested.background.imageAssetId ? [nested.background.imageAssetId] : []),
+    ...documents.flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
+  ])
+}
+
+export function estimateProjectAssetBytes(document: EditorDocument, assets: AssetMap) {
+  const referencedIds = referencedAssetIds(document)
+  return Object.entries(assets).reduce((total, [id, asset]) => {
+    if (!referencedIds.has(id)) return total
+    const pixels = asset.surface ? asset.surface.width * asset.surface.height * 4 : 0
+    return total + Math.max(asset.blob?.size ?? 0, pixels) + (asset.precision?.data.byteLength ?? 0)
+  }, 0)
+}
+
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, 1)
@@ -203,15 +226,7 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
 }
 
 async function storedAssets(document: EditorDocument, assets: AssetMap): Promise<StoredAsset[]> {
-  const documents = documentTree(document)
-  const referencedIds = new Set([
-    ...documents.flatMap((nested) => nested.layers.flatMap((layer) => [
-      ...('assetId' in layer ? [layer.assetId] : []),
-      ...(layer.maskAssetId ? [layer.maskAssetId] : []),
-    ])),
-    ...documents.flatMap((nested) => nested.background.imageAssetId ? [nested.background.imageAssetId] : []),
-    ...documents.flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
-  ])
+  const referencedIds = referencedAssetIds(document)
   const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]): Promise<StoredAsset | null> => {
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
     const precision = asset.precision
@@ -235,11 +250,17 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
 
 export async function saveRecoveryProject(document: EditorDocument, assets: AssetMap) {
   const project: StoredProject = { version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: await storedAssets(document, assets) }
+  if (estimateProjectAssetBytes(document, assets) >= OPFS_RECOVERY_THRESHOLD_BYTES && await saveOpfsRecovery(project)) return
   await transactionRequest('readwrite', (store) => store.put(project, RECOVERY_KEY))
 }
 
 export async function loadRecoveryProject(): Promise<LoadedProject | null> {
-  const project = await transactionRequest<StoredProject | undefined>('readonly', (store) => store.get(RECOVERY_KEY))
+  const candidates = await Promise.allSettled([
+    transactionRequest<StoredProject | undefined>('readonly', (store) => store.get(RECOVERY_KEY)),
+    loadOpfsRecovery(),
+  ])
+  const project = candidates.flatMap((result) => result.status === 'fulfilled' && result.value ? [result.value] : [])
+    .sort((left, right) => right.savedAt.localeCompare(left.savedAt))[0]
   if (!project || project.version < 1 || project.version > STUDIO_PROJECT_VERSION || !Array.isArray(project.assets)) return null
   const document = migrateDocument(project.document, project.version)
   return { document, assets: await hydrateAssets(project.assets, document), savedAt: project.savedAt }

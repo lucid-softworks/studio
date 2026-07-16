@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initialDocument } from './presets'
-import { migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION } from './project'
+import { estimateProjectAssetBytes, migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION } from './project'
 import type { AssetMap } from './runtime-assets'
 
 function legacyDocument() {
@@ -143,5 +143,27 @@ describe('Studio project migrations', () => {
   it('rejects unknown future document schemas', () => {
     expect(() => migrateDocument({ ...initialDocument, schemaVersion: 99 }, STUDIO_PROJECT_VERSION))
       .toThrow('That Studio document schema version is not supported.')
+  })
+
+  it('estimates only referenced runtime assets for scratch-storage routing', () => {
+    const document = {
+      ...initialDocument,
+      layers: [{
+        id: 'pixels', type: 'raster' as const, name: 'Pixels', visible: true, locked: false, opacity: 100,
+        position: { x: 0, y: 0 }, rotation: 0, assetId: 'used', width: 10, height: 10, scale: 100,
+      }],
+    }
+    const assets: AssetMap = {
+      used: {
+        element: {} as HTMLImageElement,
+        name: 'Used',
+        blob: new Blob([new Uint8Array(20)]),
+        surface: { width: 10, height: 10 } as HTMLCanvasElement,
+        precision: { bitDepth: 16, width: 1, height: 1, data: new Uint16Array(4), revision: 0 },
+      },
+      unused: { element: {} as HTMLImageElement, name: 'Unused', blob: new Blob([new Uint8Array(1_000)]) },
+    }
+
+    expect(estimateProjectAssetBytes(document, assets)).toBe(408)
   })
 })
