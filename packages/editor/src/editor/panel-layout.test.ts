@@ -18,7 +18,7 @@ describe('panel resizing', () => {
       panelWidths: { properties: 220, layers: 258 },
       collapsedPanels: { properties: true, layers: false },
       activeUtilityPanel: 'layers',
-      utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
+      utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
       secondaryUtilityPanel: null,
@@ -30,7 +30,7 @@ describe('panel resizing', () => {
   })
 
   it('reorders utility tabs and keeps floating headers recoverable', () => {
-    expect(reorderUtilityPanels(['layers', 'channels', 'paths', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'], 'info', 'history')).toEqual(['layers', 'channels', 'paths', 'info', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries'])
+    expect(reorderUtilityPanels(['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'], 'info', 'history')).toEqual(['layers', 'channels', 'paths', 'info', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries'])
     expect(clampFloatingPanelPosition({ x: 2000, y: -20 }, 320, { width: 1440, height: 900 })).toEqual({ x: 1392, y: 48 })
   })
 })

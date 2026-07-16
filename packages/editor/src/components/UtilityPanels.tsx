@@ -12,6 +12,8 @@ import type { CustomShapePreset } from '../editor/shape-library'
 import type { ComponentChannel, SelectionMode, SelectionState } from '../editor/selection'
 import { defaultSwatches } from '../editor/swatches'
 import type { DocumentChannel, DocumentHistoryCommand, DocumentPath, EditorDocument, PatternSettings, VectorPath } from '../editor/types'
+import { actionCommandLabels, normalizeActions, type ActionCommand, type ActionCondition, type ActionPreset, type ActionStep } from '../editor/actions'
+import { downloadBlob } from '../editor/download'
 
 export type AlphaChannelTransform = 'invert' | 'flip-horizontal' | 'flip-vertical' | 'rotate-clockwise'
 
@@ -486,6 +488,79 @@ export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPa
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save current pattern</h3><div className="flex gap-2"><input aria-label="Custom pattern name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder={pattern.kind === 'none' ? 'Choose a pattern first' : 'Pattern name'} disabled={pattern.kind === 'none'} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40 disabled:text-zinc-700" /><button type="button" disabled={!name.trim() || pattern.kind === 'none'} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
       <section className="mt-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom patterns</h3><button type="button" onClick={onImportPattern} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Import bitmap…</button></div>{customPatterns.length ? <div className="grid grid-cols-2 gap-2">{customPatterns.map((preset) => <PatternRow key={preset.id} pattern={preset} custom active={matches(preset)} onApply={() => applyPreset(preset)} onRemove={() => onRemovePattern(preset.id)} onExport={() => onExportPattern(preset)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save a procedural pattern or import a bitmap tile to build a local library.</div>}</section>
       <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Pattern changes are stored in the document and can be undone from History.</p>
+    </div>
+  )
+}
+
+export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }) {
+  const [actions, setActions] = useState<ActionPreset[]>(() => {
+    try { return normalizeActions(JSON.parse(localStorage.getItem('studio.actions') ?? '[]')) } catch { return [] }
+  })
+  const [recording, setRecording] = useState(false)
+  const [draft, setDraft] = useState<ActionStep[]>([])
+  const [name, setName] = useState('My action')
+  const [selectedId, setSelectedId] = useState<string | null>(() => actions[0]?.id ?? null)
+  const [batching, setBatching] = useState(false)
+  const batchInputRef = useRef<HTMLInputElement>(null)
+  const selected = actions.find((action) => action.id === selectedId) ?? null
+
+  useEffect(() => {
+    try { localStorage.setItem('studio.actions', JSON.stringify(actions)) } catch { /* Local action storage is optional. */ }
+  }, [actions])
+
+  const addStep = (command: ActionCommand) => {
+    const step: ActionStep = { id: crypto.randomUUID(), command, enabled: true, condition: 'always' }
+    if (recording) setDraft((current) => [...current, step])
+    onRun([step])
+  }
+
+  const stopRecording = () => {
+    setRecording(false)
+    if (!draft.length) return
+    const action = { id: crypto.randomUUID(), name: name.trim().slice(0, 48) || 'Recorded action', steps: draft }
+    setActions((current) => [...current, action])
+    setSelectedId(action.id)
+    setDraft([])
+  }
+
+  const updateStep = (id: string, patch: Partial<ActionStep>) => {
+    if (!selected) return
+    setActions((current) => current.map((action) => action.id === selected.id ? { ...action, steps: action.steps.map((step) => step.id === id ? { ...step, ...patch } : step) } : action))
+  }
+
+  const batchFiles = async (files: FileList | null) => {
+    if (!files?.length || !selected) return
+    const commands = selected.steps.filter((step) => step.enabled).map((step) => step.command).filter((command) => ['invert', 'grayscale', 'sharpen', 'rotate-cw', 'flip-x'].includes(command))
+    if (!commands.length) return
+    setBatching(true)
+    try {
+      for (const file of Array.from(files)) {
+        const worker = new Worker(new URL('../editor/workers/action-batch.worker.ts', import.meta.url), { type: 'module' })
+        const buffer = await file.arrayBuffer()
+        const response = await new Promise<{ blob?: Blob; error?: string }>((resolve, reject) => {
+          worker.onmessage = (event) => resolve(event.data as { blob?: Blob; error?: string })
+          worker.onerror = () => reject(new Error('The batch worker stopped unexpectedly.'))
+          worker.postMessage({ data: buffer, type: file.type, commands }, [buffer])
+        }).finally(() => worker.terminate())
+        if (response.error || !response.blob) throw new Error(response.error || 'The batch worker returned no file.')
+        downloadBlob(response.blob, `${file.name.replace(/\.[^.]+$/, '')}-${selected.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`)
+      }
+    } finally { setBatching(false) }
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Actions" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <section className="rounded-lg border border-white/[0.07] bg-black/15 p-2.5">
+        <div className="flex gap-2"><input aria-label="Recorded action name" value={name} onChange={(event) => setName(event.target.value)} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2 py-1.5 text-[10px] text-zinc-300 outline-none" /><button type="button" onClick={() => recording ? stopRecording() : (setDraft([]), setRecording(true))} className={`rounded-md px-2.5 text-[9px] font-semibold ${recording ? 'bg-red-400/15 text-red-200' : 'border border-white/[0.08] text-zinc-500 hover:text-zinc-200'}`}>{recording ? `Stop · ${draft.length}` : '● Record'}</button></div>
+        <p className="mt-2 text-[8px] text-zinc-700">Choose commands below while recording. They execute immediately and are added to the action.</p>
+        <div className="mt-2 grid grid-cols-2 gap-1">{(Object.keys(actionCommandLabels) as ActionCommand[]).map((command) => <button key={command} type="button" onClick={() => addStep(command)} className="rounded-md bg-white/[0.03] px-2 py-1.5 text-left text-[8px] text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-200">{actionCommandLabels[command]}</button>)}</div>
+      </section>
+      <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Saved actions</h3>{actions.length ? <div className="space-y-1">{actions.map((action) => <button key={action.id} type="button" aria-pressed={selected?.id === action.id} onClick={() => setSelectedId(action.id)} className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-[9px] ${selected?.id === action.id ? 'bg-violet-400/12 text-violet-100' : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-200'}`}><span className="truncate">{action.name}</span><span className="font-mono text-[8px] text-zinc-700">{action.steps.length}</span></button>)}</div> : <p className="rounded-lg border border-dashed border-white/[0.07] p-4 text-center text-[9px] text-zinc-700">Record an action to add it here.</p>}</section>
+      {selected && <section className="mt-3 rounded-lg border border-white/[0.06] bg-black/10 p-2">
+        <div className="flex gap-1"><button type="button" onClick={() => onRun(selected.steps)} className="flex-1 rounded-md bg-violet-500 px-2 py-2 text-[9px] font-semibold text-white">▶ Play</button><button type="button" disabled={batching} onClick={() => batchInputRef.current?.click()} className="rounded-md border border-white/[0.08] px-2 text-[9px] text-zinc-500 disabled:opacity-40">{batching ? 'Batching…' : 'Batch files…'}</button><button type="button" aria-label="Delete selected action" onClick={() => { setActions((current) => current.filter((action) => action.id !== selected.id)); setSelectedId(null) }} className="rounded-md px-2 text-zinc-700 hover:text-red-300">×</button></div>
+        <div className="mt-2 space-y-1">{selected.steps.map((step, index) => <div key={step.id} className="grid grid-cols-[20px_1fr_90px] items-center gap-1 rounded bg-white/[0.025] p-1"><input aria-label={`Enable step ${index + 1}`} type="checkbox" checked={step.enabled} onChange={(event) => updateStep(step.id, { enabled: event.target.checked })} /><span className="truncate text-[8px] text-zinc-500">{index + 1}. {actionCommandLabels[step.command]}</span><select aria-label={`Condition for step ${index + 1}`} value={step.condition} onChange={(event) => updateStep(step.id, { condition: event.target.value as ActionCondition })} className="rounded border border-white/[0.06] bg-black/20 px-1 py-1 text-[7px] text-zinc-600"><option value="always">Always</option><option value="has-selection">If selected</option><option value="raster-layer">If raster</option><option value="multiple-layers">If multi-layer</option></select></div>)}</div>
+      </section>}
+      <input ref={batchInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void batchFiles(event.target.files); event.target.value = '' }} />
     </div>
   )
 }

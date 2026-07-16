@@ -13,6 +13,8 @@ import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, Tras
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
 import { ChannelsPanel, GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, LibrariesPanel, NavigatorPanel, PathsPanel, PatternsPanel, SwatchesPanel, type AlphaChannelTransform } from './UtilityPanels'
+import { ActionsPanel } from './UtilityPanels'
+import type { ActionStep } from '../editor/actions'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -71,6 +73,7 @@ type LayersPanelProps = {
   onToggleSecondaryFloating: () => void
   secondaryFloatingPosition: FloatingPanelPosition
   onSecondaryFloatingPositionChange: (position: FloatingPanelPosition) => void
+  onRunActions: (steps: ActionStep[]) => void
   foregroundColor: string
   backgroundColor: string
   customSwatches: string[]
@@ -101,7 +104,7 @@ type LayersPanelProps = {
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
 type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
-const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'channels', label: 'Chan', title: 'Channels' }, { id: 'paths', label: 'Paths' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'patterns', label: 'Patt', title: 'Patterns' }, { id: 'libraries', label: 'Lib', title: 'Libraries' }, { id: 'info', label: 'Info' }]
+const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'channels', label: 'Chan', title: 'Channels' }, { id: 'paths', label: 'Paths' }, { id: 'history', label: 'History' }, { id: 'actions', label: 'Act', title: 'Actions' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'patterns', label: 'Patt', title: 'Patterns' }, { id: 'libraries', label: 'Lib', title: 'Libraries' }, { id: 'info', label: 'Info' }]
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -115,7 +118,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, secondaryPanel, onSecondaryPanelChange, secondaryHeight, onSecondaryHeightChange, secondaryFloating, onToggleSecondaryFloating, secondaryFloatingPosition, onSecondaryFloatingPositionChange, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, secondaryPanel, onSecondaryPanelChange, secondaryHeight, onSecondaryHeightChange, secondaryFloating, onToggleSecondaryFloating, secondaryFloatingPosition, onSecondaryFloatingPositionChange, onRunActions, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
@@ -277,6 +280,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
     if (panel === 'channels') return <ChannelsPanel channels={document.channels ?? []} hasSelection={Boolean(selection?.bounds)} onLoadComponent={onLoadComponentChannel} onSaveSelection={onSaveAlphaChannel} onLoadAlpha={onLoadAlphaChannel} onDuplicateAlpha={onDuplicateAlphaChannel} onDeleteAlpha={onDeleteAlphaChannel} onTransformAlpha={onTransformAlphaChannel} />
     if (panel === 'paths') return <PathsPanel paths={document.paths ?? []} selectedPathId={document.selectedPathId ?? null} customShapes={customShapes} onChange={(paths, selectedPathId) => dispatch({ type: 'set-paths', paths, selectedPathId })} onFill={onFillPath} onStroke={onStrokePath} onSaveCustomShape={onSaveCustomShape} onApplyCustomShape={onApplyCustomShape} onRemoveCustomShape={onRemoveCustomShape} onImportCustomShape={onImportCustomShape} onExportPath={onExportPath} />
     if (panel === 'history') return <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />
+    if (panel === 'actions') return <ActionsPanel onRun={onRunActions} />
     if (panel === 'navigator') return <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />
     if (panel === 'histogram') return <HistogramPanel sourceCanvasRef={canvasRef} document={document} assets={assets} renderRevision={renderRevision} />
     if (panel === 'swatches') return <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />
@@ -324,6 +328,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'channels' && <ChannelsPanel channels={document.channels ?? []} hasSelection={Boolean(selection?.bounds)} onLoadComponent={onLoadComponentChannel} onSaveSelection={onSaveAlphaChannel} onLoadAlpha={onLoadAlphaChannel} onDuplicateAlpha={onDuplicateAlphaChannel} onDeleteAlpha={onDeleteAlphaChannel} onTransformAlpha={onTransformAlphaChannel} />}
       {activePanel === 'paths' && <PathsPanel paths={document.paths ?? []} selectedPathId={document.selectedPathId ?? null} customShapes={customShapes} onChange={(paths, selectedPathId) => dispatch({ type: 'set-paths', paths, selectedPathId })} onFill={onFillPath} onStroke={onStrokePath} onSaveCustomShape={onSaveCustomShape} onApplyCustomShape={onApplyCustomShape} onRemoveCustomShape={onRemoveCustomShape} onImportCustomShape={onImportCustomShape} onExportPath={onExportPath} />}
       {activePanel === 'history' && <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />}
+      {activePanel === 'actions' && <ActionsPanel onRun={onRunActions} />}
       {activePanel === 'navigator' && <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />}
       {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} assets={assets} renderRevision={renderRevision} />}
       {activePanel === 'swatches' && <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />}

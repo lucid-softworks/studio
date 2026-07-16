@@ -181,12 +181,12 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Add a persisted tabbed utility-panel stack
   - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
   - [x] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
-- [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
+- [x] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
   - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
-  - [ ] Add Actions panel
+  - [x] Add Actions panel
   - [x] Add Channels panel
   - [x] Add Paths panel
-- [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
+- [x] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server
 - [ ] Add searchable commands, contextual help, crash recovery, and diagnostic export
