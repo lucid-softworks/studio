@@ -9,7 +9,7 @@ import { historyReducer, initialHistoryState } from './editor/editor.reducer'
 import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
 import { hasEnabledLayerEffects } from './editor/effects'
 import { alphaBoundsInRegion, cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, mergeRasterBounds, surfaceToBlob } from './editor/image'
-import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createSmartObjectLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
+import { createAdjustmentLayer, createBlankDocumentModel, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createSmartObjectLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
 import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject, writeProjectStream } from './editor/project'
 import { openBrowserWritable, writeBlobIncrementally, type BrowserWritable } from './editor/file-save'
 import { calculateImageRect, getLayerBounds } from './editor/renderer'
@@ -58,6 +58,14 @@ type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 type AppProps = { onExit?: () => void; initialState?: HistoryState['present']; performanceMetrics?: EditorPerformanceMetrics; rendererOverride?: 'canvas2d' | 'webgpu' }
 type DocumentTab = { id: string; name: string; history: HistoryState; assets: AssetMap }
 type ActiveWorkerJob = { label: string; cancel: () => void }
+
+function createBlankDocumentState() {
+  const blank = createBlankDocumentModel()
+  return {
+    document: blank.document,
+    assets: { [blank.assetId]: createEmptyRasterSource(blank.document.canvasSize.width, blank.document.canvasSize.height, 'Layer 1') },
+  }
+}
 
 function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number | undefined, signal?: AbortSignal) {
   signal?.throwIfAborted()
@@ -516,6 +524,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   }, [dispatch, setNotice])
 
   useEffect(() => {
+    if (initialState) return
     let cancelled = false
     const hydrate = async () => {
       try {
@@ -527,9 +536,18 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
           setRecoverySavedAt(recovery.savedAt)
           const saved = recovery.savedAt ? new Date(recovery.savedAt).toLocaleString() : 'the latest snapshot'
           setNotice(`Recovered your locally autosaved project from ${saved}.`, 'info')
+        } else {
+          const blank = createBlankDocumentState()
+          setAssets(blank.assets)
+          historyDispatch({ type: 'replace', document: blank.document })
         }
       } catch {
-        if (!cancelled) setNotice('Local recovery was unavailable, so a fresh document was opened.', 'warning')
+        if (!cancelled) {
+          const blank = createBlankDocumentState()
+          setAssets(blank.assets)
+          historyDispatch({ type: 'replace', document: blank.document })
+          setNotice('Local recovery was unavailable, so a fresh document was opened.', 'warning')
+        }
       } finally {
         if (!cancelled) {
           hydratedRef.current = true
@@ -539,7 +557,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     }
     void hydrate()
     return () => { cancelled = true }
-  }, [setNotice])
+  }, [initialState, setNotice])
 
   useEffect(() => {
     if (initialState || !hydratedRef.current || isLoading) return
@@ -1934,7 +1952,8 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   }
 
   const newDocument = () => {
-    openDocumentTab(`Untitled ${documentTabs.length + 1}`, structuredClone(initialDocument), {})
+    const blank = createBlankDocumentState()
+    openDocumentTab(`Untitled ${documentTabs.length + 1}`, blank.document, blank.assets)
     setTool('move')
     setZoom(100)
     setNotice(null)

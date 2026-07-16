@@ -97,11 +97,18 @@ export function canvasToSource(point: Position, target: RasterTarget) {
   const localX = dx * Math.cos(angle) - dy * Math.sin(angle)
   const localY = dx * Math.sin(angle) + dy * Math.cos(angle)
   const normalized = geometryDestinationToSource({ x: localX / target.bounds.width + 0.5, y: localY / target.bounds.height + 0.5 }, target.layer.geometryTransform)
-  return { x: normalized.x * target.surface.width, y: normalized.y * target.surface.height }
+  return {
+    x: (target.layer.flipX ? 1 - normalized.x : normalized.x) * target.surface.width,
+    y: (target.layer.flipY ? 1 - normalized.y : normalized.y) * target.surface.height,
+  }
 }
 
 export function sourceToCanvas(point: Position, target: RasterTarget) {
-  const normalized = geometrySourceToDestination({ x: point.x / target.surface.width, y: point.y / target.surface.height }, target.layer.geometryTransform)
+  const source = {
+    x: target.layer.flipX ? 1 - point.x / target.surface.width : point.x / target.surface.width,
+    y: target.layer.flipY ? 1 - point.y / target.surface.height : point.y / target.surface.height,
+  }
+  const normalized = geometrySourceToDestination(source, target.layer.geometryTransform)
   const localX = (normalized.x - 0.5) * target.bounds.width
   const localY = (normalized.y - 0.5) * target.bounds.height
   const angle = target.bounds.rotation * Math.PI / 180
@@ -137,18 +144,12 @@ export function documentRegionToSourceRegion(region: { x: number; y: number; wid
 
 export function constrainRasterRegion(before: ImageData, after: ImageData, x: number, y: number, target: RasterTarget, selectionData: ImageData | null) {
   if (!selectionData) return after
-  const angle = target.bounds.rotation * Math.PI / 180
-  const centerX = target.bounds.x + target.bounds.width / 2
-  const centerY = target.bounds.y + target.bounds.height / 2
   for (let row = 0; row < after.height; row += 1) {
     for (let column = 0; column < after.width; column += 1) {
       const sourceX = x + column
       const sourceY = y + row
-      const localX = (sourceX / target.surface.width - 0.5) * target.bounds.width
-      const localY = (sourceY / target.surface.height - 0.5) * target.bounds.height
-      const documentX = centerX + localX * Math.cos(angle) - localY * Math.sin(angle)
-      const documentY = centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
-      const coverage = selectionAlphaAt(selectionData, documentX, documentY)
+      const documentPoint = sourceToCanvas({ x: sourceX + 0.5, y: sourceY + 0.5 }, target)
+      const coverage = selectionAlphaAt(selectionData, documentPoint.x, documentPoint.y)
       const offset = (row * after.width + column) * 4
       for (let channel = 0; channel < 4; channel += 1) after.data[offset + channel] = Math.round(before.data[offset + channel] * (1 - coverage) + after.data[offset + channel] * coverage)
     }

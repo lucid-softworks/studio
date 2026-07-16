@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { documentRegionToSourceRegion, geometryDestinationToSource, geometrySourceToDestination } from './raster-target'
-import type { LayerGeometryTransform } from './types'
+import { canvasToSource, documentRegionToSourceRegion, geometryDestinationToSource, geometrySourceToDestination, sourceToCanvas, type RasterTarget } from './raster-target'
+import type { LayerGeometryTransform, RasterLayer } from './types'
 
 describe('raster target regions', () => {
   it('maps document selection bounds into a clipped source-space region', () => {
@@ -63,6 +63,32 @@ describe('warped raster coordinates', () => {
     for (const source of [{ x: 0.15, y: 0.1 }, { x: 0.42, y: 0.3 }, { x: 0.7, y: 0.2 }, { x: 0.2, y: 0.72 }, { x: 0.58, y: 0.66 }, { x: 0.88, y: 0.84 }]) {
       const destination = geometrySourceToDestination(source, transform)
       const restored = geometryDestinationToSource(destination, transform)
+      expect(restored.x).toBeCloseTo(source.x, 6)
+      expect(restored.y).toBeCloseTo(source.y, 6)
+    }
+  })
+
+  it('maps painting coordinates through perspective, rotation, and layer flips', () => {
+    const layer: RasterLayer = {
+      id: 'paint', type: 'raster', name: 'Paint', visible: true, locked: false, opacity: 100,
+      position: { x: 0, y: 0 }, rotation: 17, assetId: 'pixels', width: 200, height: 100, scale: 100,
+      flipX: true, flipY: true,
+      geometryTransform: {
+        skewX: 4, skewY: -3, perspectiveX: 70, perspectiveY: -45,
+        corners: [{ x: -0.08, y: 0.03 }, { x: 0.04, y: -0.05 }, { x: 0.08, y: 0.07 }, { x: -0.03, y: 0.02 }],
+        interpolation: 'bicubic', referencePoint: { x: 0.5, y: 0.5 },
+      },
+    }
+    const target: RasterTarget = {
+      layer,
+      surface: { width: 200, height: 100 } as HTMLCanvasElement,
+      bounds: { x: 300, y: 200, width: 200, height: 100, rotation: layer.rotation },
+      locked: false,
+    }
+
+    for (const source of [{ x: 20, y: 15 }, { x: 85, y: 40 }, { x: 160, y: 75 }]) {
+      const displayed = sourceToCanvas(source, target)
+      const restored = canvasToSource(displayed, target)
       expect(restored.x).toBeCloseTo(source.x, 6)
       expect(restored.y).toBeCloseTo(source.y, 6)
     }

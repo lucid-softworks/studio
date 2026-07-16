@@ -1,13 +1,13 @@
 import { Fragment, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { rasterBounds, type LayerBounds } from '../editor/renderer'
 import { geometryTransformIsIdentity } from '../editor/transform'
 import { type RasterEdit, type RasterRegion } from '../editor/raster'
-import { selectionAlphaAt, type SelectionState } from '../editor/selection'
+import { type SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
-import type { EditorDocument, Position, RasterLayer } from '../editor/types'
+import type { EditorDocument, Position } from '../editor/types'
 import type { BrushDynamics, BrushPreset } from '../editor/resources'
 import { brushStampAlpha, brushStampRadius, dynamicBrushStamps, interpolateBrushStamps, normalizePointerInput, smoothBrushPoint, type PointerBrushInput } from '../editor/brush-engine'
 import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
+import { canvasToSource, constrainRasterRegion, resolveRasterTarget, type RasterTarget } from '../editor/raster-target'
 import { useRasterStrokePreview } from './useRasterStrokePreview'
 
 type Props = {
@@ -35,7 +35,7 @@ type Props = {
 
 type Stroke = {
   pointerId: number
-  layer: RasterLayer
+  target: RasterTarget
   before: RasterTileSnapshot
   last: Position
   lastPressure: number
@@ -44,7 +44,6 @@ type Stroke = {
   maxX: number
   maxY: number
   radius: number
-  bounds: LayerBounds
   selectionData: ImageData | null
   seed: number
   previewing: boolean
@@ -56,24 +55,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   const roundTipRef = useRef<{ hardness: number; surface: HTMLCanvasElement } | null>(null)
   const tintedTipRef = useRef<{ tipId: string; color: string; surface: HTMLCanvasElement } | null>(null)
   const canvas = canvasRef.current
-  const selectedRasterLayer = document.layers.find((candidate) => candidate.id === document.selectedLayerId && candidate.type === 'raster') as RasterLayer | undefined
-  const maskSurface = maskAssetId ? assets[maskAssetId]?.surface : undefined
-  const layer: RasterLayer | undefined = maskAssetId && maskSurface ? {
-    id: `mask-${maskAssetId}`,
-    name: 'Layer mask',
-    type: 'raster',
-    assetId: maskAssetId,
-    visible: true,
-    locked: Boolean(maskLocked),
-    opacity: 100,
-    position: { x: 0, y: 0 },
-    rotation: 0,
-    width: canvas?.width ?? maskSurface.width,
-    height: canvas?.height ?? maskSurface.height,
-    scale: 100,
-  } : selectedRasterLayer
-  const asset = layer ? assets[layer.assetId] : undefined
-  const surface = asset?.surface
+  const target = canvas ? resolveRasterTarget(canvas, document, assets, maskAssetId, maskLocked, locked) : null
+  const layer = target?.layer
+  const surface = target?.surface
   const strokePreview = useRasterStrokePreview({ canvasRef, document, assets, layer, surface, imageSmoothingEnabled: tool !== 'pencil' })
 
   const canvasPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -83,22 +67,13 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     return { x: (event.clientX - rect.left) / rect.width * svg.viewBox.baseVal.width, y: (event.clientY - rect.top) / rect.height * svg.viewBox.baseVal.height }
   }
 
-  const sourcePoint = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!canvas || !layer || !surface) return null
-    const bounds = rasterBounds(canvas, layer)
-    const point = canvasPoint(event)
-    const centerX = bounds.x + bounds.width / 2
-    const centerY = bounds.y + bounds.height / 2
-    const angle = -bounds.rotation * Math.PI / 180
-    const dx = point.x - centerX
-    const dy = point.y - centerY
-    const localX = dx * Math.cos(angle) - dy * Math.sin(angle)
-    const localY = dx * Math.sin(angle) + dy * Math.cos(angle)
+  const sourcePoint = (event: ReactPointerEvent<SVGSVGElement>, rasterTarget = target) => {
+    if (!rasterTarget) return null
+    const point = canvasToSource(canvasPoint(event), rasterTarget)
     return {
-      point: { x: (localX / bounds.width + 0.5) * surface.width, y: (localY / bounds.height + 0.5) * surface.height },
-      radius: Math.max(0.5, size / (bounds.width / surface.width) / 2),
+      point,
+      radius: Math.max(0.5, size / (rasterTarget.bounds.width / rasterTarget.surface.width) / 2),
       input: normalizePointerInput(event.pointerType, event.pressure, event.tiltX, event.tiltY, event.twist, event.buttons, pressureCalibration),
-      bounds,
     }
   }
 
@@ -122,7 +97,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   }
 
   const draw = (stroke: Stroke, from: Position, to: Position, radius: number, fromPressure: number, input: PointerBrushInput) => {
-    if (!surface) return
+    const surface = stroke.target.surface
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     context.save()
@@ -180,20 +155,20 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
   }
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!layer || layer.locked || locked || !surface) return
-    const mapped = sourcePoint(event)
-    const context = surface.getContext('2d', { willReadFrequently: true })
+    if (!target || target.locked) return
+    const mapped = sourcePoint(event, target)
+    const context = target.surface.getContext('2d', { willReadFrequently: true })
     if (!mapped || !context) return
     event.preventDefault()
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
-    const { point, radius, input, bounds } = mapped
+    const { point, radius, input } = mapped
     const selectionContext = selection?.mask.getContext('2d', { willReadFrequently: true })
     const selectionData = selectionContext && selection?.bounds ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null
-    const previewing = !maskAssetId && !selectionData && geometryTransformIsIdentity(layer.geometryTransform) && !layer.maskAssetId && !layer.vectorMask && !layer.clipToBelow
+    const previewing = !maskAssetId && !selectionData && geometryTransformIsIdentity(target.layer.geometryTransform) && !target.layer.maskAssetId && !target.layer.vectorMask && !target.layer.clipToBelow
     strokeRef.current = {
       pointerId: event.pointerId,
-      layer,
-      before: createRasterTileSnapshot(surface),
+      target,
+      before: createRasterTileSnapshot(target.surface),
       last: point,
       lastPressure: input.pressure,
       minX: point.x - radius,
@@ -201,7 +176,6 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       maxX: point.x + radius,
       maxY: point.y + radius,
       radius,
-      bounds,
       selectionData,
       seed: Math.floor(performance.now() * 1000),
       previewing,
@@ -209,13 +183,13 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (previewing) strokePreview.beginPreview()
     draw(strokeRef.current, point, point, radius, input.pressure, input)
     if (previewing) strokePreview.drawPreview()
-    else onChange(layer.assetId, { x: point.x - radius - 2, y: point.y - radius - 2, width: radius * 2 + 4, height: radius * 2 + 4 })
+    else onChange(target.layer.assetId, { x: point.x - radius - 2, y: point.y - radius - 2, width: radius * 2 + 4, height: radius * 2 + 4 })
   }
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const stroke = strokeRef.current
     if (!stroke || stroke.pointerId !== event.pointerId) return
-    const mapped = sourcePoint(event)
+    const mapped = sourcePoint(event, stroke.target)
     if (!mapped) return
     const previous = stroke.last
     const point = smoothBrushPoint(previous, mapped.point, dynamics.smoothing)
@@ -228,7 +202,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     stroke.maxX = Math.max(stroke.maxX, point.x + dynamicRadius)
     stroke.maxY = Math.max(stroke.maxY, point.y + dynamicRadius)
     if (stroke.previewing) strokePreview.schedulePreview()
-    else onChange(stroke.layer.assetId, {
+    else onChange(stroke.target.layer.assetId, {
       x: Math.min(previous.x, point.x) - dynamicRadius - 2,
       y: Math.min(previous.y, point.y) - dynamicRadius - 2,
       width: Math.abs(point.x - previous.x) + dynamicRadius * 2 + 4,
@@ -238,7 +212,8 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
     const stroke = strokeRef.current
-    if (!stroke || stroke.pointerId !== event.pointerId || !surface) return
+    if (!stroke || stroke.pointerId !== event.pointerId) return
+    const surface = stroke.target.surface
     const context = surface.getContext('2d', { willReadFrequently: true })
     strokeRef.current = null
     strokePreview.cancelScheduledPreview()
@@ -255,28 +230,12 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       return
     }
     const before = rasterSnapshotRegion(stroke.before, x, y, width, height)
-    const after = context.getImageData(x, y, width, height)
+    const after = constrainRasterRegion(before, context.getImageData(x, y, width, height), x, y, stroke.target, stroke.selectionData)
     if (stroke.selectionData) {
-      const centerX = stroke.bounds.x + stroke.bounds.width / 2
-      const centerY = stroke.bounds.y + stroke.bounds.height / 2
-      const angle = stroke.bounds.rotation * Math.PI / 180
-      for (let row = 0; row < height; row += 1) {
-        for (let column = 0; column < width; column += 1) {
-          const sourceX = x + column
-          const sourceY = y + row
-          const localX = (sourceX / surface.width - 0.5) * stroke.bounds.width
-          const localY = (sourceY / surface.height - 0.5) * stroke.bounds.height
-          const documentX = centerX + localX * Math.cos(angle) - localY * Math.sin(angle)
-          const documentY = centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
-          const coverage = selectionAlphaAt(stroke.selectionData, documentX, documentY)
-          const offset = (row * width + column) * 4
-          for (let channel = 0; channel < 4; channel += 1) after.data[offset + channel] = Math.round(before.data[offset + channel] * (1 - coverage) + after.data[offset + channel] * coverage)
-        }
-      }
       context.putImageData(after, x, y)
     }
-    onChange(stroke.layer.assetId, { x, y, width, height })
-    onCommit({ assetId: stroke.layer.assetId, x, y, before, after })
+    onChange(stroke.target.layer.assetId, { x, y, width, height })
+    onCommit({ assetId: stroke.target.layer.assetId, x, y, before, after })
     if (stroke.previewing) {
       strokePreview.drawPreview()
       strokePreview.finishPreview()
@@ -291,7 +250,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
         aria-label={maskAssetId ? `Mask ${tool} surface` : `${tool === 'brush' ? 'Brush' : tool === 'pencil' ? 'Pencil' : tool === 'eraser' ? 'Eraser' : tool === 'dodge' ? 'Dodge' : 'Burn'} surface`}
         viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
         preserveAspectRatio="none"
-        className={`absolute inset-0 size-full touch-none ${layer && !layer.locked && !locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
+        className={`absolute inset-0 size-full touch-none ${target && !target.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
         onPointerDown={pointerDown}
         onPointerMove={pointerMove}
         onPointerUp={pointerEnd}

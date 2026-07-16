@@ -89,6 +89,23 @@ export function createRasterLayer(assetId: string, name: string, width: number, 
   }
 }
 
+export function createBlankDocumentModel() {
+  const document = structuredClone(initialDocument)
+  const assetId = createId()
+  const { width, height } = document.canvasSize
+  const layer = { ...createRasterLayer(assetId, 'Layer 1', width, height), groupId: null, stackOrder: 0 }
+  return {
+    assetId,
+    document: {
+      ...document,
+      layers: [layer],
+      selectedLayerId: layer.id,
+      selectedLayerIds: [layer.id],
+      selectedGroupId: null,
+    },
+  }
+}
+
 export function createSmartObjectLayer(assetId: string, name: string, width: number, height: number, source: SmartObjectSource, position = { x: 0, y: 0 }): SmartObjectLayer {
   return {
     ...layerBase(name),
