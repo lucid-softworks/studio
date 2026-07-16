@@ -1160,6 +1160,12 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
         imageResources: preservedImageResources(psd.imageResources),
         linkedFiles: psd.linkedFiles?.map((file) => serializePsdValue(file)),
       },
+      fileMetadata: {
+        sourceFormat: name.toLocaleLowerCase().endsWith('.psb') ? 'psb' : 'psd',
+        resolutionDpi: psd.imageResources?.resolutionInfo?.horizontalResolution,
+        xmp: psd.imageResources?.xmpMetadata,
+        importedAt: new Date().toISOString(),
+      },
     },
   }
 }
@@ -1541,11 +1547,14 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     ? revivePsdValue(documentState.psdMetadata.imageResources) as ImageResources
     : {}
   const guides = documentState.guides?.map((guide) => ({ direction: guide.direction, location: guide.position }))
-  const imageResources: ImageResources | undefined = Object.keys(preservedResources).length || channelNames?.length || guides?.length ? {
+  const documentResolution = documentState.fileMetadata?.resolutionDpi
+  const imageResources: ImageResources | undefined = Object.keys(preservedResources).length || channelNames?.length || guides?.length || documentResolution || documentState.fileMetadata?.xmp ? {
     ...preservedResources,
     alphaChannelNames: channelNames?.length ? channelNames : preservedResources.alphaChannelNames,
     alphaIdentifiers: channelIds?.length === channelNames?.length ? channelIds : preservedResources.alphaIdentifiers,
     gridAndGuidesInformation: guides?.length ? { ...preservedResources.gridAndGuidesInformation, guides } : preservedResources.gridAndGuidesInformation,
+    resolutionInfo: documentResolution ? { horizontalResolution: documentResolution, horizontalResolutionUnit: 'PPI', widthUnit: 'Inches', verticalResolution: documentResolution, verticalResolutionUnit: 'PPI', heightUnit: 'Inches' } : preservedResources.resolutionInfo,
+    xmpMetadata: documentState.fileMetadata?.xmp ?? preservedResources.xmpMetadata,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
   let buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })

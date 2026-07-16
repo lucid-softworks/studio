@@ -3,7 +3,7 @@ import type { WorkspacePreset } from '../editor/panel-layout'
 import { commandForEvent, shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
 import type { PluginExporterHook, PluginFilterHook } from '../editor/plugins'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view' | 'help'
 
 type MenuBarProps = {
@@ -17,6 +17,7 @@ type MenuBarProps = {
   onOpenCommands: () => void
   onOpenHelp: () => void
   onExportDiagnostics: () => void
+  onToggleTimeline: () => void
   pluginExporters: Array<PluginExporterHook & { pluginId: string }>
   onPluginExport: (hook: PluginExporterHook) => void
   pluginFilters: Array<PluginFilterHook & { pluginId: string }>
@@ -27,6 +28,8 @@ type MenuBarProps = {
   onLoadBrush: () => void
   onExport: (format: ExportFormat) => void
   onExportArtboards: () => void
+  onOpenExportWorkspace: () => void
+  onOpenPrint: () => void
   onUndo: () => void
   onRedo: () => void
   onTransformAgain: () => void
@@ -64,6 +67,7 @@ type MenuBarProps = {
   workspacePresets: readonly WorkspacePreset[]
   propertiesPanelVisible: boolean
   layersPanelVisible: boolean
+  timelineVisible: boolean
   canUndo: boolean
   canRedo: boolean
   canTransformAgain: boolean
@@ -165,12 +169,20 @@ export function MenuBar(props: MenuBarProps) {
         <Separator />
         <MenuItem shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />
+        <MenuItem disabled={props.exporting} onSelect={() => select(props.onOpenExportWorkspace)}>Export assets…</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(props.onOpenPrint)}>Print and PDF…</MenuItem>
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Export as</p>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('png'))}>PNG image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('jpeg'))}>JPEG image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('svg'))}>Editable SVG</MenuItem>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psb'))}>Large document PSB</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('tiff'))}>Layered multipage TIFF</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('pdf'))}>PDF</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('avif'))}>AVIF image</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('gif'))}>Animated GIF from layers</MenuItem>
+        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('apng'))}>Animated PNG from layers</MenuItem>
         {props.pluginExporters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin exporters</p>{props.pluginExporters.map((hook) => <MenuItem key={`${hook.pluginId}:${hook.id}`} disabled={props.exporting} onSelect={() => select(() => props.onPluginExport(hook))}>{hook.label}</MenuItem>)}</>}
         <Separator />
         <MenuItem disabled={props.exporting || !props.hasArtboards} onSelect={() => select(props.onExportArtboards)}>Export artboards as PNGs</MenuItem>
@@ -251,6 +263,7 @@ export function MenuBar(props: MenuBarProps) {
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Panels</p>
         <MenuItem checked={props.propertiesPanelVisible} onSelect={() => select(() => props.onTogglePanel('properties'))}>Properties</MenuItem>
         <MenuItem checked={props.layersPanelVisible} onSelect={() => select(() => props.onTogglePanel('layers'))}>Layers</MenuItem>
+        <MenuItem checked={props.timelineVisible} onSelect={() => select(props.onToggleTimeline)}>Timeline</MenuItem>
         <Separator />
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Workspace</p>
         {props.workspacePresets.map((workspace) => workspace.builtIn

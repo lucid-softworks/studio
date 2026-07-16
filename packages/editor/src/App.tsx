@@ -43,8 +43,12 @@ import { CommandPalette, type PaletteCommand } from './components/CommandPalette
 import { ContextualHelpDialog } from './components/ContextualHelpDialog'
 import { createDiagnosticReport, installDiagnosticListeners } from './editor/diagnostics'
 import { shortcutCommands, shortcutLabel } from './editor/shortcuts'
+import { animationDocumentAt } from './editor/animation'
+import { AnimationTimeline } from './components/AnimationTimeline'
+import { ExportWorkspace, type AssetExportSettings } from './components/ExportWorkspace'
+import { PrintDialog } from './components/PrintDialog'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
 type AppProps = { onExit?: () => void }
@@ -75,6 +79,10 @@ function App({ onExit }: AppProps) {
   const [editingPlugins, setEditingPlugins] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [contextualHelpOpen, setContextualHelpOpen] = useState(false)
+  const [timelineOpen, setTimelineOpen] = useState(false)
+  const [exportWorkspaceOpen, setExportWorkspaceOpen] = useState(false)
+  const [printDialogOpen, setPrintDialogOpen] = useState(false)
+  const [animationPreview, setAnimationPreview] = useState({ frameIndex: 0, time: 0 })
   const [recoverySavedAt, setRecoverySavedAt] = useState<string>()
   const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
   const [lastGeometryTransform, setLastGeometryTransform] = useState<LayerGeometryTransform | null>(null)
@@ -150,6 +158,7 @@ function App({ onExit }: AppProps) {
   const precisionBackupsRef = useRef(new Map<string, Map<16 | 32, NonNullable<SourceImage['precision']>>>())
   const document = history.present
   const rendererCapabilities = useRendererCapabilities(document)
+  const renderDocument = animationDocumentAt(document, animationPreview)
 
   useEffect(() => {
     installDiagnosticListeners()
@@ -168,7 +177,7 @@ function App({ onExit }: AppProps) {
 
   assetsRef.current = assets
   documentTabsRef.current = documentTabs
-  useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
+  useCanvasRenderer(canvasRef, renderDocument, assets, resourceRevision, rendererCapabilities.activeRenderer)
 
   useEffect(() => {
     if (document.bitDepth === 8) return
@@ -1364,11 +1373,11 @@ function App({ onExit }: AppProps) {
       setIsExporting(false)
       return
     }
-    if (format === 'psd') {
+    if (format === 'psd' || format === 'psb') {
       try {
         const { exportPsdDocument } = await import('./editor/psd')
-        const blob = await exportPsdDocument(document, assets)
-        downloadBlob(blob, 'studio-composition.psd')
+        const blob = await exportPsdDocument(document, assets, format === 'psb')
+        downloadBlob(blob, `studio-composition.${format}`)
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'The layered PSD could not be created.')
       } finally {
@@ -1378,6 +1387,47 @@ function App({ onExit }: AppProps) {
     }
     const exportCanvas = window.document.createElement('canvas')
     canvas2dCompositionRenderer.render(exportCanvas, { ...document, selectedLayerId: null }, assets)
+    if (['tiff', 'pdf', 'gif', 'apng', 'avif'].includes(format)) {
+      try {
+        const output = await import('./editor/output-formats')
+        const pixelsFor = (canvas: HTMLCanvasElement) => {
+          const context = canvas.getContext('2d', { willReadFrequently: true })
+          if (!context) throw new Error('The exported canvas pixels are unavailable.')
+          return context.getImageData(0, 0, canvas.width, canvas.height)
+        }
+        const composite = { name: 'Composite', pixels: pixelsFor(exportCanvas), delayMs: 100 }
+        const layerFrames = document.layers.filter((layer) => layer.visible && layer.type !== 'adjustment').map((layer) => {
+          const canvas = window.document.createElement('canvas')
+          canvas2dCompositionRenderer.render(canvas, { ...document, background: { ...document.background, kind: 'transparent' }, layers: [layer], selectedLayerId: null, selectedLayerIds: [] }, assets)
+          return { name: layer.name, pixels: pixelsFor(canvas), delayMs: 100 }
+        })
+        const animationFrames: typeof layerFrames = []
+        if ((format === 'gif' || format === 'apng') && document.animation) {
+          const animationDocument = { ...document, animation: { ...document.animation, onionSkin: false } }
+          const previews = document.animation.mode === 'frame'
+            ? document.animation.frames.map((frame, frameIndex) => ({ name: frame.name, frameIndex, time: 0, delayMs: frame.delayMs }))
+            : Array.from({ length: Math.min(600, Math.max(1, Math.ceil(document.animation.duration * document.animation.fps))) }, (_, frameIndex) => ({ name: `Frame ${frameIndex + 1}`, frameIndex: 0, time: frameIndex / document.animation!.fps, delayMs: Math.round(1000 / document.animation!.fps) }))
+          for (const preview of previews) {
+            const canvas = window.document.createElement('canvas')
+            canvas2dCompositionRenderer.render(canvas, animationDocumentAt(animationDocument, preview), assets)
+            animationFrames.push({ name: preview.name, pixels: pixelsFor(canvas), delayMs: preview.delayMs })
+          }
+        }
+        let blob: Blob
+        if (format === 'tiff') blob = output.encodeLayeredTiff([composite, ...layerFrames], document.fileMetadata?.resolutionDpi ?? 72)
+        else if (format === 'pdf') blob = await output.encodePdf(composite, document.fileMetadata?.resolutionDpi ?? 300, { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description })
+        else if (format === 'avif') blob = await output.encodeAvif(composite)
+        else if (format === 'gif') blob = await output.encodeGif(animationFrames.length ? animationFrames : layerFrames.length ? layerFrames : [composite])
+        else blob = await output.encodeApng(animationFrames.length ? animationFrames : layerFrames.length ? layerFrames : [composite])
+        downloadBlob(blob, `studio-composition.${format === 'tiff' ? 'tif' : format === 'apng' ? 'png' : format}`)
+        setNotice(format === 'tiff' ? `Exported a multipage TIFF with a composite and ${layerFrames.length} layer page${layerFrames.length === 1 ? '' : 's'}.` : `Exported ${format.toUpperCase()} locally.`, 'success')
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : `The ${format.toUpperCase()} could not be created.`)
+      } finally {
+        setIsExporting(false)
+      }
+      return
+    }
     const mime = `image/${format}`
     exportCanvas.toBlob((blob) => {
       if (!blob) {
@@ -1385,8 +1435,9 @@ function App({ onExit }: AppProps) {
         setIsExporting(false)
         return
       }
-      downloadBlob(blob, `studio-composition.${format === 'jpeg' ? 'jpg' : format}`)
-      setIsExporting(false)
+      import('./editor/metadata').then(({ applyImageMetadata }) => applyImageMetadata(blob, format, document.fileMetadata ?? {})).then((tagged) => {
+        downloadBlob(tagged, `studio-composition.${format === 'jpeg' ? 'jpg' : format}`)
+      }).catch((error) => setNotice(error instanceof Error ? error.message : 'Image metadata could not be written.')).finally(() => setIsExporting(false))
     }, mime, format === 'png' ? undefined : 0.92)
   }
 
@@ -1412,6 +1463,81 @@ function App({ onExit }: AppProps) {
     } finally {
       setIsExporting(false)
     }
+  }
+
+  const exportGeneratedAssets = async (settings: AssetExportSettings) => {
+    setIsExporting(true)
+    try {
+      const composition = window.document.createElement('canvas')
+      canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
+      const safeName = (name: string, fallback: string) => name.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback
+      const targets: Array<{ name: string; source: HTMLCanvasElement; x: number; y: number; width: number; height: number }> = []
+      if (settings.targets === 'document') targets.push({ name: 'studio-composition', source: composition, x: 0, y: 0, width: composition.width, height: composition.height })
+      else if (settings.targets === 'slices') for (const [index, slice] of (document.slices ?? []).entries()) targets.push({ name: safeName(slice.name, `slice-${index + 1}`), source: composition, x: slice.x, y: slice.y, width: slice.width, height: slice.height })
+      else if (settings.targets === 'artboards') for (const [index, artboard] of (document.artboards ?? []).entries()) targets.push({ name: safeName(artboard.name, `artboard-${index + 1}`), source: composition, x: artboard.x, y: artboard.y, width: artboard.width, height: artboard.height })
+      else {
+        const boundsContext = composition.getContext('2d')
+        if (!boundsContext) throw new Error('Layer bounds are unavailable for export.')
+        for (const [index, layer] of document.layers.filter((candidate) => candidate.visible && candidate.type !== 'adjustment').entries()) {
+          const surface = window.document.createElement('canvas')
+          canvas2dCompositionRenderer.render(surface, { ...document, background: { ...document.background, kind: 'transparent' }, layers: [layer], selectedLayerId: null, selectedLayerIds: [] }, assets)
+          const bounds = getLayerBounds(boundsContext, composition, layer, assets) ?? { x: 0, y: 0, width: composition.width, height: composition.height }
+          targets.push({ name: safeName(layer.name, `layer-${index + 1}`), source: surface, x: Math.floor(bounds.x), y: Math.floor(bounds.y), width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) })
+        }
+      }
+      if (!targets.length) throw new Error(`There are no ${settings.targets} to export.`)
+      for (const target of targets) {
+        const outputCanvas = window.document.createElement('canvas')
+        outputCanvas.width = Math.max(1, Math.round(target.width * settings.scale))
+        outputCanvas.height = Math.max(1, Math.round(target.height * settings.scale))
+        const context = outputCanvas.getContext('2d', { willReadFrequently: true })
+        if (!context) throw new Error('Could not allocate an asset export surface.')
+        context.imageSmoothingEnabled = true
+        context.imageSmoothingQuality = 'high'
+        context.drawImage(target.source, target.x, target.y, target.width, target.height, 0, 0, outputCanvas.width, outputCanvas.height)
+        let blob: Blob
+        if (settings.format === 'avif') {
+          const { encodeAvif } = await import('./editor/output-formats')
+          blob = await encodeAvif({ name: target.name, pixels: context.getImageData(0, 0, outputCanvas.width, outputCanvas.height) })
+        } else {
+          const mime = settings.format === 'jpeg' ? 'image/jpeg' : `image/${settings.format}`
+          blob = await new Promise<Blob>((resolve, reject) => outputCanvas.toBlob((value) => value ? resolve(value) : reject(new Error(`Could not encode ${target.name}.`)), mime, settings.format === 'png' ? undefined : settings.quality / 100))
+        }
+        const extension = settings.format === 'jpeg' ? 'jpg' : settings.format
+        const { applyImageMetadata } = await import('./editor/metadata')
+        downloadBlob(await applyImageMetadata(blob, settings.format, document.fileMetadata ?? {}, settings.stripMetadata), `${target.name}${settings.suffix}.${extension}`)
+      }
+      setNotice(`Generated ${targets.length} ${settings.format.toUpperCase()} asset${targets.length === 1 ? '' : 's'} locally.`, 'success')
+      setExportWorkspaceOpen(false)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The assets could not be generated.')
+    } finally { setIsExporting(false) }
+  }
+
+  const createPrintPdf = async (printImmediately: boolean) => {
+    setIsExporting(true)
+    try {
+      const canvas = window.document.createElement('canvas')
+      canvas2dCompositionRenderer.render(canvas, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
+      const context = canvas.getContext('2d', { willReadFrequently: true })
+      if (!context) throw new Error('The print canvas pixels are unavailable.')
+      const dpi = document.fileMetadata?.resolutionDpi ?? 300
+      const settings = document.printSettings ?? { widthInches: canvas.width / dpi, heightInches: canvas.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true }
+      const { encodePrintPdf } = await import('./editor/output-formats')
+      const blob = await encodePrintPdf({ name: 'Studio composition', pixels: context.getImageData(0, 0, canvas.width, canvas.height) }, settings, { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description })
+      if (printImmediately) {
+        const url = URL.createObjectURL(blob)
+        const frame = window.document.createElement('iframe')
+        frame.title = 'Studio print document'
+        frame.style.position = 'fixed'; frame.style.width = '1px'; frame.style.height = '1px'; frame.style.opacity = '0'; frame.style.pointerEvents = 'none'
+        frame.onload = () => { frame.contentWindow?.focus(); frame.contentWindow?.print(); window.setTimeout(() => { frame.remove(); URL.revokeObjectURL(url) }, 60_000) }
+        frame.src = url
+        window.document.body.append(frame)
+      } else downloadBlob(blob, 'studio-print.pdf')
+      setNotice(printImmediately ? 'Opened the browser print workflow with a locally generated PDF.' : 'Exported the print-ready PDF.', 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The print PDF could not be created.')
+    } finally { setIsExporting(false) }
   }
 
   const saveProject = async () => {
@@ -1476,20 +1602,52 @@ function App({ onExit }: AppProps) {
         const { importSvgFile } = await import('./editor/svg')
         loaded = await importSvgFile(file)
       } else {
-        const source = createRasterSurface(await loadImageFile(file))
-        const assetId = createId()
-        const layer = createRasterLayer(assetId, file.name.replace(/\.[^.]+$/, ''), source.surface!.width, source.surface!.height)
-        loaded = {
-          assets: { [assetId]: source },
-          document: {
-            ...initialDocument,
-            canvasPreset: 'custom',
-            canvasSize: { width: source.surface!.width, height: source.surface!.height },
-            background: { ...initialDocument.background, kind: 'transparent' },
-            layers: [layer],
-            selectedLayerId: layer.id,
-            selectedLayerIds: [layer.id],
-          },
+        const advancedFormats = await import('./editor/advanced-formats')
+        const advancedFormat = advancedFormats.advancedFormatForFile(file)
+        if (advancedFormat) {
+          const imported = await advancedFormats.importAdvancedRaster(file)
+          const nextAssets: AssetMap = {}
+          const layers = imported.pages.map((page, index) => {
+            const assetId = createId()
+            nextAssets[assetId] = page.source
+            const layer = createRasterLayer(assetId, page.name.replace(/\.[^.]+$/, ''), page.width, page.height)
+            layer.stackOrder = index
+            return layer
+          })
+          loaded = {
+            assets: nextAssets,
+            document: {
+              ...initialDocument,
+              bitDepth: imported.bitDepth,
+              canvasPreset: 'custom',
+              canvasSize: { width: Math.max(...imported.pages.map((page) => page.width)), height: Math.max(...imported.pages.map((page) => page.height)) },
+              background: { ...initialDocument.background, kind: 'transparent' },
+              layers,
+              selectedLayerId: layers[0]?.id ?? null,
+              selectedLayerIds: layers[0] ? [layers[0].id] : [],
+              fileMetadata: imported.metadata,
+            },
+          }
+          importWarnings = imported.warnings
+        } else {
+          const source = createRasterSurface(await loadImageFile(file))
+          const { readImageMetadata } = await import('./editor/metadata')
+          const metadata = await readImageMetadata(file)
+          const assetId = createId()
+          const layer = createRasterLayer(assetId, file.name.replace(/\.[^.]+$/, ''), source.surface!.width, source.surface!.height)
+          loaded = {
+            assets: { [assetId]: source },
+            document: {
+              ...initialDocument,
+              canvasPreset: 'custom',
+              canvasSize: { width: source.surface!.width, height: source.surface!.height },
+              background: { ...initialDocument.background, kind: 'transparent' },
+              layers: [layer],
+              selectedLayerId: layer.id,
+              selectedLayerIds: [layer.id],
+              fileMetadata: metadata,
+            },
+          }
         }
         if (pluginImporter) importWarnings.push(`Decoded through ${pluginImporter.plugin.name} · ${pluginImporter.hook.label}`)
       }
@@ -1708,6 +1866,8 @@ function App({ onExit }: AppProps) {
             onLoadBrush={() => brushInputRef.current?.click()}
             onExport={(format) => void exportImage(format)}
             onExportArtboards={() => void exportArtboards()}
+            onOpenExportWorkspace={() => setExportWorkspaceOpen(true)}
+            onOpenPrint={() => setPrintDialogOpen(true)}
             onUndo={performUndo}
             onRedo={performRedo}
             onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
@@ -1718,6 +1878,7 @@ function App({ onExit }: AppProps) {
             onOpenCommands={() => setCommandPaletteOpen(true)}
             onOpenHelp={() => setContextualHelpOpen(true)}
             onExportDiagnostics={exportDiagnostics}
+            onToggleTimeline={() => setTimelineOpen((value) => !value)}
             pluginExporters={plugins.flatMap((plugin) => plugin.hooks.exporters.map((hook) => ({ ...hook, pluginId: plugin.id })))}
             onPluginExport={(hook) => void exportImage(hook.format)}
             pluginFilters={plugins.flatMap((plugin) => plugin.hooks.filters.map((hook) => ({ ...hook, pluginId: plugin.id })))}
@@ -1763,6 +1924,7 @@ function App({ onExit }: AppProps) {
             workspacePresets={[...builtInWorkspacePresets, ...savedWorkspaces]}
             propertiesPanelVisible={!workspaceLayout.collapsedPanels.properties}
             layersPanelVisible={!workspaceLayout.collapsedPanels.layers}
+            timelineVisible={timelineOpen}
             canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
             canTransformAgain={Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment'))}
@@ -1822,7 +1984,7 @@ function App({ onExit }: AppProps) {
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} customShapes={customShapes} onSaveCustomShape={saveCustomShape} onApplyCustomShape={applyCustomShape} onRemoveCustomShape={(id) => setCustomShapes((current) => current.filter((shape) => shape.id !== id))} onImportCustomShape={() => shapeInputRef.current?.click()} onExportPath={exportDocumentPath} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} secondaryPanel={workspaceLayout.secondaryUtilityPanel} onSecondaryPanelChange={(secondaryUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, secondaryUtilityPanel }))} secondaryHeight={workspaceLayout.secondaryPanelHeight} onSecondaryHeightChange={(secondaryPanelHeight) => setWorkspaceLayout((current) => ({ ...current, secondaryPanelHeight }))} secondaryFloating={workspaceLayout.secondaryUtilityPanelFloating} onToggleSecondaryFloating={() => setWorkspaceLayout((current) => ({ ...current, secondaryUtilityPanelFloating: !current.secondaryUtilityPanelFloating }))} secondaryFloatingPosition={workspaceLayout.secondaryFloatingPanelPosition} onSecondaryFloatingPositionChange={(secondaryFloatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, secondaryFloatingPanelPosition }))} onRunActions={runActionSteps} plugins={plugins} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setActiveGradientStops(normalizeGradientStops(gradient.stops, gradient.start, gradient.end)); setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, stops) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, stops, start: stops[0].color, end: stops.at(-1)!.color }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} onImportPattern={() => patternInputRef.current?.click()} onExportPattern={exportPatternFromLibrary} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onExportBrush={(brush) => void exportBrushFromLibrary(brush)} onLoadFont={() => fontInputRef.current?.click()} onRemoveFont={(id) => void removeFontFromLibrary(id)} />
       </main>
 
-      <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
+      <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp,image/avif,image/x-icon" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
       <input ref={linkedSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addLinkedSmartObjectFile(file); event.target.value = '' }} />
       <input ref={replaceSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'embedded'); event.target.value = '' }} />
       <input ref={relinkSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'linked'); event.target.value = '' }} />
@@ -1841,6 +2003,9 @@ function App({ onExit }: AppProps) {
       {editingPlugins && <PluginManagerDialog plugins={plugins} onChange={setPlugins} onClose={() => setEditingPlugins(false)} />}
       {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}
       {contextualHelpOpen && <ContextualHelpDialog tool={tool} selectedLayerType={selectedLayers.length === 1 ? selectedLayers[0].type : undefined} onClose={() => setContextualHelpOpen(false)} />}
+      {timelineOpen && <AnimationTimeline document={document} preview={animationPreview} onPreview={setAnimationPreview} onChange={(animation) => dispatch({ type: 'set-animation', animation })} onClose={() => setTimelineOpen(false)} />}
+      {exportWorkspaceOpen && <ExportWorkspace slices={document.slices ?? []} metadata={document.fileMetadata ?? {}} selection={selection?.bounds ?? null} layerCount={document.layers.length} artboardCount={document.artboards?.length ?? 0} onSlicesChange={(slices) => dispatch({ type: 'set-slices', slices })} onMetadataChange={(metadata) => dispatch({ type: 'set-file-metadata', metadata })} onExport={(settings) => void exportGeneratedAssets(settings)} onClose={() => setExportWorkspaceOpen(false)} />}
+      {printDialogOpen && <PrintDialog canvasSize={document.canvasSize} metadata={document.fileMetadata ?? {}} value={document.printSettings ?? (() => { const dpi = document.fileMetadata?.resolutionDpi ?? 300; return { widthInches: document.canvasSize.width / dpi, heightInches: document.canvasSize.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true } })()} onChange={(settings) => dispatch({ type: 'set-print-settings', settings })} onExport={() => void createPrintPdf(false)} onPrint={() => void createPrintPdf(true)} onClose={() => setPrintDialogOpen(false)} />}
     </div>
   )
 }

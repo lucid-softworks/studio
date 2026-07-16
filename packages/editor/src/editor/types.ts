@@ -80,6 +80,35 @@ export type PsdDocumentMetadata = {
   linkedFiles?: SerializedPsdValue[]
 }
 
+export type DocumentFileMetadata = {
+  sourceFormat?: string
+  resolutionDpi?: number
+  orientation?: number
+  exif?: number[]
+  xmp?: string
+  icc?: number[]
+  hdrMetadata?: Record<string, unknown>
+  importedAt?: string
+  copyright?: string
+  author?: string
+  description?: string
+  containerChunks?: Array<{ container: 'jpeg' | 'png' | 'webp'; type: string; data: number[] }>
+}
+
+export type AnimationFrame = { id: string; name: string; delayMs: number; visibleLayerIds: string[] }
+export type AnimationKeyframe = { id: string; layerId: string; time: number; position: Position; rotation: number; opacity: number }
+export type DocumentAnimation = {
+  mode: 'frame' | 'timeline'
+  fps: number
+  duration: number
+  loop: boolean
+  onionSkin: boolean
+  frames: AnimationFrame[]
+  keyframes: AnimationKeyframe[]
+}
+export type DocumentSlice = { id: string; name: string; x: number; y: number; width: number; height: number }
+export type DocumentPrintSettings = { widthInches: number; heightInches: number; dpi: number; bleedInches: number; cropMarks: boolean; center: boolean }
+
 export type BaseLayer = {
   id: string
   name: string
@@ -362,6 +391,10 @@ export type EditorDocument = {
   indexedColors?: number
   colorSettings?: DocumentColorSettings
   psdMetadata?: PsdDocumentMetadata
+  fileMetadata?: DocumentFileMetadata
+  animation?: DocumentAnimation
+  slices?: DocumentSlice[]
+  printSettings?: DocumentPrintSettings
 }
 
 export type LayerPatch = Partial<{
@@ -459,6 +492,10 @@ export type DocumentAction =
   | { type: 'set-artboards'; artboards: DocumentArtboard[] }
   | { type: 'set-color-mode'; mode: DocumentColorMode; indexedColors?: number }
   | { type: 'set-color-settings'; patch: Partial<DocumentColorSettings> }
+  | { type: 'set-animation'; animation: DocumentAnimation | undefined }
+  | { type: 'set-slices'; slices: DocumentSlice[] }
+  | { type: 'set-file-metadata'; metadata: DocumentFileMetadata }
+  | { type: 'set-print-settings'; settings: DocumentPrintSettings }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

@@ -1,15 +1,17 @@
 import type { SourceImage } from './runtime-assets'
 
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
-const MAX_FILE_SIZE = 30 * 1024 * 1024
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/avif', 'image/x-icon', 'image/vnd.microsoft.icon'])
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'avif', 'ico'])
+const MAX_FILE_SIZE = 512 * 1024 * 1024
 
 export function validateImageFile(file: File) {
-  if (!IMAGE_TYPES.has(file.type)) {
-    throw new Error('Choose a PNG, JPEG, or WebP image.')
+  const extension = file.name.split('.').pop()?.toLocaleLowerCase() ?? ''
+  if (!IMAGE_TYPES.has(file.type) && !IMAGE_EXTENSIONS.has(extension)) {
+    throw new Error('Choose a supported browser image.')
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error('That image is over the 30 MB limit.')
+    throw new Error('That image is over the 512 MB safety limit.')
   }
 }
 

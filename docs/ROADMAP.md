@@ -193,12 +193,12 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M10 — formats and output
 
-- [ ] Add robust TIFF, OpenEXR, HDR, HEIF/AVIF, ICO, PDF, and RAW import where client-side codecs exist
-- [ ] Add layered TIFF, PDF, SVG, GIF/APNG, AVIF, and PSD/PSB export
-- [ ] Add frame animation and timeline animation with onion skinning
-- [ ] Add slices, asset generation, export presets, metadata controls, and batch export
-- [ ] Add print sizing, bleed, crop marks, and local print/PDF workflows
-- [ ] Preserve resolution, EXIF, XMP, ICC, and orientation metadata intentionally
+- [x] Add robust TIFF, OpenEXR, HDR, HEIF/AVIF, ICO, PDF, and RAW import where client-side codecs exist
+- [x] Add layered TIFF, PDF, SVG, GIF/APNG, AVIF, and PSD/PSB export
+- [x] Add frame animation and timeline animation with onion skinning
+- [x] Add slices, asset generation, export presets, metadata controls, and batch export
+- [x] Add print sizing, bleed, crop marks, and local print/PDF workflows
+- [x] Preserve resolution, EXIF, XMP, ICC, and orientation metadata intentionally
 
 ## M11 — Electron desktop shell
 

@@ -86,6 +86,14 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, colorMode: action.mode, indexedColors: action.indexedColors ?? state.indexedColors ?? 256 }
     case 'set-color-settings':
       return { ...state, colorSettings: { ...(state.colorSettings ?? { intent: 'relative', blackPointCompensation: true, proofEnabled: false, gamutWarning: false }), ...action.patch } }
+    case 'set-animation':
+      return { ...state, animation: action.animation }
+    case 'set-slices':
+      return { ...state, slices: action.slices }
+    case 'set-file-metadata':
+      return { ...state, fileMetadata: action.metadata }
+    case 'set-print-settings':
+      return { ...state, printSettings: action.settings }
     case 'replace-document':
       return action.document
     case 'add-layer': {
