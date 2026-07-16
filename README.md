@@ -51,6 +51,29 @@ pnpm build
 
 Run all four with `pnpm check`.
 
+## Cloudflare deployment
+
+The web app deploys as client-only Cloudflare Workers Static Assets. There is no Worker script, API, server-side rendering, account system, or server-side document processing. Wrangler serves the Vite output directly and falls back to `index.html` for `/app` and other client routes.
+
+Authenticate once, preview the production build locally, and deploy:
+
+```sh
+pnpm --filter @studio/web exec wrangler login
+pnpm preview:cloudflare
+pnpm deploy:cloudflare
+```
+
+The checked-in configuration lives at `apps/web/wrangler.jsonc`. The first deployment creates the `studio` Worker project; subsequent deployments update it. A custom domain can be attached from the Cloudflare dashboard without changing the application build.
+
+For Cloudflare Git builds, use the repository root with:
+
+```text
+Build command: pnpm --filter @studio/web build
+Deploy command: pnpm --filter @studio/web deploy:cloudflare
+```
+
+The generated asset directory is `apps/web/dist`. Wrangler reads that path from the app-local configuration.
+
 ## Architecture
 
 `@studio/editor` owns the document model, raster engine, rendering, selection system, masks, project persistence, and editor interface. It exports a `StudioEditor` React component so web and desktop surfaces share the same implementation.
