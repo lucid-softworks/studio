@@ -277,12 +277,12 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'paths' && <PathsPanel paths={document.paths ?? []} selectedPathId={document.selectedPathId ?? null} customShapes={customShapes} onChange={(paths, selectedPathId) => dispatch({ type: 'set-paths', paths, selectedPathId })} onFill={onFillPath} onStroke={onStrokePath} onSaveCustomShape={onSaveCustomShape} onApplyCustomShape={onApplyCustomShape} onRemoveCustomShape={onRemoveCustomShape} onImportCustomShape={onImportCustomShape} onExportPath={onExportPath} />}
       {activePanel === 'history' && <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />}
       {activePanel === 'navigator' && <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />}
-      {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} renderRevision={renderRevision} />}
+      {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} assets={assets} renderRevision={renderRevision} />}
       {activePanel === 'swatches' && <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />}
       {activePanel === 'gradients' && <GradientsPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customGradients={customGradients} onApplyGradient={onApplyGradient} onAddGradient={onAddGradient} onRemoveGradient={onRemoveGradient} />}
       {activePanel === 'patterns' && <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} />}
       {activePanel === 'libraries' && <LibrariesPanel brushes={brushes} activeBrushId={brushId} fonts={customFonts} activeFontFamily={activeLayer?.type === 'text' ? activeLayer.fontFamily : undefined} canApplyFont={activeLayer?.type === 'text'} onBrushChange={onBrushChange} onLoadBrush={onLoadBrush} onRemoveBrush={onRemoveBrush} onApplyFont={(fontFamily) => { if (activeLayer?.type === 'text') dispatch({ type: 'update-layer', id: activeLayer.id, patch: { fontFamily } }) }} onLoadFont={onLoadFont} />}
-      {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} />}
+      {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} renderRevision={renderRevision} />}
       </>}
     </aside>
   )

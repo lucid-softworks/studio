@@ -142,9 +142,9 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add editable 8/16/32-bit document precision
 - [x] Add ICC profile parsing, conversion, assign/convert profile, proof colors, and gamut warnings
 - [x] Add RGB, grayscale, indexed, and CMYK document modes where browser color APIs permit accurate output
-- [ ] Add histogram, info, and scopes panels backed by worker/GPU reductions
+- [x] Add histogram, info, and scopes panels backed by worker/GPU reductions
   - [x] Add a sampled RGB/luminance histogram with local Worker reduction and live statistics
-  - [ ] Add exact tiled/high-precision histograms, point sampling, and waveform/vectorscope GPU reductions
+  - [x] Add exact tiled/high-precision histograms, point sampling, and waveform/vectorscope GPU reductions
 
 ## M7 — typography
 

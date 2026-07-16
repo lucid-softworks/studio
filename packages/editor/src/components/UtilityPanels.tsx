@@ -5,6 +5,7 @@ import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
 import { defaultPatterns, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
+import { getTypeGpuRoot } from '../editor/rendering/typegpu-runtime'
 import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { CustomShapePreset } from '../editor/shape-library'
@@ -184,20 +185,58 @@ export function NavigatorPanel({ sourceCanvasRef, document, zoom, onZoomChange, 
 }
 
 type HistogramView = 'rgb' | HistogramChannel
+type AnalysisView = 'histogram' | 'waveform' | 'vectorscope'
 
 function histogramPath(bins: number[], maximum: number) {
   const points = bins.map((value, index) => `${index},${110 - value / maximum * 106}`).join(' L')
   return `M0,110 L${points} L255,110 Z`
 }
 
-export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
+function ScopeCanvas({ values, size, kind }: { values: number[]; size: number; kind: Exclude<AnalysisView, 'histogram'> }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return
+    canvas.width = size
+    canvas.height = size
+    const image = context.createImageData(size, size)
+    const maximum = Math.max(1, ...values)
+    const logarithmicMaximum = Math.log1p(maximum)
+    for (let index = 0; index < values.length; index += 1) {
+      const strength = Math.log1p(values[index]) / logarithmicMaximum
+      if (strength === 0) continue
+      const offset = index * 4
+      if (kind === 'waveform') {
+        image.data[offset] = Math.round(70 * strength)
+        image.data[offset + 1] = Math.round(255 * strength)
+        image.data[offset + 2] = Math.round(190 * strength)
+      } else {
+        const x = index % size
+        const y = Math.floor(index / size)
+        image.data[offset] = Math.round(255 * strength * x / size)
+        image.data[offset + 1] = Math.round(255 * strength * (1 - Math.abs(x - y) / size))
+        image.data[offset + 2] = Math.round(255 * strength * (1 - y / size))
+      }
+      image.data[offset + 3] = Math.round(255 * Math.min(1, strength * 1.6))
+    }
+    context.putImageData(image, 0, 0)
+  }, [kind, size, values])
+  return <canvas ref={canvasRef} aria-label={`${kind} scope`} className="relative aspect-square h-40 w-full object-fill [image-rendering:auto]" />
+}
+
+export function HistogramPanel({ sourceCanvasRef, document, assets, renderRevision }: {
   sourceCanvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
+  assets: AssetMap
   renderRevision: number
 }) {
   const [view, setView] = useState<HistogramView>('rgb')
+  const [analysisView, setAnalysisView] = useState<AnalysisView>('histogram')
+  const [quality, setQuality] = useState<'sampled' | 'exact'>('sampled')
   const [result, setResult] = useState<HistogramResult | null>(null)
   const [status, setStatus] = useState<'sampling' | 'ready' | 'error'>('sampling')
+  const [reducer, setReducer] = useState<'worker' | 'typegpu'>('worker')
   const workerRef = useRef<Worker | null>(null)
   const requestRef = useRef(0)
 
@@ -226,12 +265,39 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
         const id = requestRef.current + 1
         requestRef.current = id
         setStatus('sampling')
+        const selectedLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
+        const assetId = selectedLayer && 'assetId' in selectedLayer ? selectedLayer.assetId : undefined
+        const precision = assetId ? assets[assetId]?.precision : undefined
+        if (quality === 'exact' && precision && precision.revision === (assets[assetId!]?.revision ?? 0)) {
+          const data = precision.data.slice().buffer as ArrayBuffer
+          setReducer('worker')
+          worker.postMessage({ id, precision: { bitDepth: precision.bitDepth, width: precision.width, height: precision.height, data } }, [data])
+          return
+        }
+        const root = quality === 'exact' ? getTypeGpuRoot() : null
+        if (root) {
+          const context = source.getContext('2d', { willReadFrequently: true })
+          if (!context) { setStatus('error'); return }
+          const pixels = context.getImageData(0, 0, source.width, source.height).data
+          setReducer('typegpu')
+          void import('../editor/rendering/typegpu-scopes').then(({ reduceColorAnalysisTypeGpu }) => reduceColorAnalysisTypeGpu(root, pixels, source.width, source.height)).then((nextResult) => {
+            if (id !== requestRef.current) return
+            setResult(nextResult)
+            setStatus('ready')
+          }).catch(() => {
+            if (id !== requestRef.current) return
+            setReducer('worker')
+            void createImageBitmap(source).then((bitmap) => worker.postMessage({ id, bitmap, maxSize: 256, exact: true }, [bitmap])).catch(() => setStatus('error'))
+          })
+          return
+        }
+        setReducer('worker')
         void createImageBitmap(source).then((bitmap) => {
           if (id !== requestRef.current) {
             bitmap.close()
             return
           }
-          worker.postMessage({ id, bitmap, maxSize: 256 }, [bitmap])
+          worker.postMessage({ id, bitmap, maxSize: 256, exact: quality === 'exact' }, [bitmap])
         }).catch(() => setStatus('error'))
       })
     })
@@ -239,7 +305,7 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
       cancelAnimationFrame(firstFrame)
       cancelAnimationFrame(secondFrame)
     }
-  }, [document, renderRevision, sourceCanvasRef])
+  }, [assets, document, quality, renderRevision, sourceCanvasRef])
 
   const visibleChannels: HistogramChannel[] = view === 'rgb' ? ['red', 'green', 'blue'] : [view]
   const maximum = Math.max(1, ...visibleChannels.flatMap((channel) => result?.bins[channel] ?? []))
@@ -253,9 +319,14 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
 
   return (
     <div role="tabpanel" aria-label="Histogram" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="mb-2 grid grid-cols-3 gap-1 rounded-lg bg-black/25 p-1">{(['histogram', 'waveform', 'vectorscope'] as AnalysisView[]).map((value) => <button key={value} type="button" aria-pressed={analysisView === value} onClick={() => setAnalysisView(value)} className={`rounded-md py-1.5 text-[8px] font-semibold capitalize ${analysisView === value ? 'bg-violet-400/15 text-violet-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{value}</button>)}</div>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg border border-white/[0.06] p-1">{(['sampled', 'exact'] as const).map((value) => <button key={value} type="button" aria-pressed={quality === value} onClick={() => setQuality(value)} className={`rounded-md py-1.5 text-[8px] font-semibold capitalize ${quality === value ? 'bg-white/[0.08] text-zinc-200' : 'text-zinc-700'}`}>{value}{value === 'exact' ? ' pixels' : ''}</button>)}</div>
+      {analysisView === 'histogram' && <>
       <div className="grid grid-cols-5 gap-1 rounded-lg bg-black/25 p-1">
         {(['rgb', 'red', 'green', 'blue', 'luminance'] as HistogramView[]).map((channel) => <button key={channel} type="button" aria-pressed={view === channel} onClick={() => setView(channel)} className={`rounded-md px-1 py-1.5 text-[8px] font-semibold uppercase transition ${view === channel ? 'bg-white/[0.09] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{channel === 'luminance' ? 'Lum' : channel}</button>)}
       </div>
+      </>}
+      {analysisView !== 'histogram' && <div className="relative overflow-hidden rounded-lg border border-white/[0.08] bg-black/35 p-2"><div className="pointer-events-none absolute inset-2 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:25%_25%]" />{result?.scopeSize && result[analysisView] ? <ScopeCanvas values={result[analysisView]!} size={result.scopeSize} kind={analysisView} /> : <div className="flex h-40 items-center justify-center text-[10px] text-zinc-700">Reducing scope…</div>}</div>}
       <div className="relative mt-3 overflow-hidden rounded-lg border border-white/[0.08] bg-black/35 p-2">
         <div className="pointer-events-none absolute inset-2 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:25%_25%]" />
         {result ? <svg viewBox="0 0 255 110" preserveAspectRatio="none" aria-label={`${view} histogram`} className="relative h-40 w-full">
@@ -267,7 +338,7 @@ export function HistogramPanel({ sourceCanvasRef, document, renderRevision }: {
         <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Median</p><p className="mt-1 font-mono text-[11px] text-zinc-300">{result ? result.median[statisticChannel] : '—'}</p></div>
         <div className="rounded-lg border border-white/[0.06] bg-black/15 p-2"><p className="text-[8px] text-zinc-700 uppercase">Samples</p><p className="mt-1 truncate font-mono text-[11px] text-zinc-300">{result ? result.pixels.toLocaleString() : '—'}</p></div>
       </div>
-      <p className={`mt-3 text-center text-[9px] ${status === 'error' ? 'text-red-300/70' : 'text-zinc-700'}`}>{status === 'error' ? 'The rendered canvas could not be sampled.' : status === 'sampling' ? 'Updating sampled histogram…' : 'RGB and luminance reduction runs in a local Worker.'}</p>
+      <p className={`mt-3 text-center text-[9px] ${status === 'error' ? 'text-red-300/70' : 'text-zinc-700'}`}>{status === 'error' ? 'The rendered canvas could not be sampled.' : status === 'sampling' ? `Updating ${quality} analysis…` : `${result?.precision ?? 8}-bit ${result?.exact ? 'exact' : 'sampled'} reduction · ${reducer === 'typegpu' ? 'TypeGPU' : 'local Worker'}`}</p>
     </div>
   )
 }
@@ -458,20 +529,92 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   return <div className="flex items-start justify-between gap-4 border-b border-white/[0.05] py-2.5 last:border-0"><dt className="text-[10px] text-zinc-600">{label}</dt><dd className="text-right font-mono text-[10px] text-zinc-300">{value}</dd></div>
 }
 
-export function InfoPanel({ sourceCanvasRef, document, assets, selection, zoom, renderer }: {
+function describePixel(red: number, green: number, blue: number, alpha: number) {
+  const normalized = [red, green, blue].map((value) => value / 255)
+  const maximum = Math.max(...normalized)
+  const minimum = Math.min(...normalized)
+  const delta = maximum - minimum
+  let hue = 0
+  if (delta) {
+    if (maximum === normalized[0]) hue = 60 * (((normalized[1] - normalized[2]) / delta) % 6)
+    else if (maximum === normalized[1]) hue = 60 * ((normalized[2] - normalized[0]) / delta + 2)
+    else hue = 60 * ((normalized[0] - normalized[1]) / delta + 4)
+  }
+  if (hue < 0) hue += 360
+  const lightness = (maximum + minimum) / 2
+  const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0
+  const black = 1 - maximum
+  const denominator = 1 - black
+  const cmyk = denominator ? [
+    (1 - normalized[0] - black) / denominator,
+    (1 - normalized[1] - black) / denominator,
+    (1 - normalized[2] - black) / denominator,
+    black,
+  ] : [0, 0, 0, 1]
+  return {
+    rgba: `${Math.round(red)}, ${Math.round(green)}, ${Math.round(blue)}, ${Math.round(alpha / 255 * 100)}%`,
+    hex: `#${[red, green, blue].map((value) => Math.round(value).toString(16).padStart(2, '0')).join('')}`.toUpperCase(),
+    hsl: `${Math.round(hue)}°, ${Math.round(saturation * 100)}%, ${Math.round(lightness * 100)}%`,
+    cmyk: cmyk.map((value) => `${Math.round(value * 100)}%`).join(', '),
+  }
+}
+
+export function InfoPanel({ sourceCanvasRef, document, assets, selection, zoom, renderer, renderRevision }: {
   sourceCanvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
   assets: AssetMap
   selection: SelectionState | null
   zoom: number
   renderer: 'canvas2d' | 'webgpu'
+  renderRevision: number
 }) {
   const size = getDocumentSize(document)
+  const [sampleX, setSampleX] = useState(Math.floor(size.width / 2))
+  const [sampleY, setSampleY] = useState(Math.floor(size.height / 2))
+  const [sampleSize, setSampleSize] = useState<1 | 3 | 5>(1)
+  const [liveSample, setLiveSample] = useState(true)
+  const [sample, setSample] = useState(() => describePixel(0, 0, 0, 0))
   const selectedLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const canvas = sourceCanvasRef.current
   const context = canvas?.getContext('2d')
   const bounds = canvas && context && selectedLayer ? getLayerBounds(context, canvas, selectedLayer, assets) : null
   const selectedName = document.groups.find((group) => group.id === document.selectedGroupId)?.name ?? selectedLayer?.name ?? 'None'
+
+  useEffect(() => {
+    const source = sourceCanvasRef.current
+    if (!source || !liveSample) return
+    const update = (event: PointerEvent) => {
+      const rect = source.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      setSampleX(Math.max(0, Math.min(source.width - 1, Math.floor((event.clientX - rect.left) / rect.width * source.width))))
+      setSampleY(Math.max(0, Math.min(source.height - 1, Math.floor((event.clientY - rect.top) / rect.height * source.height))))
+    }
+    source.addEventListener('pointermove', update)
+    return () => source.removeEventListener('pointermove', update)
+  }, [liveSample, sourceCanvasRef])
+
+  useEffect(() => {
+    const source = sourceCanvasRef.current
+    const context = source?.getContext('2d', { willReadFrequently: true })
+    if (!source || !context || source.width === 0 || source.height === 0) return
+    const radius = Math.floor(sampleSize / 2)
+    const x = Math.max(0, Math.min(source.width - 1, sampleX))
+    const y = Math.max(0, Math.min(source.height - 1, sampleY))
+    const left = Math.max(0, x - radius)
+    const top = Math.max(0, y - radius)
+    const width = Math.min(sampleSize, source.width - left)
+    const height = Math.min(sampleSize, source.height - top)
+    const pixels = context.getImageData(left, top, width, height).data
+    const totals = [0, 0, 0, 0]
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      totals[0] += pixels[offset]
+      totals[1] += pixels[offset + 1]
+      totals[2] += pixels[offset + 2]
+      totals[3] += pixels[offset + 3]
+    }
+    const count = Math.max(1, pixels.length / 4)
+    setSample(describePixel(totals[0] / count, totals[1] / count, totals[2] / count, totals[3] / count))
+  }, [renderRevision, sampleSize, sampleX, sampleY, sourceCanvasRef])
 
   return (
     <div role="tabpanel" aria-label="Info" className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -482,6 +625,11 @@ export function InfoPanel({ sourceCanvasRef, document, assets, selection, zoom, 
       <section className="mt-3 rounded-lg border border-white/[0.07] bg-black/15 px-3">
         <h3 className="pt-3 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Selection</h3>
         <dl><InfoRow label="Object" value={selectedName} />{bounds && <><InfoRow label="Position" value={`${Math.round(bounds.x)}, ${Math.round(bounds.y)}`} /><InfoRow label="Size" value={`${Math.round(bounds.width)} × ${Math.round(bounds.height)}`} /><InfoRow label="Rotation" value={`${Math.round(bounds.rotation * 10) / 10}°`} /></>}{selection?.bounds && <><InfoRow label="Pixel origin" value={`${selection.bounds.x}, ${selection.bounds.y}`} /><InfoRow label="Pixel size" value={`${selection.bounds.width} × ${selection.bounds.height}`} /></>}</dl>
+      </section>
+      <section className="mt-3 rounded-lg border border-white/[0.07] bg-black/15 p-3">
+        <div className="flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Point sample</h3><label className="flex items-center gap-1.5 text-[8px] text-zinc-600"><input type="checkbox" checked={liveSample} onChange={(event) => setLiveSample(event.target.checked)} className="accent-violet-400" />Live pointer</label></div>
+        <div className="mt-3 grid grid-cols-3 gap-2"><label className="text-[8px] text-zinc-600">X<input aria-label="Sample x coordinate" type="number" min="0" max={size.width - 1} value={sampleX} onChange={(event) => setSampleX(Number(event.target.value))} className="mt-1 w-full rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 font-mono text-[9px] text-zinc-300" /></label><label className="text-[8px] text-zinc-600">Y<input aria-label="Sample y coordinate" type="number" min="0" max={size.height - 1} value={sampleY} onChange={(event) => setSampleY(Number(event.target.value))} className="mt-1 w-full rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 font-mono text-[9px] text-zinc-300" /></label><label className="text-[8px] text-zinc-600">Average<select aria-label="Point sample size" value={sampleSize} onChange={(event) => setSampleSize(Number(event.target.value) as 1 | 3 | 5)} className="mt-1 w-full rounded border border-white/[0.07] bg-zinc-950 px-2 py-1.5 font-mono text-[9px] text-zinc-300"><option value="1">1 × 1</option><option value="3">3 × 3</option><option value="5">5 × 5</option></select></label></div>
+        <div className="mt-3 flex items-start gap-3"><span style={{ backgroundColor: sample.hex }} className="mt-1 size-10 shrink-0 rounded-md border border-white/10 shadow-inner" /><dl className="min-w-0 flex-1"><InfoRow label="Hex" value={sample.hex} /><InfoRow label="RGBA" value={sample.rgba} /><InfoRow label="HSL" value={sample.hsl} /><InfoRow label="CMYK" value={sample.cmyk} /></dl></div>
       </section>
     </div>
   )
