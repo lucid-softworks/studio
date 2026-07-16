@@ -52,7 +52,7 @@ if (!current.size) {
 }
 console.log('| Fixture | Ready | Render p95 | Pointer p95 | Save p95 |')
 console.log('| --- | ---: | ---: | ---: | ---: |')
-for (const fixture of [...current.keys()].sort()) {
+for (const fixture of [...current.keys()].sort((left, right) => left.localeCompare(right))) {
   const report = current.get(fixture)
   const previous = baseline.get(fixture)
   console.log(`| ${fixture} | ${display(value(report, 'ready'), value(previous, 'ready'))} | ${display(value(report, 'render'), value(previous, 'render'))} | ${display(value(report, 'pointer-latency'), value(previous, 'pointer-latency'))} | ${display(value(report, 'save'), value(previous, 'save'))} |`)

@@ -563,6 +563,12 @@ function paragraphStyleAt(layer: TextLayer, index: number) {
   }
 }
 
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+function graphemes(text: string) {
+  return Array.from(graphemeSegmenter.segment(text), ({ segment, index }) => ({ character: segment, index }))
+}
+
 function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: TextLayer) {
   if (layer.textPath?.path) {
     const points = flattenTextPath(layer.textPath.path, canvas.width, canvas.height)
@@ -570,8 +576,7 @@ function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElem
     let distance = pathLength * layer.textPath.offset / 100
     context.save()
     context.globalAlpha = layer.opacity / 100
-    for (let index = 0; index < layer.text.length; index += 1) {
-      const character = layer.text[index]
+    for (const { character, index } of graphemes(layer.text)) {
       if (character === '\n' || character === '\r') continue
       const style = textStyleAt(layer, index)
       setTextStyle(context, layer, style)
@@ -603,27 +608,24 @@ function drawTextLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElem
       context.clip()
     }
     if (layer.orientation === 'vertical') {
-      const characters = [...layer.text].filter((character) => character !== '\n' && character !== '\r')
-      characters.forEach((character, index) => {
+      const characters = graphemes(layer.text).filter(({ character }) => character !== '\n' && character !== '\r')
+      characters.forEach(({ character, index }, visualIndex) => {
         const style = textStyleAt(layer, index)
         setTextStyle(context, layer, style)
         context.fillStyle = style.color
-        const y = -metrics.height / 2 + metrics.lineHeight / 2 + index * metrics.lineHeight
+        const y = -metrics.height / 2 + metrics.lineHeight / 2 + visualIndex * metrics.lineHeight
         context.fillText(character, -context.measureText(character).width / 2, y)
       })
       return
     }
 
-    let sourceIndex = 0
     metrics.lines.forEach((line, lineIndex) => {
-      sourceIndex = line.start
       const lineText = layer.text.slice(line.start, line.end)
-      const glyphs = [...lineText].map((character) => {
-        const index = sourceIndex
+      const glyphs = graphemes(lineText).map(({ character, index: relativeIndex }) => {
+        const index = line.start + relativeIndex
         const style = textStyleAt(layer, index)
         setTextStyle(context, layer, style)
         const width = context.measureText(character).width + style.letterSpacing
-        sourceIndex += 1
         return { character, index, style, width }
       })
       const paragraph = paragraphStyleAt(layer, line.start)

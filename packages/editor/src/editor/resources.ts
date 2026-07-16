@@ -213,7 +213,7 @@ export async function serializeBrushPreset(brush: BrushPreset) {
   const blob = await canvasBlob(brush.tip)
   const tipData = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
+    reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('The brush tip did not produce a data URL.'))
     reader.onerror = () => reject(reader.error ?? new Error('The brush tip could not be read.'))
     reader.readAsDataURL(blob)
   })

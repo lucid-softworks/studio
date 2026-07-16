@@ -141,7 +141,7 @@ const lock = app.requestSingleInstanceLock()
 if (!lock) app.quit()
 else app.on('second-instance', (_event, argv) => { const path = argv.find((value) => !value.startsWith('-') && extname(value)); if (path) void openPath(path); else mainWindow?.show() })
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   createWindow(); await rebuildMenu()
   const startupPath = process.argv.slice(1).find((value) => !value.startsWith('-') && extname(value)); if (startupPath) void openPath(startupPath)
   if (app.isPackaged) void autoUpdater.checkForUpdatesAndNotify().catch(() => { /* Offline startup must not block the editor. */ })

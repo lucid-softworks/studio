@@ -461,7 +461,6 @@ test.describe('built-in tools', () => {
     await page.getByRole('button', { name: 'Clear selection', exact: true }).click()
 
     await page.getByRole('button', { name: 'Rectangular Marquee tool', exact: true }).click()
-    const marquee = page.getByLabel('Rectangular selection surface')
     await page.mouse.move(bounds!.x + bounds!.width * 0.35, bounds!.y + bounds!.height * 0.3)
     await page.mouse.down()
     await page.mouse.move(bounds!.x + bounds!.width * 0.65, bounds!.y + bounds!.height * 0.7)

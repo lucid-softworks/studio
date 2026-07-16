@@ -358,7 +358,7 @@ export function psdLayerNamesInEditorOrder(layers: Layer[], parent = '', sourceI
   })
 }
 
-function precisionFromImageData(imageData: Layer['imageData'] | Psd['imageData'], bitsPerChannel: number): SourceImage['precision'] {
+function precisionFromImageData(imageData: Layer['imageData'], bitsPerChannel: number): SourceImage['precision'] {
   if (bitsPerChannel === 16 && imageData?.data instanceof Uint16Array) {
     return { bitDepth: 16, width: imageData.width, height: imageData.height, data: imageData.data.slice(), revision: 0 }
   }

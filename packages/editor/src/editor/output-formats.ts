@@ -1,7 +1,7 @@
 export type RasterExportFrame = { name: string; pixels: ImageData; delayMs?: number }
 type GifPalette = number[][]
 type GifEncoder = { writeFrame(index: Uint8Array, width: number, height: number, options: { palette?: GifPalette; delay?: number; repeat?: number; transparent?: boolean; transparentIndex?: number }): void; finish(): void; bytes(): Uint8Array }
-type GifModule = { GIFEncoder(): GifEncoder; quantize(rgba: Uint8Array | Uint8ClampedArray, maxColors: number, options?: { format?: string; oneBitAlpha?: boolean }): GifPalette; applyPalette(rgba: Uint8Array | Uint8ClampedArray, palette: GifPalette, format?: string): Uint8Array }
+type GifModule = { GIFEncoder: () => GifEncoder; quantize: (rgba: Uint8Array | Uint8ClampedArray, maxColors: number, options?: { format?: string; oneBitAlpha?: boolean }) => GifPalette; applyPalette: (rgba: Uint8Array | Uint8ClampedArray, palette: GifPalette, format?: string) => Uint8Array }
 
 function writeAscii(target: Uint8Array, offset: number, value: string) {
   for (let index = 0; index < value.length; index += 1) target[offset + index] = value.charCodeAt(index) & 0xff

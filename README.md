@@ -40,7 +40,7 @@ nix shell nixpkgs#nodejs_latest -c npx pnpm@11.13.0 dev
 
 ## Quality checks
 
-Turborepo runs checks across every workspace:
+Oxlint provides the repository-wide Oxc lint gate, including React hooks, unused suppression checks, and type-aware unhandled-promise detection. Turborepo coordinates the remaining workspace checks:
 
 ```sh
 pnpm lint
@@ -49,7 +49,7 @@ pnpm test
 pnpm build
 ```
 
-Run all four with `pnpm check`.
+Run `pnpm lint:fix` to apply safe Oxc fixes. Run all four checks with `pnpm check`.
 
 ## Cloudflare deployment
 
