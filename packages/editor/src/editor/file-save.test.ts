@@ -39,4 +39,17 @@ describe('incremental browser saves', () => {
     expect(writable.aborted).toBe(true)
     expect(writable.closed).toBe(false)
   })
+
+  it('cancels the reader and aborts the destination without closing it', async () => {
+    const writable = new MemoryWritable()
+    const controller = new AbortController()
+    vi.spyOn(writable, 'write').mockImplementationOnce(async (data) => {
+      await MemoryWritable.prototype.write.call(writable, data)
+      controller.abort()
+    })
+
+    await expect(writeBlobIncrementally(writable, new Blob([new Uint8Array(200_000)]), controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(writable.aborted).toBe(true)
+    expect(writable.closed).toBe(false)
+  })
 })

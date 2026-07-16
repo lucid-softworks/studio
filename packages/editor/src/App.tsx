@@ -215,6 +215,18 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     }
   })
 
+  const runCancelableJob = async <T,>(label: string, task: (signal: AbortSignal) => Promise<T>) => {
+    const controller = new AbortController()
+    const job: ActiveWorkerJob = { label, cancel: () => controller.abort() }
+    activeWorkerJobRef.current?.cancel()
+    activeWorkerJobRef.current = job
+    try {
+      return await task(controller.signal)
+    } finally {
+      if (activeWorkerJobRef.current === job) activeWorkerJobRef.current = null
+    }
+  }
+
   useEffect(() => {
     const desktop = desktopBridge()
     if (!desktop) return
@@ -1696,12 +1708,16 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     setIsProjectSaving(true)
     setNotice(null)
     try {
-      const writable = await openBrowserWritable('untitled.studio', 'Studio project', 'application/x-studio+json', ['.studio'])
-      if (writable) await writeProjectStream(writable, document, assets)
-      else {
-        const json = await serializeProject(document, assets)
-        downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), 'untitled.studio')
-      }
+      await runCancelableJob('Studio project save', async (signal) => {
+        const writable = await openBrowserWritable('untitled.studio', 'Studio project', 'application/x-studio+json', ['.studio'])
+        signal.throwIfAborted()
+        if (writable) await writeProjectStream(writable, document, assets, signal)
+        else {
+          const json = await serializeProject(document, assets, signal)
+          signal.throwIfAborted()
+          downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), 'untitled.studio')
+        }
+      })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The project could not be saved.')
@@ -1728,10 +1744,11 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     setIsLoading(true)
     setNotice(null)
     try {
-      const loaded = await parseProjectFile(file)
+      const loaded = await runCancelableJob('Studio project import', (signal) => parseProjectFile(file, signal))
       openDocumentTab(file.name.replace(/\.studio$/i, ''), loaded.document, loaded.assets)
       setNotice(`Opened ${file.name} entirely in your browser.`, 'success')
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The project could not be opened.')
     } finally {
       setIsLoading(false)

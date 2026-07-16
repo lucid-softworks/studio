@@ -7,6 +7,7 @@ import type { BrowserWritable } from './file-save'
 class MemoryWritable implements BrowserWritable {
   chunks: string[] = []
   closed = false
+  aborted = false
 
   async write(data: Blob | BufferSource | string) {
     if (typeof data === 'string') this.chunks.push(data)
@@ -15,6 +16,7 @@ class MemoryWritable implements BrowserWritable {
   }
 
   async close() { this.closed = true }
+  async abort() { this.aborted = true }
 }
 
 function legacyDocument() {
@@ -175,6 +177,31 @@ describe('Studio project migrations', () => {
     expect(writable.closed).toBe(true)
     expect(writable.chunks.length).toBeGreaterThan(5)
     expect(decoded).toEqual(bytes)
+  })
+
+  it('aborts a streamed project save before writing a partial closing envelope', async () => {
+    const controller = new AbortController()
+    const writable = new MemoryWritable()
+    const originalWrite = writable.write.bind(writable)
+    let writes = 0
+    writable.write = async (data) => {
+      await originalWrite(data)
+      writes += 1
+      if (writes === 1) controller.abort()
+    }
+
+    await expect(writeProjectStream(writable, initialDocument, {}, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(writable.aborted).toBe(true)
+    expect(writable.closed).toBe(false)
+    expect(writable.chunks.join('')).not.toContain(']}')
+  })
+
+  it('does not hydrate an already-cancelled project import', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const file = new File([JSON.stringify({ app: 'studio', version: STUDIO_PROJECT_VERSION, document: initialDocument, assets: [] })], 'cancelled.studio')
+
+    await expect(parseProjectFile(file, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   it('rejects unknown future document schemas', () => {

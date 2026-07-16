@@ -26,16 +26,20 @@ export async function openBrowserWritable(
   return handle.createWritable()
 }
 
-export async function writeBlobIncrementally(writable: BrowserWritable, blob: Blob) {
+export async function writeBlobIncrementally(writable: BrowserWritable, blob: Blob, signal?: AbortSignal) {
   const reader = blob.stream().getReader()
   try {
     while (true) {
+      signal?.throwIfAborted()
       const chunk = await reader.read()
       if (chunk.done) break
+      signal?.throwIfAborted()
       await writable.write(chunk.value)
     }
+    signal?.throwIfAborted()
     await writable.close()
   } catch (error) {
+    await reader.cancel(error).catch(() => undefined)
     await writable.abort?.(error).catch(() => undefined)
     throw error
   } finally {

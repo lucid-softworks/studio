@@ -200,19 +200,22 @@ function transactionRequest<T>(mode: IDBTransactionMode, operation: (store: IDBO
   }))
 }
 
-async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): Promise<AssetMap> {
+async function hydrateAssets(assets: StoredAsset[], document: EditorDocument, signal?: AbortSignal): Promise<AssetMap> {
   const rasterAssetIds = new Set([
     ...documentTree(document).flatMap((nested) => nested.layers.filter((layer) => layer.type === 'raster' || layer.type === 'smart-object').map((layer) => layer.assetId)),
     ...documentTree(document).flatMap((nested) => nested.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : [])),
     ...documentTree(document).flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
   ])
   const entries = await Promise.all(assets.map(async (asset) => {
+    signal?.throwIfAborted()
     const source = await loadImageBlob(asset.blob, asset.name)
+    signal?.throwIfAborted()
     const hydrated = rasterAssetIds.has(asset.id) ? createRasterSurface(source) : source
     if (asset.contentBounds === null) hydrated.contentBounds = null
     else if (isRasterRegion(asset.contentBounds)) hydrated.contentBounds = { ...asset.contentBounds }
     if (asset.precision && (asset.bitDepth === 16 || asset.bitDepth === 32) && asset.precisionWidth && asset.precisionHeight) {
       const buffer = await asset.precision.arrayBuffer()
+      signal?.throwIfAborted()
       hydrated.precision = {
         bitDepth: asset.bitDepth,
         width: asset.precisionWidth,
@@ -223,14 +226,17 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
     }
     return [asset.id, hydrated] as const
   }))
+  signal?.throwIfAborted()
   return Object.fromEntries(entries)
 }
 
-async function* storedAssetEntries(document: EditorDocument, assets: AssetMap): AsyncGenerator<StoredAsset> {
+async function* storedAssetEntries(document: EditorDocument, assets: AssetMap, signal?: AbortSignal): AsyncGenerator<StoredAsset> {
   const referencedIds = referencedAssetIds(document)
   for (const [id, asset] of Object.entries(assets)) {
+    signal?.throwIfAborted()
     if (!referencedIds.has(id)) continue
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
+    signal?.throwIfAborted()
     const precision = asset.precision
     const precisionBytes = precision ? new Uint8Array(precision.data.byteLength) : undefined
     if (precisionBytes && precision) precisionBytes.set(new Uint8Array(precision.data.buffer, precision.data.byteOffset, precision.data.byteLength))
@@ -249,9 +255,9 @@ async function* storedAssetEntries(document: EditorDocument, assets: AssetMap): 
   }
 }
 
-async function storedAssets(document: EditorDocument, assets: AssetMap): Promise<StoredAsset[]> {
+async function storedAssets(document: EditorDocument, assets: AssetMap, signal?: AbortSignal): Promise<StoredAsset[]> {
   const entries: StoredAsset[] = []
-  for await (const asset of storedAssetEntries(document, assets)) entries.push(asset)
+  for await (const asset of storedAssetEntries(document, assets, signal)) entries.push(asset)
   return entries
 }
 
@@ -273,18 +279,25 @@ export async function loadRecoveryProject(): Promise<LoadedProject | null> {
   return { document, assets: await hydrateAssets(project.assets, document), savedAt: project.savedAt }
 }
 
-async function blobToDataUrl(blob: Blob) {
+async function blobToDataUrl(blob: Blob, signal?: AbortSignal) {
   const bytes = new Uint8Array(await blob.arrayBuffer())
+  signal?.throwIfAborted()
   let binary = ''
-  for (let offset = 0; offset < bytes.length; offset += 32_768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768))
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    signal?.throwIfAborted()
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768))
+    if (offset > 0 && offset % (1024 * 1024) === 0) await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  signal?.throwIfAborted()
   return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`
 }
 
-async function writeBase64(writable: BrowserWritable, blob: Blob) {
+async function writeBase64(writable: BrowserWritable, blob: Blob, signal?: AbortSignal) {
   const reader = blob.stream().getReader()
   let remainder = new Uint8Array()
   try {
     while (true) {
+      signal?.throwIfAborted()
       const chunk = await reader.read()
       if (chunk.done) break
       const bytes = new Uint8Array(remainder.length + chunk.value.length)
@@ -292,6 +305,7 @@ async function writeBase64(writable: BrowserWritable, blob: Blob) {
       bytes.set(chunk.value, remainder.length)
       const completeLength = bytes.length - bytes.length % 3
       for (let offset = 0; offset < completeLength; offset += 24_576) {
+        signal?.throwIfAborted()
         const end = Math.min(completeLength, offset + 24_576)
         await writable.write(btoa(String.fromCharCode(...bytes.subarray(offset, end))))
       }
@@ -303,28 +317,32 @@ async function writeBase64(writable: BrowserWritable, blob: Blob) {
   }
 }
 
-async function writePortableBlob(writable: BrowserWritable, blob: Blob) {
+async function writePortableBlob(writable: BrowserWritable, blob: Blob, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   await writable.write(`data:${blob.type || 'application/octet-stream'};base64,`)
-  await writeBase64(writable, blob)
+  await writeBase64(writable, blob, signal)
 }
 
-export async function writeProjectStream(writable: BrowserWritable, document: EditorDocument, assets: AssetMap) {
+export async function writeProjectStream(writable: BrowserWritable, document: EditorDocument, assets: AssetMap, signal?: AbortSignal) {
   const savedAt = new Date().toISOString()
   try {
+    signal?.throwIfAborted()
     await writable.write(`{"app":"studio","version":${STUDIO_PROJECT_VERSION},"savedAt":${JSON.stringify(savedAt)},"document":${JSON.stringify(document)},"assets":[`)
     let index = 0
-    for await (const asset of storedAssetEntries(document, assets)) {
+    for await (const asset of storedAssetEntries(document, assets, signal)) {
+      signal?.throwIfAborted()
       if (index > 0) await writable.write(',')
       const { blob, precision, ...metadata } = asset
       await writable.write(`${JSON.stringify(metadata).slice(0, -1)},"data":"`)
-      await writePortableBlob(writable, blob)
+      await writePortableBlob(writable, blob, signal)
       if (precision) {
         await writable.write('","precision":"')
-        await writePortableBlob(writable, precision)
+        await writePortableBlob(writable, precision, signal)
       }
       await writable.write('"}')
       index += 1
     }
+    signal?.throwIfAborted()
     await writable.write(']}')
     await writable.close()
   } catch (error) {
@@ -333,29 +351,35 @@ export async function writeProjectStream(writable: BrowserWritable, document: Ed
   }
 }
 
-export async function serializeProject(document: EditorDocument, assets: AssetMap) {
-  const portableAssets = await Promise.all((await storedAssets(document, assets)).map(async (asset): Promise<PortableAsset> => ({
-    id: asset.id,
-    name: asset.name,
-    data: await blobToDataUrl(asset.blob),
-    contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
-    precision: asset.precision ? await blobToDataUrl(asset.precision) : undefined,
-    bitDepth: asset.bitDepth,
-    precisionWidth: asset.precisionWidth,
-    precisionHeight: asset.precisionHeight,
-    precisionRevision: asset.precisionRevision,
-  })))
+export async function serializeProject(document: EditorDocument, assets: AssetMap, signal?: AbortSignal) {
+  const portableAssets: PortableAsset[] = []
+  for (const asset of await storedAssets(document, assets, signal)) {
+    signal?.throwIfAborted()
+    portableAssets.push({
+      id: asset.id,
+      name: asset.name,
+      data: await blobToDataUrl(asset.blob, signal),
+      contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
+      precision: asset.precision ? await blobToDataUrl(asset.precision, signal) : undefined,
+      bitDepth: asset.bitDepth,
+      precisionWidth: asset.precisionWidth,
+      precisionHeight: asset.precisionHeight,
+      precisionRevision: asset.precisionRevision,
+    })
+  }
+  signal?.throwIfAborted()
   const project: PortableProject = { app: 'studio', version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: portableAssets }
   return JSON.stringify(project)
 }
 
-export async function parseProjectFile(file: File): Promise<LoadedProject> {
+export async function parseProjectFile(file: File, signal?: AbortSignal): Promise<LoadedProject> {
   let parsed: unknown
   try {
     parsed = JSON.parse(await file.text()) as unknown
   } catch {
     throw new Error('That is not a valid Studio project file.')
   }
+  signal?.throwIfAborted()
   if (!isRecord(parsed) || parsed.app !== 'studio' || typeof parsed.version !== 'number' || !Number.isInteger(parsed.version)) {
     throw new Error('That is not a valid Studio project file.')
   }
@@ -369,8 +393,9 @@ export async function parseProjectFile(file: File): Promise<LoadedProject> {
     : null
   if (!portableAssets) throw new Error('The Studio project contains invalid asset data.')
   const stored = await Promise.all(portableAssets.map(async (asset): Promise<StoredAsset> => {
-    const response = await fetch(asset.data)
-    const precisionResponse = asset.precision ? await fetch(asset.precision) : undefined
+    signal?.throwIfAborted()
+    const response = await fetch(asset.data, { signal })
+    const precisionResponse = asset.precision ? await fetch(asset.precision, { signal }) : undefined
     return {
       id: asset.id,
       name: asset.name,
@@ -383,6 +408,7 @@ export async function parseProjectFile(file: File): Promise<LoadedProject> {
       precisionRevision: asset.precisionRevision,
     }
   }))
+  signal?.throwIfAborted()
   const document = migrateDocument(parsed.document, parsed.version)
-  return { document, assets: await hydrateAssets(stored, document), savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : undefined }
+  return { document, assets: await hydrateAssets(stored, document, signal), savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : undefined }
 }
