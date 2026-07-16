@@ -36,7 +36,7 @@ A feature is complete only when it has:
 - [ ] Move Paint Bucket, Magic Wand, Object Select, and gradient commits off the main thread or make them incremental and cancelable.
 - [ ] Keep gradient commits below one frame for common document sizes and show progress for genuinely long jobs.
 - [ ] Extend the new path, direct-selection, warp, and puppet-warp local-preview coverage to every anchor, handle, pin, cancel, and modifier-key path.
-- [ ] Eliminate full-surface copies at the start of clone, healing, retouch, and history-brush strokes.
+- [ ] Replace the remaining Current & Below clone/healing composition snapshot with a tiled or viewport sample; extend dirty-region regression coverage across every retouch mode and transformed/masked targets.
 - [ ] Replace remaining full-canvas raster mutation paths with sparse tiles and dirty regions.
 - [ ] Enforce renderer cache and texture-memory budgets with deterministic eviction.
 - [ ] Add OPFS-backed scratch storage and recovery for documents that exceed the safe memory budget.

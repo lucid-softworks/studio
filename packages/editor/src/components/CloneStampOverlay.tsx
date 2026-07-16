@@ -1,5 +1,6 @@
 import { Fragment, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
+import { type RasterEdit, type RasterRegion } from '../editor/raster'
+import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -29,8 +30,9 @@ type Source = { assetId: string; point: Position }
 type Stroke = {
   pointerId: number
   target: RasterTarget
-  before: ImageData
-  snapshot: HTMLCanvasElement
+  before: RasterTileSnapshot
+  mergedSnapshot: HTMLCanvasElement | null
+  sampleCanvas: HTMLCanvasElement
   last: Position
   offset: Position
   radius: number
@@ -55,6 +57,26 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     return { x: (event.clientX - rect.left) / rect.width * (canvas?.width ?? 1600), y: (event.clientY - rect.top) / rect.height * (canvas?.height ?? 1000) }
   }
 
+  const tileSample = (stroke: Stroke, centerX: number, centerY: number) => {
+    const diameter = Math.max(1, Math.ceil(stroke.radius * 2))
+    const left = Math.floor(centerX - stroke.radius)
+    const top = Math.floor(centerY - stroke.radius)
+    const x = Math.max(0, left)
+    const y = Math.max(0, top)
+    const width = Math.max(0, Math.min(stroke.target.surface.width, left + diameter) - x)
+    const height = Math.max(0, Math.min(stroke.target.surface.height, top + diameter) - y)
+    const sample = stroke.sampleCanvas
+    if (sample.width !== diameter) sample.width = diameter
+    if (sample.height !== diameter) sample.height = diameter
+    const context = sample.getContext('2d')
+    context?.clearRect(0, 0, diameter, diameter)
+    if (context && width > 0 && height > 0) {
+      captureRasterTiles(stroke.before, x, y, width, height)
+      context.putImageData(rasterSnapshotRegion(stroke.before, x, y, width, height), x - left, y - top)
+    }
+    return sample
+  }
+
   const stamp = (stroke: Stroke, destination: Position) => {
     const context = stroke.target.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
@@ -67,6 +89,8 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       const y = previous.y + (destination.y - previous.y) * amount
       const sourceX = x + stroke.offset.x
       const sourceY = y + stroke.offset.y
+      const sourceImage = stroke.mergedSnapshot ?? tileSample(stroke, sourceX, sourceY)
+      captureRasterTiles(stroke.before, x - stroke.radius - 2, y - stroke.radius - 2, stroke.radius * 2 + 4, stroke.radius * 2 + 4)
       context.save()
       context.beginPath()
       context.arc(x, y, stroke.radius, 0, Math.PI * 2)
@@ -76,7 +100,8 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       context.translate(x, y)
       context.rotate(sourceRotation * Math.PI / 180)
       context.scale(sourceScale / 100, sourceScale / 100)
-      context.drawImage(stroke.snapshot, sourceX - stroke.radius, sourceY - stroke.radius, stroke.radius * 2, stroke.radius * 2, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
+      if (stroke.mergedSnapshot) context.drawImage(sourceImage, sourceX - stroke.radius, sourceY - stroke.radius, stroke.radius * 2, stroke.radius * 2, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
+      else context.drawImage(sourceImage, 0, 0, sourceImage.width, sourceImage.height, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
       context.restore()
       stroke.minX = Math.min(stroke.minX, x - stroke.radius)
       stroke.minY = Math.min(stroke.minY, y - stroke.radius)
@@ -103,13 +128,14 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     }
     const context = target.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
-    const before = context.getImageData(0, 0, target.surface.width, target.surface.height)
-    const snapshot = window.document.createElement('canvas')
-    snapshot.width = target.surface.width
-    snapshot.height = target.surface.height
-    const snapshotContext = snapshot.getContext('2d')
-    if (sampleMode === 'current') snapshotContext?.putImageData(before, 0, 0)
-    else if (snapshotContext && canvas) {
+    const before = createRasterTileSnapshot(target.surface)
+    let mergedSnapshot: HTMLCanvasElement | null = null
+    if (sampleMode === 'current-and-below' && canvas) {
+      mergedSnapshot = window.document.createElement('canvas')
+      mergedSnapshot.width = target.surface.width
+      mergedSnapshot.height = target.surface.height
+      const snapshotContext = mergedSnapshot.getContext('2d')
+      if (!snapshotContext) return
       const selectedIndex = document.layers.findIndex((layer) => layer.id === target.layer.id)
       const merged = window.document.createElement('canvas')
       renderComposition(merged, { ...document, layers: selectedIndex < 0 ? document.layers : document.layers.slice(0, selectedIndex + 1) }, assets)
@@ -127,7 +153,8 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       pointerId: event.pointerId,
       target,
       before,
-      snapshot,
+      mergedSnapshot,
+      sampleCanvas: window.document.createElement('canvas'),
       last: point,
       offset: strokeOffset,
       radius,
@@ -169,7 +196,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       if (stroke.previewing) strokePreview.cancelPreview()
       return
     }
-    const before = extractImageData(stroke.before, x, y, width, height)
+    const before = rasterSnapshotRegion(stroke.before, x, y, width, height)
     const after = constrainRasterRegion(before, context.getImageData(x, y, width, height), x, y, stroke.target, stroke.selectionData)
     context.putImageData(after, x, y)
     onChange(stroke.target.layer.assetId, { x, y, width, height })

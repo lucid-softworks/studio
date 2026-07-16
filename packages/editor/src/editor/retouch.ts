@@ -12,6 +12,7 @@ export type RetouchStampOptions = {
   targetColor?: [number, number, number]
   mixerColor?: [number, number, number]
   delta?: { x: number; y: number }
+  origin?: { x: number; y: number }
 }
 
 const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
@@ -72,7 +73,7 @@ export function applyRetouchStamp(image: ImageData, source: ImageData, centerX: 
       const mixed = options.mixerColor ?? replacement
       next = [mixed[0], mixed[1], mixed[2], current[3]]
     } else if (options.mode === 'history-brush') next = pixel(source.data, width, height, x, y)
-    else if (options.mode === 'pattern-stamp') next = [...patternColor(options.pattern, x, y, replacement.slice(0, 3) as [number, number, number]), current[3]]
+    else if (options.mode === 'pattern-stamp') next = [...patternColor(options.pattern, x + (options.origin?.x ?? 0), y + (options.origin?.y ?? 0), replacement.slice(0, 3) as [number, number, number]), current[3]]
     else if (options.mode === 'sponge') {
       const luminance = current[0] * 0.2126 + current[1] * 0.7152 + current[2] * 0.0722
       next = [luminance + (current[0] - luminance) * 1.8, luminance + (current[1] - luminance) * 1.8, luminance + (current[2] - luminance) * 1.8, current[3]]
