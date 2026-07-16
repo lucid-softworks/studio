@@ -3,13 +3,12 @@ import { createId } from '../editor/presets'
 import type { DocumentPath, EditorDispatch, EditorDocument, Position, VectorPath } from '../editor/types'
 
 type PathTool = 'pen' | 'direct-select' | 'path-select'
-type DragTarget = { pathIndex: number; knotIndex?: number; handle?: 'in' | 'out'; start: Position; source: DocumentPath }
+type DragTarget = { pathIndex: number; knotIndex?: number; handle?: 'in' | 'out'; start: Position; source: DocumentPath; draft: DocumentPath }
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   document: EditorDocument
   dispatch: EditorDispatch
-  endHistoryGroup: () => void
   tool: PathTool
   enabled: boolean
 }
@@ -32,17 +31,19 @@ const pathData = (path: VectorPath, width: number, height: number) => {
   return data
 }
 
-export function PathEditorOverlay({ canvasRef, document, dispatch, endHistoryGroup, tool, enabled }: Props) {
+export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled }: Props) {
   const [selected, setSelected] = useState<{ pathIndex: number; knotIndex?: number } | null>(null)
+  const [preview, setPreview] = useState<DocumentPath | null>(null)
   const dragRef = useRef<DragTarget | null>(null)
   const active = document.paths?.find((path) => path.id === document.selectedPathId) ?? document.paths?.at(-1)
+  const visiblePath = preview ?? active
   const width = canvasRef.current?.width ?? document.canvasSize.width
   const height = canvasRef.current?.height ?? document.canvasSize.height
 
-  const update = (path: DocumentPath, continuous = false) => {
+  const update = (path: DocumentPath) => {
     const exists = (document.paths ?? []).some((candidate) => candidate.id === path.id)
     const paths = exists ? (document.paths ?? []).map((candidate) => candidate.id === path.id ? path : candidate) : [...(document.paths ?? []), path]
-    dispatch({ type: 'set-paths', paths, selectedPathId: path.id }, continuous ? { groupKey: 'path-edit' } : undefined)
+    dispatch({ type: 'set-paths', paths, selectedPathId: path.id })
   }
 
   const normalizedPoint = (event: ReactPointerEvent<SVGSVGElement | SVGCircleElement | SVGPathElement>) => {
@@ -70,9 +71,9 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, endHistoryGro
     const knot = { linked: true, in: point, anchor: point, out: point }
     path.knots.push(knot)
     const knotIndex = path.knots.length - 1
-    dragRef.current = { pathIndex, knotIndex, start: point, source }
+    dragRef.current = { pathIndex, knotIndex, start: point, source, draft: source }
     event.currentTarget.setPointerCapture(event.pointerId)
-    update(source)
+    setPreview(source)
     setSelected({ pathIndex, knotIndex })
   }
 
@@ -92,7 +93,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, endHistoryGro
       setSelected({ pathIndex, knotIndex })
       return
     }
-    dragRef.current = { pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex, handle, start, source }
+    dragRef.current = { pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex, handle, start, source, draft: source }
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelected({ pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex })
   }
@@ -122,13 +123,16 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, endHistoryGro
         for (const key of ['in', 'anchor', 'out'] as const) knot[key] = { x: knot[key].x + dx, y: knot[key].y + dy }
       }
     }
-    update(source, true)
+    drag.draft = source
+    setPreview(source)
   }
 
   const finish = () => {
-    if (!dragRef.current) return
+    const drag = dragRef.current
+    if (!drag) return
     dragRef.current = null
-    endHistoryGroup()
+    setPreview(null)
+    update(drag.draft)
   }
 
   useEffect(() => {
@@ -148,7 +152,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, endHistoryGro
 
   return (
     <svg aria-label={enabled ? `${tool} path editing surface` : undefined} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} style={{ cursor: tool === 'pen' ? 'crosshair' : 'default' }} onPointerDown={penDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}>
-      {active?.paths.map((path, pathIndex) => <g key={pathIndex}>
+      {visiblePath?.paths.map((path, pathIndex) => <g key={pathIndex}>
         <path d={pathData(path, width, height)} fill="none" stroke="#38bdf8" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className={tool === 'path-select' ? 'pointer-events-auto' : 'pointer-events-none'} onPointerDown={(event) => startDrag(event, pathIndex)} />
         {(tool === 'direct-select' || tool === 'pen') && path.knots.map((knot, knotIndex) => <g key={knotIndex}>
           {(selected?.pathIndex === pathIndex && selected.knotIndex === knotIndex) && <><line x1={knot.in.x * width} y1={knot.in.y * height} x2={knot.out.x * width} y2={knot.out.y * height} stroke="#7dd3fc" strokeWidth={1} vectorEffect="non-scaling-stroke" /><circle cx={knot.in.x * width} cy={knot.in.y * height} r={4} fill="#111113" stroke="#7dd3fc" strokeWidth={1.5} vectorEffect="non-scaling-stroke" onPointerDown={(event) => startDrag(event, pathIndex, knotIndex, 'in')} /><circle cx={knot.out.x * width} cy={knot.out.y * height} r={4} fill="#111113" stroke="#7dd3fc" strokeWidth={1.5} vectorEffect="non-scaling-stroke" onPointerDown={(event) => startDrag(event, pathIndex, knotIndex, 'out')} /></>}
