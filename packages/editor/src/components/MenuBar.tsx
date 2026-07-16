@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WorkspacePreset } from '../editor/panel-layout'
+import { commandForEvent, shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view'
@@ -8,6 +9,8 @@ type MenuBarProps = {
   onNew: () => void
   onOpen: () => void
   onSave: () => void
+  shortcuts: ShortcutMap
+  onEditShortcuts: () => void
   onAddImage: () => void
   onPlaceLinkedSmartObject: () => void
   onLoadFont: () => void
@@ -101,20 +104,20 @@ export function MenuBar(props: MenuBarProps) {
         setOpenMenu(null)
         return
       }
-      const command = event.metaKey || event.ctrlKey
-      if (!command || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
-      const key = event.key.toLowerCase()
-      if (key === 'n') {
-        if (event.shiftKey) props.onNewLayer()
-        else props.onNew()
-      } else if (key === 'o') props.onOpen()
-      else if (key === 's') props.onSave()
-      else if (key === 't' && event.shiftKey && props.canTransformAgain) props.onTransformAgain()
-      else if (key === '0') props.onZoom('actual')
-      else if (key === '=' || key === '+') props.onZoom('in')
-      else if (key === '-') props.onZoom('out')
+      const command = commandForEvent(event, props.shortcuts)
+      if (command === 'file.new') props.onNew()
+      else if (command === 'file.open') props.onOpen()
+      else if (command === 'file.save') props.onSave()
+      else if (command === 'edit.undo' && props.canUndo) props.onUndo()
+      else if (command === 'edit.redo' && props.canRedo) props.onRedo()
+      else if (command === 'edit.transform-again' && props.canTransformAgain) props.onTransformAgain()
+      else if (command === 'layer.new') props.onNewLayer()
+      else if (command === 'layer.duplicate' && props.hasLayerSelection) props.onDuplicateLayer()
+      else if (command === 'view.actual') props.onZoom('actual')
+      else if (command === 'view.zoom-in') props.onZoom('in')
+      else if (command === 'view.zoom-out') props.onZoom('out')
       else return
       event.preventDefault()
     }
@@ -141,15 +144,15 @@ export function MenuBar(props: MenuBarProps) {
   return (
     <div ref={rootRef} className="ml-1 flex h-full items-center border-l border-white/[0.07] pl-2">
       {menu('file', 'File', <>
-        <MenuItem shortcut="⌘N" onSelect={() => select(props.onNew)}>New document</MenuItem>
-        <MenuItem shortcut="⌘O" onSelect={() => select(props.onOpen)}>Open…</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.new'])} onSelect={() => select(props.onNew)}>New document</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.open'])} onSelect={() => select(props.onOpen)}>Open…</MenuItem>
         <Separator />
         <MenuItem onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
         <MenuItem onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
         <Separator />
-        <MenuItem shortcut="⌘S" disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Export as</p>
         <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('png'))}>PNG image</MenuItem>
@@ -162,12 +165,14 @@ export function MenuBar(props: MenuBarProps) {
       </>, 'w-60')}
 
       {menu('edit', 'Edit', <>
-        <MenuItem shortcut="⌘Z" disabled={!props.canUndo} onSelect={() => select(props.onUndo)}>Undo</MenuItem>
-        <MenuItem shortcut="⇧⌘Z" disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.undo'])} disabled={!props.canUndo} onSelect={() => select(props.onUndo)}>Undo</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.redo'])} disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
         <Separator />
-        <MenuItem shortcut="⇧⌘T" disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.transform-again'])} disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
         <Separator />
         <MenuItem disabled={!props.canContentAwareFill} onSelect={() => select(props.onContentAwareFill)}>Content-Aware Fill…</MenuItem>
+        <Separator />
+        <MenuItem onSelect={() => select(props.onEditShortcuts)}>Keyboard Shortcuts…</MenuItem>
       </>)}
 
       {menu('image', 'Image', <>
@@ -179,10 +184,10 @@ export function MenuBar(props: MenuBarProps) {
       </>, 'w-64')}
 
       {menu('layer', 'Layer', <>
-        <MenuItem shortcut="⇧⌘N" onSelect={() => select(props.onNewLayer)}>New layer</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['layer.new'])} onSelect={() => select(props.onNewLayer)}>New layer</MenuItem>
         <MenuItem onSelect={() => select(props.onNewGroup)}>New group</MenuItem>
         <Separator />
-        <MenuItem shortcut="⌘J" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['layer.duplicate'])} disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
         <MenuItem disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
         <MenuItem disabled={!props.canConvertToSmartObject} onSelect={() => select(props.onConvertToSmartObject)}>Convert to smart object</MenuItem>
         <MenuItem disabled={props.smartObjectKind !== 'embedded'} onSelect={() => select(props.onReplaceSmartObject)}>Replace smart-object contents…</MenuItem>
@@ -225,9 +230,9 @@ export function MenuBar(props: MenuBarProps) {
       </>)}
 
       {menu('view', 'View', <>
-        <MenuItem shortcut="⌘+" onSelect={() => select(() => props.onZoom('in'))}>Zoom in</MenuItem>
-        <MenuItem shortcut="⌘−" onSelect={() => select(() => props.onZoom('out'))}>Zoom out</MenuItem>
-        <MenuItem shortcut="⌘0" onSelect={() => select(() => props.onZoom('actual'))}>100%</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.zoom-in'])} onSelect={() => select(() => props.onZoom('in'))}>Zoom in</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.zoom-out'])} onSelect={() => select(() => props.onZoom('out'))}>Zoom out</MenuItem>
+        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.actual'])} onSelect={() => select(() => props.onZoom('actual'))}>100%</MenuItem>
         <Separator />
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Panels</p>
         <MenuItem checked={props.propertiesPanelVisible} onSelect={() => select(() => props.onTogglePanel('properties'))}>Properties</MenuItem>

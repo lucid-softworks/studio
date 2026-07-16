@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { CircleIcon, RectangleIcon, TextIcon } from './Icons'
+import { shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
 
 export type EditorTool =
   | 'move'
@@ -169,26 +170,30 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
 type ToolRailProps = {
   tool: EditorTool
   onChange: (tool: EditorTool) => void
+  shortcuts: ShortcutMap
 }
 
-export function ToolRail({ tool, onChange }: ToolRailProps) {
+export function ToolRail({ tool, onChange, shortcuts }: ToolRailProps) {
   return (
     <aside aria-label="Tools" className="order-0 flex h-12 w-full shrink-0 items-center overflow-x-auto border-b border-white/[0.07] bg-[#111113] px-1.5 lg:h-[calc(100vh-84px)] lg:w-12 lg:flex-col lg:overflow-x-hidden lg:overflow-y-auto lg:border-r lg:border-b-0 lg:px-0 lg:py-1.5">
-      {tools.map((item) => (
+      {tools.map((item) => {
+        const binding = shortcuts[`tool.${item.id}`] ?? ''
+        return (
         <div key={item.id} className={`shrink-0 ${item.divider ? 'ml-1.5 border-l border-white/[0.07] pl-1.5 lg:mt-1.5 lg:ml-0 lg:border-t lg:border-l-0 lg:pt-1.5 lg:pl-0' : ''}`}>
           <button
             type="button"
-            title={`${item.label} (${item.shortcut})`}
+            title={`${item.label}${binding ? ` (${shortcutLabel(binding)})` : ''}`}
             aria-label={`${item.label} tool`}
             aria-pressed={tool === item.id}
             onClick={() => onChange(item.id)}
             className={`relative flex size-9 items-center justify-center rounded-md transition focus-visible:outline-2 focus-visible:outline-violet-400 ${tool === item.id ? 'bg-violet-400/15 text-violet-200 shadow-[inset_0_0_0_1px_rgba(167,139,250,0.12)]' : 'text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200'}`}
           >
             {item.icon}
-            <span className="absolute right-1 bottom-0.5 text-[7px] leading-none text-current/45">{item.shortcut.replace('Shift ', '⇧')}</span>
+            <span className="absolute right-1 bottom-0.5 text-[7px] leading-none text-current/45">{binding ? shortcutLabel(binding) : ''}</span>
           </button>
         </div>
-      ))}
+        )
+      })}
     </aside>
   )
 }

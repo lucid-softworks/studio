@@ -28,6 +28,7 @@ import { CanvasRulers } from './CanvasRulers'
 import { QuickMaskOverlay } from './QuickMaskOverlay'
 import { PixelRetouchOverlay } from './PixelRetouchOverlay'
 import type { GradientStop } from '../editor/gradients'
+import { commandForEvent, type ShortcutMap } from '../editor/shortcuts'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -50,6 +51,7 @@ type CanvasStageProps = {
   zoom: number
   onZoomChange: Dispatch<SetStateAction<number>>
   tool: EditorTool
+  shortcuts: ShortcutMap
   onToolChange: (tool: EditorTool) => void
   onAddText: (position: Position, color: string, paragraphBox?: { width: number; height: number }) => void
   onAddShape: (shape: ShapeKind, position: Position, fill: string) => void
@@ -136,29 +138,9 @@ const toolNames: Record<EditorTool, string> = {
   zoom: 'Zoom',
 }
 
-function toolForShortcut(key: string, shift: boolean): EditorTool | null {
-  switch (key) {
-    case 'v': return 'move'
-    case 'm': return shift ? 'ellipse-select' : 'marquee'
-    case 'l': return shift ? 'polygonal-lasso' : 'lasso'
-    case 'w': return shift ? 'object-select' : 'magic-wand'
-    case 'c': return shift ? 'perspective-crop' : 'crop'
-    case 'i': return shift ? 'measure' : 'eyedropper'
-    case 'j': return 'healing'
-    case 's': return 'clone-stamp'
-    case 'b': return shift ? 'pencil' : 'brush'
-    case 'y': return 'history-brush'
-    case 'e': return 'eraser'
-    case 'g': return shift ? 'gradient' : 'fill'
-    case 'o': return shift ? 'burn' : 'dodge'
-    case 't': return 'text'
-    case 'p': return 'pen'
-    case 'a': return shift ? 'path-select' : 'direct-select'
-    case 'u': return shift ? 'ellipse' : 'rectangle'
-    case 'h': return 'hand'
-    case 'z': return 'zoom'
-    default: return null
-  }
+function toolForShortcut(event: KeyboardEvent, shortcuts: ShortcutMap): EditorTool | null {
+  const command = commandForEvent(event, shortcuts, 'Tools')
+  return command?.startsWith('tool.') ? command.slice(5) as EditorTool : null
 }
 
 function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection: boolean; editingMaskName?: string; rasterSelected: boolean }) {
@@ -210,7 +192,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   }
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, onToolChange, onAddText, onAddShape, onCrop, onPerspectiveCrop, brushes, brushId, onBrushChange, onLoadBrush, foregroundColor, backgroundColor, gradientStops, onForegroundColorChange, onBackgroundColorChange }: CanvasStageProps) {
+export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, shortcuts, onToolChange, onAddText, onAddShape, onCrop, onPerspectiveCrop, brushes, brushId, onBrushChange, onLoadBrush, foregroundColor, backgroundColor, gradientStops, onForegroundColorChange, onBackgroundColorChange }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [brushSize, setBrushSize] = useState(48)
   const [brushHardness, setBrushHardness] = useState(80)
@@ -334,14 +316,14 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         if (tool !== 'brush' && tool !== 'eraser') onToolChange('brush')
         return
       }
-      const next = toolForShortcut(event.key.toLowerCase(), event.shiftKey)
+      const next = toolForShortcut(event, shortcuts)
       if (!next) return
       event.preventDefault()
       onToolChange(next)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onToolChange, tool])
+  }, [onToolChange, shortcuts, tool])
 
   useEffect(() => {
     const clearSelectedPixels = () => {

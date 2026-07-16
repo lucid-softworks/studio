@@ -174,7 +174,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M9 — workflow and extensibility
 
-- [ ] Add editable keyboard shortcuts and menus
+- [x] Add editable keyboard shortcuts and menus
 - [ ] Add dockable/resizable panels and saved workspaces
   - [x] Swap the Properties and Layers docks, resize both side panels, and persist the layout and widths locally
   - [x] Add collapsible docks and built-in or user-named workspace presets
