@@ -72,6 +72,12 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, channels: action.channels }
     case 'set-paths':
       return { ...state, paths: action.paths, selectedPathId: action.selectedPathId }
+    case 'set-guides':
+      return { ...state, guides: action.guides }
+    case 'set-grid': {
+      const grid = { ...(state.grid ?? { visible: false, spacing: 100, subdivisions: 4, color: '#38bdf8', snap: true }), ...action.patch }
+      return { ...state, grid: { ...grid, spacing: Math.max(4, Math.min(2000, Number(grid.spacing) || 4)), subdivisions: Math.max(1, Math.min(10, Math.round(Number(grid.subdivisions) || 1))) } }
+    }
     case 'replace-document':
       return action.document
     case 'add-layer': {
@@ -225,6 +231,7 @@ const documentFields = [
   'paths',
   'selectedPathId',
   'guides',
+  'grid',
   'psdMetadata',
 ] as const satisfies readonly (keyof EditorDocument)[]
 

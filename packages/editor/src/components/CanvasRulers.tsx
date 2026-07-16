@@ -1,10 +1,10 @@
 import { useLayoutEffect, useMemo, useState, type RefObject } from 'react'
 import { rulerStep, rulerValues } from './canvas-ruler-scale'
-import type { DocumentGuide } from '../editor/types'
+import type { DocumentGridSettings, DocumentGuide } from '../editor/types'
 
 type Metrics = { width: number; height: number; canvasLeft: number; canvasTop: number; scaleX: number; scaleY: number; scrollLeft: number; scrollTop: number }
 
-export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [] }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number; guides?: DocumentGuide[] }) {
+export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [], grid }: { stageRef: RefObject<HTMLDivElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; zoom: number; guides?: DocumentGuide[]; grid?: DocumentGridSettings }) {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
 
   useLayoutEffect(() => {
@@ -66,8 +66,16 @@ export function CanvasRulers({ stageRef, canvasRef, zoom, guides = [] }: { stage
   }, [metrics])
 
   if (!metrics || !ticks) return null
+  const canvas = canvasRef.current
+  const gridStep = grid ? grid.spacing / Math.max(1, grid.subdivisions) : 0
+  const verticalGridLines = grid?.visible && canvas ? Array.from({ length: Math.min(2000, Math.floor(canvas.width / gridStep)) }, (_, index) => (index + 1) * gridStep) : []
+  const horizontalGridLines = grid?.visible && canvas ? Array.from({ length: Math.min(2000, Math.floor(canvas.height / gridStep)) }, (_, index) => (index + 1) * gridStep) : []
   return (
     <div className="pointer-events-none absolute inset-0 z-30" style={{ transform: `translate(${metrics.scrollLeft}px, ${metrics.scrollTop}px)` }} aria-hidden="true">
+      {grid?.visible && canvas && <svg className="absolute" style={{ left: metrics.canvasLeft, top: metrics.canvasTop }} width={canvas.width * metrics.scaleX} height={canvas.height * metrics.scaleY}>
+        {verticalGridLines.map((position, index) => <line key={`x-${index}`} x1={position * metrics.scaleX} x2={position * metrics.scaleX} y1="0" y2="100%" stroke={grid.color} strokeOpacity={(index + 1) % grid.subdivisions === 0 ? 0.52 : 0.22} strokeWidth={(index + 1) % grid.subdivisions === 0 ? 0.8 : 0.5} />)}
+        {horizontalGridLines.map((position, index) => <line key={`y-${index}`} y1={position * metrics.scaleY} y2={position * metrics.scaleY} x1="0" x2="100%" stroke={grid.color} strokeOpacity={(index + 1) % grid.subdivisions === 0 ? 0.52 : 0.22} strokeWidth={(index + 1) % grid.subdivisions === 0 ? 0.8 : 0.5} />)}
+      </svg>}
       <svg width={metrics.width} height="22" className="absolute top-0 left-0 bg-[#151518]/95 text-zinc-500 shadow-[0_1px_rgba(255,255,255,0.06)]">
         {ticks.x.map((value, index) => {
           const x = metrics.canvasLeft + value * metrics.scaleX

@@ -65,6 +65,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
 
 export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
+  const [guideLayout, setGuideLayout] = useState({ columns: 3, rows: 3, margin: 80, gutter: 24 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId) ?? null
   const selectedIndex = selected ? document.layers.findIndex((layer) => layer.id === selected.id) : -1
@@ -99,6 +100,26 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
   }
   const updateSmartFilters = (smartFilters: Extract<EditorLayer, { type: 'smart-object' }>['smartFilters']) => {
     if (selected?.type === 'smart-object') updateLayer(selected, { smartFilters })
+  }
+  const applyGuideLayout = () => {
+    const width = document.canvasSize.width
+    const height = document.canvasSize.height
+    const margin = Math.max(0, Math.min(Math.min(width, height) / 2, guideLayout.margin))
+    const gutter = Math.max(0, guideLayout.gutter)
+    const positions = new Map<string, { direction: 'horizontal' | 'vertical'; position: number }>()
+    const add = (direction: 'horizontal' | 'vertical', position: number) => positions.set(`${direction}:${Math.round(position * 100)}`, { direction, position })
+    add('vertical', margin); add('vertical', width - margin); add('horizontal', margin); add('horizontal', height - margin)
+    const columnWidth = Math.max(0, (width - margin * 2 - gutter * (guideLayout.columns - 1)) / guideLayout.columns)
+    for (let index = 1; index < guideLayout.columns; index += 1) {
+      const edge = margin + index * columnWidth + (index - 1) * gutter
+      add('vertical', edge); add('vertical', edge + gutter)
+    }
+    const rowHeight = Math.max(0, (height - margin * 2 - gutter * (guideLayout.rows - 1)) / guideLayout.rows)
+    for (let index = 1; index < guideLayout.rows; index += 1) {
+      const edge = margin + index * rowHeight + (index - 1) * gutter
+      add('horizontal', edge); add('horizontal', edge + gutter)
+    }
+    dispatch({ type: 'set-guides', guides: [...positions.values()].map((guide) => ({ id: createId(), ...guide })) })
   }
   const addSmartFilter = (kind: 'blur' | 'sharpen' | 'invert') => {
     if (selected?.type !== 'smart-object') return
@@ -257,6 +278,23 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 <RangeControl label="Spacing" value={document.pattern.size} min={16} max={100} suffix="px" onChange={(value) => dispatch({ type: 'set-pattern', patch: { size: value } }, { groupKey: 'pattern-size' })} onChangeEnd={endHistoryGroup} />
               </>
             )}
+          </ControlSection>
+
+          <ControlSection title="Grid & guides">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" aria-pressed={document.grid?.visible === true} onClick={() => dispatch({ type: 'set-grid', patch: { visible: !document.grid?.visible } })} className={`rounded-lg border px-3 py-2 text-xs ${document.grid?.visible ? 'border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-100' : 'border-white/[0.08] text-zinc-600'}`}>{document.grid?.visible ? 'Grid visible' : 'Show grid'}</button>
+              <button type="button" aria-pressed={document.grid?.snap !== false} onClick={() => dispatch({ type: 'set-grid', patch: { snap: document.grid?.snap === false } })} className={`rounded-lg border px-3 py-2 text-xs ${document.grid?.snap !== false ? 'border-violet-300/20 bg-violet-300/[0.06] text-violet-100' : 'border-white/[0.08] text-zinc-600'}`}>Snap {document.grid?.snap !== false ? 'on' : 'off'}</button>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <label className="text-[9px] text-zinc-600">Spacing<input aria-label="Grid spacing" type="number" min="4" max="2000" value={document.grid?.spacing ?? 100} onChange={(event) => dispatch({ type: 'set-grid', patch: { spacing: Number(event.target.value) } }, { groupKey: 'grid-spacing' })} onBlur={endHistoryGroup} className={`${fieldClass} mt-1 px-2`} /></label>
+              <label className="text-[9px] text-zinc-600">Subdivisions<input aria-label="Grid subdivisions" type="number" min="1" max="10" value={document.grid?.subdivisions ?? 4} onChange={(event) => dispatch({ type: 'set-grid', patch: { subdivisions: Number(event.target.value) } }, { groupKey: 'grid-subdivisions' })} onBlur={endHistoryGroup} className={`${fieldClass} mt-1 px-2`} /></label>
+              <label className="text-[9px] text-zinc-600">Colour<input aria-label="Grid color" type="color" value={document.grid?.color ?? '#38bdf8'} onChange={(event) => dispatch({ type: 'set-grid', patch: { color: event.target.value } }, { groupKey: 'grid-color' })} onBlur={endHistoryGroup} className="mt-1 h-8 w-full cursor-pointer rounded border-0 bg-transparent p-0" /></label>
+            </div>
+            <p className="mt-4 text-[9px] font-semibold tracking-[0.14em] text-zinc-600 uppercase">Guide layout</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {(['columns', 'rows', 'margin', 'gutter'] as const).map((field) => <label key={field} className="text-[9px] text-zinc-600 capitalize">{field}<input aria-label={`Guide ${field}`} type="number" min={field === 'columns' || field === 'rows' ? 1 : 0} max={field === 'columns' || field === 'rows' ? 24 : 2000} value={guideLayout[field]} onChange={(event) => setGuideLayout((current) => ({ ...current, [field]: Math.max(field === 'columns' || field === 'rows' ? 1 : 0, Number(event.target.value)) }))} className={`${fieldClass} mt-1`} /></label>)}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={applyGuideLayout} className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2 text-[10px] text-cyan-100/70 hover:bg-cyan-300/[0.08]">Create layout</button><button type="button" disabled={!document.guides?.length} onClick={() => dispatch({ type: 'set-guides', guides: [] })} className="rounded-lg border border-white/[0.08] px-3 py-2 text-[10px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">Clear guides</button></div>
           </ControlSection>
         </>
       ) : (

@@ -41,6 +41,8 @@ export const initialDocument: EditorDocument = {
   selectedLayerId: null,
   selectedLayerIds: [],
   selectedGroupId: null,
+  guides: [],
+  grid: { visible: false, spacing: 100, subdivisions: 4, color: '#38bdf8', snap: true },
 }
 
 export function createId() {

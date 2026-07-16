@@ -116,7 +116,14 @@ function normalizeDocument(value: EditorDocument): EditorDocument {
   const selectedGroupId = value.selectedGroupId && groupIds.has(value.selectedGroupId) ? value.selectedGroupId : null
   const paths = Array.isArray(value.paths) ? value.paths : []
   const selectedPathId = value.selectedPathId && paths.some((path) => path.id === value.selectedPathId) ? value.selectedPathId : null
-  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId }
+  const grid = {
+    visible: value.grid?.visible === true,
+    spacing: Math.max(4, Math.min(2000, Number(value.grid?.spacing) || 100)),
+    subdivisions: Math.max(1, Math.min(10, Math.round(Number(value.grid?.subdivisions) || 4))),
+    color: typeof value.grid?.color === 'string' ? value.grid.color : '#38bdf8',
+    snap: value.grid?.snap !== false,
+  }
+  let normalized = { ...value, bitDepth, canvasSize, groups, layers, selectedLayerId, selectedLayerIds, selectedGroupId, paths, selectedPathId, guides: Array.isArray(value.guides) ? value.guides : [], grid }
   for (const parentId of [null, ...groups.map((group) => group.id)]) {
     const orders = new Map(getStackChildren(normalized, parentId).map((item, index) => [`${item.type}:${item.id}`, index]))
     normalized = {
