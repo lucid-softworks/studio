@@ -30,8 +30,9 @@ import { normalizeCustomSwatches, normalizeHexColor } from './editor/swatches'
 import { normalizeCustomGradients, type GradientPreset } from './editor/gradients'
 import { normalizeCustomPatterns, type PatternPreset } from './editor/patterns'
 import type { AlphaChannelTransform } from './components/UtilityPanels'
+import { normalizeCustomShapes, parseCustomShapeFile, serializeCustomShape, type CustomShapePreset } from './editor/shape-library'
 
-type ExportFormat = 'png' | 'jpeg' | 'webp' | 'psd'
+type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
 type AppProps = { onExit?: () => void }
@@ -68,6 +69,9 @@ function App({ onExit }: AppProps) {
   })
   const [customPatterns, setCustomPatterns] = useState<PatternPreset[]>(() => {
     try { return normalizeCustomPatterns(JSON.parse(localStorage.getItem('studio.custom-patterns') ?? '[]')) } catch { return [] }
+  })
+  const [customShapes, setCustomShapes] = useState<CustomShapePreset[]>(() => {
+    try { return normalizeCustomShapes(JSON.parse(localStorage.getItem('studio.custom-shapes') ?? '[]')) } catch { return [] }
   })
   const [resourceRevision, bumpResourceRevision] = useReducer((value: number) => value + 1, 0)
   const [workspaceLayout, setWorkspaceLayout] = useState<WorkspaceLayout>(() => {
@@ -107,6 +111,7 @@ function App({ onExit }: AppProps) {
   const projectInputRef = useRef<HTMLInputElement>(null)
   const fontInputRef = useRef<HTMLInputElement>(null)
   const brushInputRef = useRef<HTMLInputElement>(null)
+  const shapeInputRef = useRef<HTMLInputElement>(null)
   const hydratedRef = useRef(false)
   const rasterUndoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
@@ -132,8 +137,9 @@ function App({ onExit }: AppProps) {
       localStorage.setItem('studio.custom-swatches', JSON.stringify(customSwatches))
       localStorage.setItem('studio.custom-gradients', JSON.stringify(customGradients))
       localStorage.setItem('studio.custom-patterns', JSON.stringify(customPatterns))
+      localStorage.setItem('studio.custom-shapes', JSON.stringify(customShapes))
     } catch { /* local storage is optional */ }
-  }, [backgroundColor, customGradients, customPatterns, customSwatches, foregroundColor])
+  }, [backgroundColor, customGradients, customPatterns, customShapes, customSwatches, foregroundColor])
 
   useEffect(() => {
     if (!notice) return
@@ -1084,8 +1090,37 @@ function App({ onExit }: AppProps) {
     setNotice(`${mode === 'fill' ? 'Filled' : 'Stroked'} ${path.name} on a new editable shape layer.`, 'success')
   }
 
+  const saveCustomShape = (path: DocumentPath) => {
+    const preset = { id: createId(), name: path.name, paths: structuredClone(path.paths) }
+    setCustomShapes((current) => normalizeCustomShapes([...current, preset]))
+    setNotice(`Added ${path.name} to the local custom-shape library.`, 'success')
+  }
+
+  const applyCustomShape = (shape: CustomShapePreset) => addPathShape({ id: shape.id, name: shape.name, kind: 'saved', paths: shape.paths }, 'fill')
+
+  const loadCustomShapeFile = async (file: File) => {
+    try {
+      const shape = await parseCustomShapeFile(file)
+      setCustomShapes((current) => normalizeCustomShapes([...current.filter((candidate) => candidate.id !== shape.id), shape]))
+      setNotice(`Imported ${shape.name} into the local custom-shape library.`, 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'That custom shape could not be imported.')
+    }
+  }
+
+  const exportDocumentPath = (path: DocumentPath) => {
+    const fileName = `${path.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'custom-shape'}.studio-shape`
+    downloadBlob(serializeCustomShape({ id: path.id, name: path.name, paths: path.paths }), fileName)
+  }
+
   const exportImage = async (format: ExportFormat) => {
     setIsExporting(true)
+    if (format === 'svg') {
+      const { exportSvgDocument } = await import('./editor/svg')
+      downloadBlob(exportSvgDocument(document), 'studio-composition.svg')
+      setIsExporting(false)
+      return
+    }
     if (format === 'psd') {
       try {
         const { exportPsdDocument } = await import('./editor/psd')
@@ -1161,6 +1196,9 @@ function App({ onExit }: AppProps) {
         const imported = await importPsdFile(file)
         loaded = imported
         importWarnings = imported.warnings
+      } else if (extension === 'svg' || file.type === 'image/svg+xml') {
+        const { importSvgFile } = await import('./editor/svg')
+        loaded = await importSvgFile(file)
       } else {
         const source = createRasterSurface(await loadImageFile(file))
         const assetId = createId()
@@ -1329,7 +1367,7 @@ function App({ onExit }: AppProps) {
         <ToolRail tool={tool} onChange={setTool} />
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} customShapes={customShapes} onSaveCustomShape={saveCustomShape} onApplyCustomShape={applyCustomShape} onRemoveCustomShape={(id) => setCustomShapes((current) => current.filter((shape) => shape.id !== id))} onImportCustomShape={() => shapeInputRef.current?.click()} onExportPath={exportDocumentPath} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
@@ -1337,9 +1375,10 @@ function App({ onExit }: AppProps) {
       <input ref={replaceSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'embedded'); event.target.value = '' }} />
       <input ref={relinkSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'linked'); event.target.value = '' }} />
       <input ref={backgroundInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
-      <input ref={projectInputRef} type="file" className="sr-only" accept=".studio,.psd,image/png,image/jpeg,image/webp,application/json,application/x-studio+json,image/vnd.adobe.photoshop" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
+      <input ref={projectInputRef} type="file" className="sr-only" accept=".studio,.psd,.svg,image/png,image/jpeg,image/webp,image/svg+xml,application/json,application/x-studio+json,image/vnd.adobe.photoshop" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
       <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
       <input ref={brushInputRef} type="file" className="sr-only" accept=".studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
+      <input ref={shapeInputRef} type="file" className="sr-only" accept=".studio-shape,application/json,application/x-studio-shape+json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadCustomShapeFile(file); event.target.value = '' }} />
 
       {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
       {selectionWorkspaceSource && <SelectAndMaskWorkspace source={selectionWorkspaceSource} onPreview={setSelection} onApply={() => setSelectionWorkspaceSource(null)} onCancel={() => { setSelection(cloneSelection(selectionWorkspaceSource)); setSelectionWorkspaceSource(null) }} />}

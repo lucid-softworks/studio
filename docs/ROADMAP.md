@@ -117,8 +117,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
 - [x] Support compound paths and boolean shape operations
 - [x] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
-- [ ] Add custom shape import/export and a reusable local shape library
-- [ ] Preserve vector data through SVG and PSD round-trips
+- [x] Add custom shape import/export and a reusable local shape library
+- [x] Preserve vector data through SVG and PSD round-trips
 
 ## M5 — transforms, layout, and documents
 
