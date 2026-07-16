@@ -29,8 +29,7 @@ A feature is complete only when it has:
 - [ ] Expand the living Photopea → Studio matrix from the current typed family inventory to every individual menu command, layer type, format operation, preset operation, and shortcut.
 - [ ] Expand browser coverage from tool activation, assigned shortcuts, and selection modes to functional canvas interactions and modifier-key results for every built-in tool.
 - [ ] Add visual golden tests for every renderer feature at multiple zoom levels and document precisions.
-- [ ] Create standard performance fixtures for 2K, 4K, 8K, deeply layered, high-bit-depth, and animation documents.
-- [ ] Track pointer latency, dropped frames, render count, memory, save time, and export time in repeatable benchmarks.
+- [ ] Wire the standard fixture and metric modules into browser benchmarks, set supported-browser budgets for pointer latency, dropped frames, render count, memory, save time, and export time, and publish regressions in CI.
 
 ## P1 — interactive performance and large documents
 
