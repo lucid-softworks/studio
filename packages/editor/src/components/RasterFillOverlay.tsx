@@ -89,30 +89,27 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     const { target: current } = drag
     const context = current.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
-    const after = context.createImageData(current.surface.width, current.surface.height)
-    after.data.set(drag.before.data)
     const stops = maskAssetId ? [{ color: '#ffffff', position: 0 }, { color: '#000000', position: 100 }] : gradientStops.length >= 2 ? gradientStops : [{ color, position: 0 }, { color: secondaryColor, position: 100 }]
-    const dx = end.x - drag.start.x
-    const dy = end.y - drag.start.y
-    const lengthSquared = Math.max(1, dx * dx + dy * dy)
-    for (let y = 0; y < after.height; y += 1) {
-      for (let x = 0; x < after.width; x += 1) {
-        const amount = Math.max(0, Math.min(1, ((x - drag.start.x) * dx + (y - drag.start.y) * dy) / lengthSquared))
-        const offset = (y * after.width + x) * 4
-        const position = amount * 100
-        const rightIndex = Math.max(1, stops.findIndex((stop) => stop.position >= position))
-        const leftStop = stops[rightIndex - 1]
-        const rightStop = stops[rightIndex] ?? stops.at(-1)!
-        const localAmount = Math.max(0, Math.min(1, (position - leftStop.position) / Math.max(0.001, rightStop.position - leftStop.position)))
-        const startColor = hexToRgba(leftStop.color)
-        const endColor = hexToRgba(rightStop.color)
-        for (let channel = 0; channel < 4; channel += 1) after.data[offset + channel] = Math.round(startColor[channel] + (endColor[channel] - startColor[channel]) * localAmount)
-      }
+    cancelWorker()
+    const id = requestRef.current
+    const worker = new Worker(new URL('../editor/workers/raster-ops.worker.ts', import.meta.url), { type: 'module' })
+    workerRef.current = worker
+    setBusy(true)
+    worker.onmessage = (message: MessageEvent<{ id: number; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
+      if (message.data.id !== id || workerRef.current !== worker) return
+      worker.terminate()
+      workerRef.current = null
+      setBusy(false)
+      if (!message.data.before || !message.data.after) return
+      const before = new ImageData(new Uint8ClampedArray(message.data.before), current.surface.width, current.surface.height)
+      const generated = new ImageData(new Uint8ClampedArray(message.data.after), current.surface.width, current.surface.height)
+      const after = constrainRasterRegion(before, generated, 0, 0, current, selectionData())
+      context.putImageData(after, 0, 0)
+      onChange(current.layer.assetId, { x: 0, y: 0, width: after.width, height: after.height })
+      onCommit({ assetId: current.layer.assetId, x: 0, y: 0, before, after })
     }
-    constrainRasterRegion(drag.before, after, 0, 0, current, selectionData())
-    context.putImageData(after, 0, 0)
-    onChange(current.layer.assetId, { x: 0, y: 0, width: after.width, height: after.height })
-    onCommit({ assetId: current.layer.assetId, x: 0, y: 0, before: drag.before, after })
+    worker.onerror = () => { if (workerRef.current === worker) { workerRef.current = null; setBusy(false) }; worker.terminate() }
+    worker.postMessage({ id, operation: 'gradient', data: drag.before.data.buffer, width: drag.before.width, height: drag.before.height, start: drag.start, end, stops: stops.map((stop) => ({ position: stop.position, color: hexToRgba(stop.color) })) }, [drag.before.data.buffer])
   }
 
   const pointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {

@@ -34,7 +34,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   'history-brush': partial('Needs history-source selection, mode, opacity, flow, and snapshot parity.'),
   eraser: partial('Needs background/magic eraser variants, mode controls, and erase-to-history behavior.'),
   fill: partial('Needs contiguous/global modes, sample-all-layers, anti-alias parity, and worker progress/reference fixtures.'),
-  gradient: partial('Needs editable on-canvas stops, styles, dithering, transparency, presets, and incremental commit.', 'too-slow'),
+  gradient: partial('Needs editable on-canvas stops, styles, dithering, transparency, presets, and worker performance/cancellation fixtures.'),
   dodge: partial('Needs shadows/midtones/highlights range, protect-tones, airbrush, and exposure parity.'),
   burn: partial('Needs shadows/midtones/highlights range, protect-tones, airbrush, and exposure parity.'),
   'pattern-stamp': partial('Needs aligned/impressionist behavior, transform controls, and PAT preset compatibility.'),
