@@ -77,5 +77,21 @@ describe('performance metrics', () => {
       renderCount: 1,
       peakMemoryBytes: 2048,
     })
+
+    metrics.reset()
+    now = 200
+    expect(metrics.snapshot()).toEqual({
+      durationMs: 25,
+      durations: {
+        'pointer-latency': { samples: 0, medianMs: 0, p95Ms: 0, maxMs: 0 },
+        render: { samples: 0, medianMs: 0, p95Ms: 0, maxMs: 0 },
+        save: { samples: 0, medianMs: 0, p95Ms: 0, maxMs: 0 },
+        export: { samples: 0, medianMs: 0, p95Ms: 0, maxMs: 0 },
+      },
+      renderedFrames: 0,
+      droppedFrames: 0,
+      renderCount: 0,
+      peakMemoryBytes: null,
+    })
   })
 })

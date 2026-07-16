@@ -14,7 +14,8 @@ const fixtures: Array<{ id: PerformanceFixtureId; width: number; height: number;
 
 for (const fixture of fixtures) {
   test(`records and enforces ${fixture.id} browser budgets`, async ({ page }, testInfo) => {
-    test.setTimeout(60_000)
+    const budget = browserPerformanceBudgets[fixture.id]
+    test.setTimeout(budget.readyMs + budget.saveP95Ms + 45_000)
     await page.addInitScript(() => {
       Object.defineProperty(window, 'showSaveFilePicker', {
         configurable: true,
@@ -32,9 +33,17 @@ for (const fixture of fixtures) {
     const canvas = page.getByLabel('Composition canvas')
     await expect(canvas).toHaveAttribute('width', String(fixture.width))
     await expect(canvas).toHaveAttribute('height', String(fixture.height))
-    await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
-    await expect(page.getByText(`${fixture.objects} objects · ${fixture.folders} folders`)).toBeVisible()
+    await expect(canvas).toHaveAttribute('data-render-revision', /\d+/, { timeout: budget.readyMs })
+    await expect(page.getByText(`${fixture.objects} objects · ${fixture.folders} folders`)).toBeVisible({ timeout: budget.readyMs })
     const readyMs = Date.now() - startedAt
+
+    const warmupRevision = await canvas.getAttribute('data-render-revision')
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    await expect.poll(() => canvas.getAttribute('data-render-revision'), { timeout: budget.readyMs }).not.toBe(warmupRevision)
+    await page.evaluate(() => window.__studioPerformance?.reset())
+    const measuredRevision = await canvas.getAttribute('data-render-revision')
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => canvas.getAttribute('data-render-revision'), { timeout: budget.renderP95Ms * 2 }).not.toBe(measuredRevision)
 
     const box = await canvas.boundingBox()
     expect(box).not.toBeNull()
@@ -55,7 +64,6 @@ for (const fixture of fixtures) {
     }
 
     const snapshot = await page.evaluate(() => window.__studioPerformance?.snapshot())
-    const budget = browserPerformanceBudgets[fixture.id]
     expect(snapshot).toBeDefined()
     expect(snapshot!.durations['pointer-latency'].samples).toBeGreaterThan(0)
     expect(snapshot!.durations.render.samples).toBeGreaterThan(0)

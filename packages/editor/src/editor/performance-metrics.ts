@@ -35,7 +35,7 @@ function summarize(values: number[]): MetricSummary {
 
 export class EditorPerformanceMetrics {
   private readonly now: () => number
-  private readonly startedAt: number
+  private startedAt: number
   private readonly samples = new Map<PerformanceDurationMetric, number[]>(durationMetrics.map((metric) => [metric, []]))
   private lastFrameAt: number | null = null
   private frames = 0
@@ -74,6 +74,16 @@ export class EditorPerformanceMetrics {
 
   recordMemory(bytes: number | null | undefined) {
     if (bytes !== null && bytes !== undefined && Number.isFinite(bytes) && bytes >= 0) this.peakMemory = Math.max(this.peakMemory ?? 0, bytes)
+  }
+
+  reset() {
+    this.startedAt = this.now()
+    for (const values of this.samples.values()) values.length = 0
+    this.lastFrameAt = null
+    this.frames = 0
+    this.dropped = 0
+    this.renders = 0
+    this.peakMemory = null
   }
 
   snapshot(): PerformanceSnapshot {

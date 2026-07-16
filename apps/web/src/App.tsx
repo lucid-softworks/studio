@@ -4,7 +4,7 @@ import { LandingPage } from './LandingPage'
 
 declare global {
   interface Window {
-    __studioPerformance?: { fixture: string; snapshot: () => PerformanceSnapshot }
+    __studioPerformance?: { fixture: string; snapshot: () => PerformanceSnapshot; reset: () => void }
   }
 }
 
@@ -15,7 +15,7 @@ function editorRoute() {
 export default function App() {
   const [isEditor, setIsEditor] = useState(editorRoute)
   const benchmark = useMemo(() => {
-    if (!import.meta.env.DEV) return null
+    if (!import.meta.env.DEV && import.meta.env.VITE_STUDIO_BENCHMARKS !== 'true') return null
     const id = new URLSearchParams(window.location.search).get('benchmark')
     return id && performanceFixtureIds.includes(id as (typeof performanceFixtureIds)[number]) ? createPerformanceFixture(id as (typeof performanceFixtureIds)[number]) : null
   }, [])
@@ -24,7 +24,7 @@ export default function App() {
 
   useEffect(() => {
     if (!benchmark || !performanceMetrics) return
-    window.__studioPerformance = { fixture: benchmark.id, snapshot: () => performanceMetrics.snapshot() }
+    window.__studioPerformance = { fixture: benchmark.id, snapshot: () => performanceMetrics.snapshot(), reset: () => performanceMetrics.reset() }
     return () => { delete window.__studioPerformance }
   }, [benchmark, performanceMetrics])
 
