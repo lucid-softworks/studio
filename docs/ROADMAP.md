@@ -24,12 +24,6 @@ A feature is complete only when it has:
 - Automated unit, interaction, and visual-regression coverage.
 - Matching behavior in TypeGPU and Canvas2D, where both renderers support it.
 
-## P0 — parity audit and performance baseline
-
-- [ ] Expand the living Photopea → Studio matrix from the current typed family inventory to every individual menu command, layer type, format operation, preset operation, and shortcut.
-- [ ] Expand browser coverage from tool activation, assigned shortcuts, and selection modes to functional canvas interactions and modifier-key results for every built-in tool.
-- [ ] Expand the wired 2K and 32-bit shape-composition goldens to every renderer feature, add 16-bit cases, and validate Canvas2D/TypeGPU outputs at multiple zoom levels.
-
 ## P2 — PSD/PSB fidelity and round-trip confidence
 
 - [ ] Build a broad legal corpus of real Photoshop and Photopea documents rather than relying mainly on generated fixtures.
