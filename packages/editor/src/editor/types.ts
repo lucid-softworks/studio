@@ -192,6 +192,9 @@ export type TextStyleRun = {
   fauxItalic?: boolean
   underline?: boolean
   strikethrough?: boolean
+  kerning?: 'auto' | 'none' | 'normal'
+  openTypeFeatures?: string[]
+  variableAxes?: Record<string, number>
 }
 
 export type TextParagraphRun = {
@@ -221,7 +224,7 @@ export type TextLayer = BaseLayer & {
   fontFamily?: string
   fontSize: number
   fontWeight: 400 | 600 | 700
-  textAlign: 'left' | 'center' | 'right'
+  textAlign: 'left' | 'center' | 'right' | 'justify'
   letterSpacing: number
   styleRuns?: TextStyleRun[]
   paragraphRuns?: TextParagraphRun[]
@@ -229,6 +232,25 @@ export type TextLayer = BaseLayer & {
   orientation?: 'horizontal' | 'vertical'
   warp?: TextWarp | null
   missingFonts?: string[]
+  leading?: number
+  baselineShift?: number
+  horizontalScale?: number
+  verticalScale?: number
+  fauxItalic?: boolean
+  underline?: boolean
+  strikethrough?: boolean
+  kerning?: 'auto' | 'none' | 'normal'
+  openTypeFeatures?: string[]
+  variableAxes?: Record<string, number>
+  fallbackFonts?: string[]
+  paragraphStyle?: {
+    firstLineIndent: number
+    startIndent: number
+    endIndent: number
+    spaceBefore: number
+    spaceAfter: number
+  }
+  textPath?: { pathId: string; offset: number; flip: boolean; path?: VectorPath }
 }
 
 export type ShapeLayer = BaseLayer & {
@@ -387,7 +409,7 @@ export type LayerPatch = Partial<{
   fontFamily: string
   fontSize: number
   fontWeight: 400 | 600 | 700
-  textAlign: 'left' | 'center' | 'right'
+  textAlign: 'left' | 'center' | 'right' | 'justify'
   letterSpacing: number
   styleRuns: TextStyleRun[]
   paragraphRuns: TextParagraphRun[]
@@ -395,6 +417,19 @@ export type LayerPatch = Partial<{
   orientation: 'horizontal' | 'vertical'
   warp: TextWarp | null
   missingFonts: string[]
+  leading: number
+  baselineShift: number
+  horizontalScale: number
+  verticalScale: number
+  fauxItalic: boolean
+  underline: boolean
+  strikethrough: boolean
+  kerning: 'auto' | 'none' | 'normal'
+  openTypeFeatures: string[]
+  variableAxes: Record<string, number>
+  fallbackFonts: string[]
+  paragraphStyle: NonNullable<TextLayer['paragraphStyle']>
+  textPath: NonNullable<TextLayer['textPath']> | null
   shape: ShapeKind
   width: number
   height: number

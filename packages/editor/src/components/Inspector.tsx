@@ -14,6 +14,7 @@ import { normalizeGeometryTransform } from '../editor/transform'
 import { CurvesControl } from './CurvesControl'
 import { AdvancedAdjustmentControls } from './AdvancedAdjustmentControls'
 import { FilterGraphControl } from './FilterGraphControl'
+import { TextControls } from './TextControls'
 
 type InspectorProps = {
   document: EditorDocument
@@ -458,35 +459,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
 
           {selected.type === 'text' && (
             <ControlSection title="Text">
-              <label className="block">
-                <span className="mb-2 block text-[11px] font-medium text-zinc-500">Content</span>
-                <textarea className={`${fieldClass} min-h-24 resize-y leading-relaxed`} value={selected.text} onChange={(event) => updateLayer(selected, { text: event.target.value }, `text-${selected.id}`)} onBlur={endHistoryGroup} />
-              </label>
-              <div className="mt-3 flex gap-2">
-                <select aria-label="Font family" value={selected.fontFamily ?? 'Inter'} onChange={(event) => updateLayer(selected, { fontFamily: event.target.value })} className={`${fieldClass} min-w-0 flex-1`}>
-                  <option value="Inter">Inter</option>
-                  <option value="Arial">Arial</option>
-                  <option value="Georgia">Georgia</option>
-                  <option value="Times New Roman">Times New Roman</option>
-                  <option value="Courier New">Courier New</option>
-                  {customFonts.map((font) => <option key={font.id} value={font.family}>{font.name}</option>)}
-                </select>
-                <button type="button" onClick={onLoadFont} className="rounded-lg border border-white/[0.08] px-3 text-[10px] text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200">Load…</button>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <label className="flex flex-1 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-[10px] text-zinc-500">
-                  <input type="color" aria-label="Text color" value={selected.color} onChange={(event) => updateLayer(selected, { color: event.target.value }, `text-color-${selected.id}`)} onBlur={endHistoryGroup} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />
-                  {selected.color.toUpperCase()}
-                </label>
-                <select aria-label="Font weight" value={selected.fontWeight} onChange={(event) => updateLayer(selected, { fontWeight: Number(event.target.value) as 400 | 600 | 700 })} className={`${fieldClass} w-24`}>
-                  <option value="400">Regular</option><option value="600">Semibold</option><option value="700">Bold</option>
-                </select>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-black/30 p-1">
-                {(['left', 'center', 'right'] as const).map((align) => <button type="button" key={align} onClick={() => updateLayer(selected, { textAlign: align })} className={`rounded-md py-2 text-[10px] capitalize ${selected.textAlign === align ? 'bg-zinc-700 text-white' : 'text-zinc-600'}`}>{align}</button>)}
-              </div>
-              <RangeControl label="Size" value={selected.fontSize} min={18} max={180} suffix="px" onChange={(value) => updateLayer(selected, { fontSize: value }, `font-size-${selected.id}`)} onChangeEnd={endHistoryGroup} />
-              <RangeControl label="Tracking" value={selected.letterSpacing} min={-4} max={24} suffix="px" onChange={(value) => updateLayer(selected, { letterSpacing: value }, `tracking-${selected.id}`)} onChangeEnd={endHistoryGroup} />
+              <TextControls layer={selected} paths={document.paths ?? []} fonts={customFonts} update={(patch, groupKey) => updateLayer(selected, patch, groupKey)} endHistoryGroup={endHistoryGroup} onLoadFont={onLoadFont} />
             </ControlSection>
           )}
 

@@ -434,7 +434,7 @@ describe('PSD layer ordering', () => {
         boxBounds: [0, 0, 200, 120],
         warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
         styleRuns: [
-          { length: 5, style: { font: { name: 'Missing Sans' }, fontSize: 30, fillColor: { r: 255, g: 40, b: 80 }, tracking: 20, underline: true } },
+          { length: 5, style: { font: { name: 'Missing Sans' }, fontSize: 30, fillColor: { r: 255, g: 40, b: 80 }, tracking: 20, underline: true, autoKerning: false, ligatures: true, dLigatures: true } },
           { length: 6, style: { font: { name: 'Missing Serif Bold' }, fontSize: 18, fillColor: { r: 40, g: 90, b: 255 }, fauxBold: true, baselineShift: 3 } },
         ],
         paragraphStyleRuns: [
@@ -450,7 +450,7 @@ describe('PSD layer ordering', () => {
       paragraphBox: { width: 200, height: 120 },
       warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
       styleRuns: [
-        { start: 0, length: 5, fontFamily: 'Missing Sans', fontSize: 30, color: '#ff2850', underline: true },
+        { start: 0, length: 5, fontFamily: 'Missing Sans', fontSize: 30, color: '#ff2850', underline: true, kerning: 'none', openTypeFeatures: ['liga', 'dlig'] },
         { start: 5, length: 6, fontFamily: 'Missing Serif Bold', fontWeight: 700, baselineShift: 3 },
       ],
       paragraphRuns: [
@@ -473,7 +473,7 @@ describe('PSD layer ordering', () => {
       shapeType: 'box',
       boxBounds: [0, 0, 200, 120],
       warp: { style: 'arc', value: 35, perspective: 4, perspectiveOther: -2, rotate: 'vertical' },
-      styleRuns: [{ length: 5 }, { length: 6 }],
+      styleRuns: [{ length: 5, style: { autoKerning: false, dLigatures: true } }, { length: 6 }],
       paragraphStyleRuns: [{ length: 6 }, { length: 5 }],
     })
   })

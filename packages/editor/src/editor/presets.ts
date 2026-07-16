@@ -114,6 +114,15 @@ export function createTextLayer(index: number): TextLayer {
     fontWeight: 700,
     textAlign: 'center',
     letterSpacing: 0,
+    leading: 85,
+    baselineShift: 0,
+    horizontalScale: 100,
+    verticalScale: 100,
+    kerning: 'auto',
+    openTypeFeatures: ['kern', 'liga'],
+    variableAxes: {},
+    fallbackFonts: ['Inter', 'Arial', 'sans-serif'],
+    paragraphStyle: { firstLineIndent: 0, startIndent: 0, endIndent: 0, spaceBefore: 0, spaceAfter: 0 },
   }
 }
 

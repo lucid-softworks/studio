@@ -495,7 +495,7 @@ function BrushThumbnail({ brush }: { brush: BrushPreset }) {
   return <canvas ref={canvasRef} width="64" height="64" aria-hidden="true" className="size-12 rounded-md bg-[repeating-conic-gradient(#26262a_0_25%,#1d1d20_0_50%)_50%/8px_8px]" />
 }
 
-export function LibrariesPanel({ brushes, activeBrushId, fonts, activeFontFamily, canApplyFont, onBrushChange, onLoadBrush, onRemoveBrush, onApplyFont, onLoadFont }: {
+export function LibrariesPanel({ brushes, activeBrushId, fonts, activeFontFamily, canApplyFont, onBrushChange, onLoadBrush, onRemoveBrush, onApplyFont, onLoadFont, onRemoveFont }: {
   brushes: BrushPreset[]
   activeBrushId: string
   fonts: CustomFontResource[]
@@ -506,6 +506,7 @@ export function LibrariesPanel({ brushes, activeBrushId, fonts, activeFontFamily
   onRemoveBrush: (id: string) => void
   onApplyFont: (family: string) => void
   onLoadFont: () => void
+  onRemoveFont: (id: string) => void
 }) {
   const [view, setView] = useState<'brushes' | 'fonts'>('brushes')
   return (
@@ -518,7 +519,7 @@ export function LibrariesPanel({ brushes, activeBrushId, fonts, activeFontFamily
       </>}
       {view === 'fonts' && <>
         <div className="mt-4 flex items-center justify-between"><div><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Font library</h3><p className="mt-1 text-[9px] text-zinc-700">TTF, OTF, WOFF, or WOFF2</p></div><button type="button" onClick={onLoadFont} className="rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">+ Import</button></div>
-        {fonts.length ? <div className="mt-3 space-y-2">{fonts.map((font) => <button key={font.id} type="button" aria-label={`Use ${font.name} font`} aria-pressed={activeFontFamily === font.family} disabled={!canApplyFont} onClick={() => onApplyFont(font.family)} className={`w-full rounded-lg border p-3 text-left transition focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-not-allowed disabled:opacity-45 ${activeFontFamily === font.family ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}><span style={{ fontFamily: font.family }} className="block truncate text-lg text-zinc-200">Aa Bb Cc</span><span className="mt-1 block truncate text-[9px] text-zinc-500">{font.name}</span></button>)}</div> : <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Import a font to keep it available locally across editing sessions.</div>}
+        {fonts.length ? <div className="mt-3 space-y-2">{fonts.map((font) => <div key={font.id} className={`group relative rounded-lg border ${activeFontFamily === font.family ? 'border-violet-300/40 bg-violet-400/[0.08]' : 'border-white/[0.06] bg-black/15 hover:border-white/[0.12]'}`}><button type="button" aria-label={`Use ${font.name} font`} aria-pressed={activeFontFamily === font.family} disabled={!canApplyFont} onClick={() => onApplyFont(font.family)} className="w-full p-3 text-left transition focus-visible:outline-2 focus-visible:outline-violet-400 disabled:cursor-not-allowed disabled:opacity-45"><span style={{ fontFamily: font.family }} className="block truncate text-lg text-zinc-200">Aa Bb Cc</span><span className="mt-1 block truncate text-[9px] text-zinc-500">{font.name}</span></button><button type="button" aria-label={`Delete font ${font.name}`} onClick={() => onRemoveFont(font.id)} className="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-500 opacity-0 hover:text-red-300 group-hover:opacity-100 focus-visible:opacity-100">×</button></div>)}</div> : <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Import a font to keep it available locally across editing sessions.</div>}
         <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">{canApplyFont ? 'Choose a font to apply it to the selected text layer.' : 'Select a text layer to apply a library font.'}</p>
       </>}
     </div>

@@ -155,6 +155,30 @@ export function calculateLayerResize(
   const { layer, bounds, handle, canvasWidth, canvasHeight } = snapshot
   if (layer.type === 'adjustment') return {}
 
+  if (layer.type === 'text' && layer.paragraphBox && !options.preserveAspect) {
+    const local = localPoint(point, bounds)
+    let width = bounds.width
+    let height = bounds.height
+    let shiftX = 0
+    let shiftY = 0
+    if (hasX(handle)) {
+      const anchor = handle.includes('e') ? -bounds.width / 2 : bounds.width / 2
+      const edge = handle.includes('e') ? Math.max(anchor + 24, local.x) : Math.min(anchor - 24, local.x)
+      width = Math.abs(edge - anchor)
+      shiftX = (edge + anchor) / 2
+    }
+    if (hasY(handle)) {
+      const anchor = handle.includes('s') ? -bounds.height / 2 : bounds.height / 2
+      const edge = handle.includes('s') ? Math.max(anchor + 24, local.y) : Math.min(anchor - 24, local.y)
+      height = Math.abs(edge - anchor)
+      shiftY = (edge + anchor) / 2
+    }
+    return {
+      paragraphBox: { width: Math.round(width), height: Math.round(height) },
+      position: positionWithShift(layer, { x: shiftX, y: shiftY }, snapshot),
+    }
+  }
+
   if (layer.type !== 'shape' || options.preserveAspect) {
     const { ratio, shift } = uniformRatio(snapshot, point, options.fromCenter)
     const position = positionWithShift(layer, shift, snapshot)

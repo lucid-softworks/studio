@@ -148,15 +148,15 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M7 — typography
 
-- [ ] Add point text and paragraph text boxes with resize/reflow behavior
-- [ ] Add full character and paragraph panels
-- [ ] Add kerning, tracking, leading, baseline shift, horizontal/vertical scale, faux styles, underline, and strikethrough
-- [ ] Add OpenType feature controls, variable-font axes, and font fallback runs
-- [ ] Add text-on-path, vertical text, warp text, and editable text transforms
-- [ ] Preserve advanced text metadata through Studio and PSD documents
-- [ ] Add a persistent local font library with missing-font substitution controls
+- [x] Add point text and paragraph text boxes with resize/reflow behavior
+- [x] Add full character and paragraph panels
+- [x] Add kerning, tracking, leading, baseline shift, horizontal/vertical scale, faux styles, underline, and strikethrough
+- [x] Add OpenType feature controls, variable-font axes, and font fallback runs
+- [x] Add text-on-path, vertical text, warp text, and editable text transforms
+- [x] Preserve advanced text metadata through Studio and PSD documents
+- [x] Add a persistent local font library with missing-font substitution controls
   - [x] Persist imported web fonts locally and expose them through the Libraries panel and text controls
-  - [ ] Add missing-font detection, substitution mapping, and font-library removal controls
+  - [x] Add missing-font detection, substitution mapping, and font-library removal controls
 
 ## M8 — painting and retouching
 

@@ -5,6 +5,7 @@ const BRUSH_STORE = 'brushes'
 const MAX_RESOURCE_SIZE = 30 * 1024 * 1024
 const FONT_EXTENSIONS = new Set(['ttf', 'otf', 'woff', 'woff2'])
 const BRUSH_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const registeredFontFaces = new Map<string, FontFace>()
 
 export type CustomFontResource = {
   id: string
@@ -67,6 +68,7 @@ async function registerFont(font: StoredFont): Promise<CustomFontResource> {
   const face = new FontFace(font.family, await font.blob.arrayBuffer())
   await face.load()
   document.fonts.add(face)
+  registeredFontFaces.set(font.id, face)
   return { id: font.id, name: font.name, family: font.family }
 }
 
@@ -86,6 +88,13 @@ export async function loadFontLibrary(): Promise<CustomFontResource[]> {
     try { return await registerFont(font) } catch { return null }
   }))
   return fonts.filter((font): font is CustomFontResource => font !== null)
+}
+
+export async function removeFont(id: string) {
+  const face = registeredFontFaces.get(id)
+  if (face) document.fonts.delete(face)
+  registeredFontFaces.delete(id)
+  await storeRequest(FONT_STORE, 'readwrite', (store) => store.delete(id))
 }
 
 export function brushAlpha(red: number, green: number, blue: number, alpha: number, hasTransparency: boolean) {

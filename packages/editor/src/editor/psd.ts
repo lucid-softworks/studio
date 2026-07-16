@@ -770,6 +770,13 @@ export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight
       fauxItalic: runStyle.fauxItalic,
       underline: runStyle.underline,
       strikethrough: runStyle.strikethrough,
+      kerning: runStyle.autoKerning === false ? 'none' as const : 'auto' as const,
+      openTypeFeatures: [
+        ...(runStyle.autoKerning === false ? [] : ['kern']),
+        ...(runStyle.ligatures === false ? [] : ['liga']),
+        ...(runStyle.dLigatures ? ['dlig'] : []),
+        ...(runStyle.fontCaps ? ['smcp'] : []),
+      ],
     }
   })
   let paragraphStart = 0
@@ -824,6 +831,20 @@ export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight
     fontWeight,
     textAlign,
     letterSpacing: (style.tracking ?? 0) * fontSize / 1000,
+    leading: style.leading,
+    baselineShift: style.baselineShift,
+    horizontalScale: style.horizontalScale,
+    verticalScale: style.verticalScale,
+    fauxItalic: style.fauxItalic,
+    underline: style.underline,
+    strikethrough: style.strikethrough,
+    kerning: style.autoKerning === false ? 'none' : 'auto',
+    openTypeFeatures: [
+      ...(style.autoKerning === false ? [] : ['kern']),
+      ...(style.ligatures === false ? [] : ['liga']),
+      ...(style.dLigatures ? ['dlig'] : []),
+      ...(style.fontCaps ? ['smcp'] : []),
+    ],
     styleRuns,
     paragraphRuns,
     paragraphBox,
@@ -1290,7 +1311,9 @@ function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds
       font: { name: run.fontFamily }, fontSize: run.fontSize, fauxBold: run.fontWeight === 700, fauxItalic: run.fauxItalic,
       tracking: run.fontSize ? run.letterSpacing / run.fontSize * 1000 : 0, fillColor: psdColor(run.color), leading: run.leading,
       baselineShift: run.baselineShift, horizontalScale: run.horizontalScale, verticalScale: run.verticalScale,
-      underline: run.underline, strikethrough: run.strikethrough,
+      underline: run.underline, strikethrough: run.strikethrough, autoKerning: run.kerning !== 'none',
+      ligatures: run.openTypeFeatures?.includes('liga'), dLigatures: run.openTypeFeatures?.includes('dlig'),
+      fontCaps: run.openTypeFeatures?.includes('smcp') ? 1 : undefined,
     },
   }))
   const paragraphStyleRuns = layer.paragraphRuns?.slice().sort((left, right) => left.start - right.start).map((run) => ({
@@ -1306,8 +1329,15 @@ function exportedText(layer: TextLayer, bounds: ReturnType<typeof getLayerBounds
     transform: [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0],
     left: bounds.x, top: bounds.y, right: bounds.x + bounds.width, bottom: bounds.y + bounds.height,
     shapeType: layer.paragraphBox ? 'box' : 'point', boxBounds: layer.paragraphBox ? [0, 0, layer.paragraphBox.width, layer.paragraphBox.height] : undefined,
-    style: { font: { name: layer.fontFamily || 'Inter' }, fontSize: layer.fontSize, fauxBold: layer.fontWeight === 700, tracking: layer.fontSize ? layer.letterSpacing / layer.fontSize * 1000 : 0, fillColor: psdColor(layer.color) },
-    paragraphStyle: { justification: layer.textAlign },
+    style: {
+      font: { name: layer.fontFamily || 'Inter' }, fontSize: layer.fontSize, fauxBold: layer.fontWeight === 700, fauxItalic: layer.fauxItalic,
+      tracking: layer.fontSize ? layer.letterSpacing / layer.fontSize * 1000 : 0, fillColor: psdColor(layer.color),
+      leading: layer.leading, baselineShift: layer.baselineShift, horizontalScale: layer.horizontalScale, verticalScale: layer.verticalScale,
+      underline: layer.underline, strikethrough: layer.strikethrough, autoKerning: layer.kerning !== 'none',
+      ligatures: layer.openTypeFeatures?.includes('liga'), dLigatures: layer.openTypeFeatures?.includes('dlig'),
+      fontCaps: layer.openTypeFeatures?.includes('smcp') ? 1 : undefined,
+    },
+    paragraphStyle: { justification: layer.textAlign === 'justify' ? 'justify-left' : layer.textAlign },
     styleRuns,
     paragraphStyleRuns,
     warp: layer.warp ? {

@@ -49,7 +49,7 @@ type CanvasStageProps = {
   onZoomChange: Dispatch<SetStateAction<number>>
   tool: EditorTool
   onToolChange: (tool: EditorTool) => void
-  onAddText: (position: Position, color: string) => void
+  onAddText: (position: Position, color: string, paragraphBox?: { width: number; height: number }) => void
   onAddShape: (shape: ShapeKind, position: Position, fill: string) => void
   onCrop: (bounds: NonNullable<SelectionState['bounds']>) => void
   onPerspectiveCrop: (quad: [Position, Position, Position, Position]) => void
@@ -515,7 +515,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
-            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position) => onAddText(position, foregroundColor)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
+            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position, paragraphBox) => onAddText(position, foregroundColor, paragraphBox)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
             </div>
           </div>
           {splitView && <div className="relative flex min-w-0 items-center justify-center overflow-hidden rounded-md border border-white/[0.08] bg-black/20 p-3">
