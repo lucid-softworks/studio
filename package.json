@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "turbo run dev --filter=@studio/web",
     "dev:desktop": "turbo run dev --filter=@studio/web --filter=@studio/desktop",
-    "preview:cloudflare": "pnpm --filter @studio/web build && pnpm --filter @studio/web preview:cloudflare",
-    "deploy:cloudflare": "pnpm --filter @studio/web build && pnpm --filter @studio/web deploy:cloudflare",
+    "preview:cloudflare": "pnpm --filter @studio/web build && wrangler dev",
+    "deploy:cloudflare": "pnpm --filter @studio/web build && wrangler deploy",
     "build": "turbo run build",
     "test:e2e": "playwright test",
     "lint": "oxlint --report-unused-disable-directives .",
@@ -25,6 +25,7 @@
     "oxlint-tsgolint": "^0.24.0",
     "turbo": "^2.10.5",
     "typescript": "~6.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.111.0"
   }
 }

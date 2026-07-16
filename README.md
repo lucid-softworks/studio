@@ -63,16 +63,16 @@ pnpm preview:cloudflare
 pnpm deploy:cloudflare
 ```
 
-The checked-in configuration lives at `apps/web/wrangler.jsonc`. The first deployment creates the `studio` Worker project; subsequent deployments update it. A custom domain can be attached from the Cloudflare dashboard without changing the application build.
+The checked-in configuration lives at `wrangler.jsonc` in the repository root and publishes `apps/web/dist`. The first deployment creates the `studio` Worker project; subsequent deployments update it. A custom domain can be attached from the Cloudflare dashboard without changing the application build.
 
 For Cloudflare Git builds, use the repository root with:
 
 ```text
-Build command: pnpm --filter @studio/web build
-Deploy command: pnpm --filter @studio/web deploy:cloudflare
+Build command: pnpm build
+Deploy command: pnpm exec wrangler deploy
 ```
 
-The generated asset directory is `apps/web/dist`. Wrangler reads that path from the app-local configuration.
+The generated asset directory is `apps/web/dist`. The root-level Wrangler configuration also lets Cloudflare's default `npx wrangler deploy` command deploy the monorepo without workspace auto-detection.
 
 ## Architecture
 
