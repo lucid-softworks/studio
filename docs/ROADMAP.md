@@ -33,7 +33,7 @@ A feature is complete only when it has:
 
 ## P1 — interactive performance and large documents
 
-- [ ] Move Paint Bucket, Magic Wand, Object Select, and gradient commits off the main thread or make them incremental and cancelable.
+- [ ] Move Gradient generation and selection constraint off the main thread; add progress UI and cancellation-result fixtures across the new Paint Bucket, Magic Wand, and Object Select worker paths.
 - [ ] Keep gradient commits below one frame for common document sizes and show progress for genuinely long jobs.
 - [ ] Extend the new path, direct-selection, warp, and puppet-warp local-preview coverage to every anchor, handle, pin, cancel, and modifier-key path.
 - [ ] Replace the remaining Current & Below clone/healing composition snapshot with a tiled or viewport sample; extend dirty-region regression coverage across every retouch mode and transformed/masked targets.

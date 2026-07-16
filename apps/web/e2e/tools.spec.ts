@@ -200,4 +200,28 @@ test.describe('built-in tools', () => {
     await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBeforeBlur)
     expect(runtimeErrors).toEqual([])
   })
+
+  test('paint bucket and contiguous selections complete through cancellable workers', async ({ page }) => {
+    const runtimeErrors: string[] = []
+    page.on('pageerror', (error) => runtimeErrors.push(error.message))
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    const canvas = page.getByLabel('Composition canvas')
+
+    await page.getByRole('button', { name: 'Paint Bucket tool', exact: true }).click()
+    const fill = page.getByLabel('Paint bucket surface')
+    const bounds = await fill.boundingBox()
+    expect(bounds).not.toBeNull()
+    const revisionBeforeFill = await canvas.getAttribute('data-render-revision')
+    await fill.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+    await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBeforeFill)
+    await expect(fill).toHaveAttribute('aria-busy', 'false')
+
+    await page.getByRole('button', { name: 'Magic Wand tool', exact: true }).click()
+    const wand = page.getByLabel('Magic wand selection surface')
+    await wand.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+    await expect(page.getByRole('button', { name: 'Clear selection', exact: true })).toBeVisible()
+    await expect(wand).toHaveAttribute('aria-busy', 'false')
+    expect(runtimeErrors).toEqual([])
+  })
 })

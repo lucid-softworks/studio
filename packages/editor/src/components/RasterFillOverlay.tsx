@@ -1,5 +1,5 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { extractImageData, floodFillImageData, hexToRgba, type RasterEdit, type RasterRegion } from '../editor/raster'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { hexToRgba, type RasterEdit, type RasterRegion } from '../editor/raster'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -28,7 +28,10 @@ type GradientDrag = { pointerId: number; target: RasterTarget; start: Position; 
 export function RasterFillOverlay({ canvasRef, document, assets, tool, color, secondaryColor, gradientStops, tolerance, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<GradientDrag | null>(null)
+  const workerRef = useRef<Worker | null>(null)
+  const requestRef = useRef(0)
   const [preview, setPreview] = useState<{ start: Position; end: Position } | null>(null)
+  const [busy, setBusy] = useState(false)
   const canvas = canvasRef.current
   const target = canvas ? resolveRasterTarget(canvas, document, assets, maskAssetId, maskLocked, locked) : null
 
@@ -42,19 +45,44 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     return context && selection ? context.getImageData(0, 0, selection.mask.width, selection.mask.height) : null
   }
 
+  const cancelWorker = () => {
+    workerRef.current?.terminate()
+    workerRef.current = null
+    requestRef.current += 1
+    setBusy(false)
+  }
+
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelWorker() }
+    window.addEventListener('keydown', keyDown)
+    return () => { window.removeEventListener('keydown', keyDown); workerRef.current?.terminate() }
+  }, [])
+
   const fill = (current: RasterTarget, point: Position) => {
     const context = current.surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
-    const beforeFull = context.getImageData(0, 0, current.surface.width, current.surface.height)
-    const afterFull = context.createImageData(current.surface.width, current.surface.height)
-    afterFull.data.set(beforeFull.data)
-    const region = floodFillImageData(afterFull, point.x, point.y, hexToRgba(maskAssetId ? '#ffffff' : color), tolerance)
-    if (!region) return
-    const before = extractImageData(beforeFull, region.x, region.y, region.width, region.height)
-    const after = constrainRasterRegion(extractImageData(beforeFull, region.x, region.y, region.width, region.height), extractImageData(afterFull, region.x, region.y, region.width, region.height), region.x, region.y, current, selectionData())
-    context.putImageData(after, region.x, region.y)
-    onChange(current.layer.assetId, region)
-    onCommit({ assetId: current.layer.assetId, ...region, before, after })
+    const image = context.getImageData(0, 0, current.surface.width, current.surface.height)
+    cancelWorker()
+    const id = requestRef.current
+    const worker = new Worker(new URL('../editor/workers/raster-ops.worker.ts', import.meta.url), { type: 'module' })
+    workerRef.current = worker
+    setBusy(true)
+    worker.onmessage = (message: MessageEvent<{ id: number; region?: RasterRegion | null; before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>) => {
+      if (message.data.id !== id || workerRef.current !== worker) return
+      worker.terminate()
+      workerRef.current = null
+      setBusy(false)
+      const region = message.data.region
+      if (!region || !message.data.before || !message.data.after) return
+      const before = new ImageData(new Uint8ClampedArray(message.data.before), region.width, region.height)
+      const generated = new ImageData(new Uint8ClampedArray(message.data.after), region.width, region.height)
+      const after = constrainRasterRegion(before, generated, region.x, region.y, current, selectionData())
+      context.putImageData(after, region.x, region.y)
+      onChange(current.layer.assetId, region)
+      onCommit({ assetId: current.layer.assetId, ...region, before, after })
+    }
+    worker.onerror = () => { if (workerRef.current === worker) { workerRef.current = null; setBusy(false) }; worker.terminate() }
+    worker.postMessage({ id, operation: 'flood-fill', data: image.data.buffer, width: image.width, height: image.height, x: point.x, y: point.y, replacement: hexToRgba(maskAssetId ? '#ffffff' : color), tolerance }, [image.data.buffer])
   }
 
   const gradient = (drag: GradientDrag, end: Position) => {
@@ -120,9 +148,10 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
     <svg
       ref={svgRef}
       aria-label={`${tool === 'fill' ? 'Paint bucket' : 'Gradient'} surface`}
+      aria-busy={busy}
       viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
       preserveAspectRatio="none"
-      className={`absolute inset-0 size-full touch-none ${target && !target.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
+      className={`absolute inset-0 size-full touch-none ${target && !target.locked ? busy ? 'cursor-progress' : 'cursor-crosshair' : 'cursor-not-allowed'}`}
       onPointerDown={pointerDown}
       onPointerMove={pointerMove}
       onPointerUp={pointerEnd}
