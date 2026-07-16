@@ -94,7 +94,7 @@ export const studioPanelParity: Record<UtilityPanelId, ParityAssessment> = {
   paths: partial('Needs complete path operations, clipping-path options, transforms, and preset interoperability.', 'round-trip-incompatible'),
   history: partial('Needs history source selection, snapshots, non-linear navigation safeguards, and memory controls.'),
   actions: partial('Needs complete command recording plus compatible ATN import/export.', 'round-trip-incompatible'),
-  navigator: validate('Implemented; color-managed preview, large-document, and browser interaction fixtures remain.'),
+  navigator: validated('The color-managed composition preview, normalized viewport indicator, drag-to-pan interaction, zoom controls, and large-document scaling are browser-covered.', 'apps/web/e2e/navigation-parity.spec.ts', 'apps/web/e2e/visual.spec.ts'),
   histogram: partial('Needs channel modes, cached/uncached levels, high-depth accuracy, and color-space parity.'),
   swatches: partial('Needs ACO/ASE compatibility, groups, sorting, replacement, and complete preset management.', 'round-trip-incompatible'),
   gradients: partial('Needs GRD compatibility and a complete multi-stop/noise gradient editor.', 'round-trip-incompatible'),

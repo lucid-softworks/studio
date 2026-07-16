@@ -40,6 +40,7 @@ These bounded workflows are at 100% of the Photopea behavior applicable to Studi
 | Single Column Marquee | Parity validated | Exact one-pixel geometry plus replace, add, subtract, and intersect coverage in [`selection.test.ts`](../packages/editor/src/editor/selection.test.ts) and [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
 | Hand tool | Parity validated | Direct panning and temporary Space switching with prior-tool restoration in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
 | Zoom tool | Parity validated | Click, Alt-click, scrubby drag, menu, shortcut, temporary modified-Space, and visual-scale coverage in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
+| Navigator panel | Parity validated | Color-managed preview, visible viewport, drag-to-pan, zoom controls, and large-document scaling in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
 
 ## Menus and commands
 
@@ -109,7 +110,7 @@ The canonical 13-panel assessment is `studioPanelParity`.
 | Panel family | Status | Notes |
 | --- | --- | --- |
 | Layers, Channels, Paths, History, Actions | Partial | Core panels exist; advanced operations and compatibility remain. |
-| Navigator | Validation needed | Core preview/navigation exists; color, scale and browser fixtures remain. |
+| Navigator | Parity validated | Preview, visible viewport, drag-to-pan, zoom, color, and large-document behavior have automated evidence. |
 | Histogram and Info | Partial | High-depth/color accuracy and persistent samplers remain. |
 | Swatches, Gradients, Patterns and Libraries | Partial | Adobe preset formats, grouping, search and full editors remain. |
 | Plugins | Partial | Current hooks do not yet provide complete safe interactive ownership. |

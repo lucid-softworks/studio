@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { historyCommandLabel } from '../editor/history-labels'
 import { defaultGradients, gradientStops, normalizeGradientStops, type GradientPreset, type GradientStop } from '../editor/gradients'
 import type { HistogramChannel, HistogramResult } from '../editor/histogram'
 import { getDocumentSize } from '../editor/presets'
+import { navigatorPointToScroll, scrollMetricsToNavigatorViewport, type NavigatorViewport } from '../editor/navigation'
 import { defaultPatterns, patternBitmapCanvas, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
 import { getTypeGpuRoot } from '../editor/rendering/typegpu-runtime'
@@ -150,6 +151,32 @@ export function NavigatorPanel({ sourceCanvasRef, document, zoom, onZoomChange, 
 }) {
   const previewRef = useRef<HTMLCanvasElement>(null)
   const size = getDocumentSize(document)
+  const [viewport, setViewport] = useState<NavigatorViewport>({ x: 0, y: 0, width: 1, height: 1 })
+  const navigate = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (bounds.width === 0 || bounds.height === 0) return
+    const stage = globalThis.document.querySelector<HTMLElement>('.stage-grid')
+    if (!stage) return
+    const scroll = navigatorPointToScroll({ x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height }, stage)
+    stage.scrollLeft = scroll.left
+    stage.scrollTop = scroll.top
+    setViewport(scrollMetricsToNavigatorViewport(stage))
+  }
+
+  useEffect(() => {
+    const stage = globalThis.document.querySelector<HTMLElement>('.stage-grid')
+    if (!stage) return
+    const update = () => setViewport(scrollMetricsToNavigatorViewport(stage))
+    const frame = requestAnimationFrame(update)
+    const observer = new ResizeObserver(update)
+    observer.observe(stage)
+    stage.addEventListener('scroll', update, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      stage.removeEventListener('scroll', update)
+    }
+  }, [size.height, size.width, zoom])
 
   useEffect(() => {
     let secondFrame = 0
@@ -175,7 +202,10 @@ export function NavigatorPanel({ sourceCanvasRef, document, zoom, onZoomChange, 
   return (
     <div role="tabpanel" aria-label="Navigator" className="min-h-0 flex-1 overflow-y-auto p-3">
       <div className="overflow-hidden rounded-lg border border-white/[0.08] bg-[repeating-conic-gradient(#202024_0_25%,#17171a_0_50%)_50%/12px_12px] p-2">
-        <canvas ref={previewRef} aria-label="Document navigator preview" className="mx-auto block h-auto max-h-64 w-full object-contain shadow-[0_8px_30px_rgba(0,0,0,0.35)]" />
+        <div aria-label="Navigator pan surface" role="application" onPointerDown={(event) => { navigate(event); event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) navigate(event) }} className="relative mx-auto w-fit max-w-full touch-none cursor-crosshair overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.35)]">
+          <canvas ref={previewRef} aria-label="Document navigator preview" className="block h-auto max-h-64 w-full object-contain" />
+          <div aria-label="Navigator viewport" data-x={viewport.x.toFixed(4)} data-y={viewport.y.toFixed(4)} data-width={viewport.width.toFixed(4)} data-height={viewport.height.toFixed(4)} style={{ left: `${viewport.x * 100}%`, top: `${viewport.y * 100}%`, width: `${viewport.width * 100}%`, height: `${viewport.height * 100}%` }} className="pointer-events-none absolute border border-rose-400 bg-rose-400/[0.06] shadow-[0_0_0_1px_rgba(0,0,0,0.55)]" />
+        </div>
       </div>
       <p className="mt-2 text-center font-mono text-[9px] text-zinc-700">{size.width} × {size.height}px</p>
       <div className="mt-4 rounded-lg border border-white/[0.07] bg-black/20 p-3">
