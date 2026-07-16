@@ -48,4 +48,40 @@ describe('render resource registry', () => {
     expect(removed).toHaveBeenCalledOnce()
     expect(retained).not.toHaveBeenCalled()
   })
+
+  it('evicts least-recently-used resources within entry and byte budgets', () => {
+    const registry = new RenderResourceRegistry({ maxEntriesPerBackend: 2, maxBytesPerBackend: 10 })
+    const disposeA = vi.fn()
+    const disposeB = vi.fn()
+    const disposeC = vi.fn()
+    const sourceA = source()
+
+    registry.resolve('typegpu', 'a', sourceA, () => ({ resource: 'a', dispose: disposeA, byteSize: 4 }))
+    registry.resolve('typegpu', 'b', source(), () => ({ resource: 'b', dispose: disposeB, byteSize: 4 }))
+    registry.resolve('typegpu', 'a', sourceA, () => ({ resource: 'unused' }))
+    registry.resolve('typegpu', 'c', source(), () => ({ resource: 'c', dispose: disposeC, byteSize: 7 }))
+
+    expect(disposeA).toHaveBeenCalledOnce()
+    expect(disposeB).toHaveBeenCalledOnce()
+    expect(disposeC).not.toHaveBeenCalled()
+    expect(registry.usage('typegpu')).toEqual({ entries: 1, bytes: 7 })
+  })
+
+  it('re-evaluates dynamic resource sizes and evicts deterministically', () => {
+    const registry = new RenderResourceRegistry({ maxEntriesPerBackend: 3, maxBytesPerBackend: 8 })
+    let dynamicBytes = 2
+    const disposeA = vi.fn()
+    const disposeB = vi.fn()
+    const a = source()
+    const b = source()
+
+    registry.resolve('canvas2d', 'a', a, () => ({ resource: 'a', dispose: disposeA, byteSize: () => dynamicBytes }))
+    registry.resolve('canvas2d', 'b', b, () => ({ resource: 'b', dispose: disposeB, byteSize: 2 }))
+    dynamicBytes = 7
+    registry.enforceBudget('canvas2d', 'a')
+
+    expect(disposeA).not.toHaveBeenCalled()
+    expect(disposeB).toHaveBeenCalledOnce()
+    expect(registry.usage('canvas2d')).toEqual({ entries: 1, bytes: 7 })
+  })
 })

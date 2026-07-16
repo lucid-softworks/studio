@@ -78,6 +78,7 @@ type CanvasImageResource = {
   height: number
   mipmaps: Map<number, { source: HTMLCanvasElement; lastUsed: number }>
   mipmapPixels: number
+  enforceBudget: () => void
 }
 
 const MAX_MIPMAP_PIXELS_PER_ASSET = 4_194_304
@@ -120,6 +121,7 @@ function mipmapSource(image: CanvasImageResource, targetWidth: number, targetHei
     evicted[1].source.width = 0
     evicted[1].source.height = 0
   }
+  image.enforceBudget()
   return canvas
 }
 
@@ -133,9 +135,11 @@ function canvasImageResource(resources: RenderResourceRegistry, assets: AssetMap
       height: source.surface?.height ?? source.element.naturalHeight,
       mipmaps: new Map(),
       mipmapPixels: 0,
+      enforceBudget: () => resources.enforceBudget('canvas2d', assetId),
     }
     return {
       resource,
+      byteSize: () => resource.mipmapPixels * 4,
       dispose: () => {
         for (const mipmap of resource.mipmaps.values()) {
           mipmap.source.width = 0
@@ -365,24 +369,47 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   context.globalAlpha = 1
 }
 
-const smartFilterResultCache = new Map<string, { canvas: HTMLCanvasElement; lastUsed: number }>()
+const MAX_SMART_FILTER_CACHE_ENTRIES = 64
+const MAX_SMART_FILTER_CACHE_BYTES = 256 * 1024 * 1024
+const smartFilterResultCache = new Map<string, { canvas: HTMLCanvasElement; lastUsed: number; bytes: number }>()
 let smartFilterCacheClock = 0
+let smartFilterCacheBytes = 0
 
 export function clearSmartFilterResultCache() {
+  for (const entry of smartFilterResultCache.values()) {
+    entry.canvas.width = 0
+    entry.canvas.height = 0
+  }
   smartFilterResultCache.clear()
   smartFilterCacheClock = 0
+  smartFilterCacheBytes = 0
 }
 
 export function smartFilterResultCacheSize() {
   return smartFilterResultCache.size
 }
 
+export function smartFilterResultCacheUsage() {
+  return { entries: smartFilterResultCache.size, bytes: smartFilterCacheBytes }
+}
+
 function cacheSmartFilterResult(key: string, canvas: HTMLCanvasElement) {
-  smartFilterResultCache.set(key, { canvas, lastUsed: ++smartFilterCacheClock })
-  while (smartFilterResultCache.size > 64) {
-    const oldest = [...smartFilterResultCache.entries()].sort((left, right) => left[1].lastUsed - right[1].lastUsed)[0]
+  const existing = smartFilterResultCache.get(key)
+  if (existing) smartFilterCacheBytes -= existing.bytes
+  const bytes = canvas.width * canvas.height * 4
+  smartFilterResultCache.set(key, { canvas, lastUsed: ++smartFilterCacheClock, bytes })
+  smartFilterCacheBytes += bytes
+  while (smartFilterResultCache.size > MAX_SMART_FILTER_CACHE_ENTRIES || smartFilterCacheBytes > MAX_SMART_FILTER_CACHE_BYTES) {
+    const oldest = [...smartFilterResultCache.entries()].sort((left, right) => (
+      left[1].lastUsed - right[1].lastUsed || left[0].localeCompare(right[0])
+    ))[0]
     if (!oldest) break
     smartFilterResultCache.delete(oldest[0])
+    smartFilterCacheBytes -= oldest[1].bytes
+    if (oldest[1].canvas !== canvas) {
+      oldest[1].canvas.width = 0
+      oldest[1].canvas.height = 0
+    }
   }
 }
 

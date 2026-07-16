@@ -73,20 +73,35 @@ type PassEntry = {
   revision: number
 }
 
+export type RenderPassCacheOptions = {
+  maxCachedTiles?: number
+  maxMetadataBytes?: number
+}
+
+const ESTIMATED_TILE_METADATA_BYTES = 160
+
 export type RenderPassInvalidation = { shouldRender: boolean; regions: RasterRegion[] }
 
 export class RenderPassCache {
   readonly #entries: Array<PassEntry | undefined> = []
   readonly #tiles = new Map<string, { passIndex: number; structureSignature: string | null; lastUsed: number }>()
   readonly maxCachedTiles: number
+  readonly maxMetadataBytes: number
   #clock = 0
 
-  constructor(maxCachedTiles = 8192) {
-    this.maxCachedTiles = maxCachedTiles
+  constructor(options: number | RenderPassCacheOptions = {}) {
+    this.maxCachedTiles = typeof options === 'number' ? options : options.maxCachedTiles ?? 8192
+    this.maxMetadataBytes = typeof options === 'number'
+      ? options * ESTIMATED_TILE_METADATA_BYTES
+      : options.maxMetadataBytes ?? 2 * 1024 * 1024
   }
 
   get cachedTileCount() {
     return this.#tiles.size
+  }
+
+  get estimatedMetadataBytes() {
+    return this.#tiles.size * ESTIMATED_TILE_METADATA_BYTES
   }
 
   shouldRender(index: number, signature: string | null, invalidated = false) {
@@ -143,8 +158,10 @@ export class RenderPassCache {
       this.#tiles.set(key, { passIndex: index, structureSignature, lastUsed: clock })
     }
     regions = regionsToTiles([...regions, ...missing], width, height)
-    while (this.#tiles.size > this.maxCachedTiles) {
-      const oldest = [...this.#tiles.entries()].sort((left, right) => left[1].lastUsed - right[1].lastUsed)[0]
+    while (this.#tiles.size > this.maxCachedTiles || this.estimatedMetadataBytes > this.maxMetadataBytes) {
+      const oldest = [...this.#tiles.entries()].sort((left, right) => (
+        left[1].lastUsed - right[1].lastUsed || left[0].localeCompare(right[0])
+      ))[0]
       if (!oldest) break
       this.#tiles.delete(oldest[0])
     }

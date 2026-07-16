@@ -70,6 +70,15 @@ describe('native render pass cache', () => {
     expect(cache.cachedTileCount).toBe(2)
   })
 
+  it('also enforces an explicit metadata-memory budget', () => {
+    const cache = new RenderPassCache({ maxCachedTiles: 20, maxMetadataBytes: 320 })
+    cache.prepare(0, 'first', 768, 256)
+
+    expect(cache.cachedTileCount).toBe(2)
+    expect(cache.estimatedMetadataBytes).toBe(320)
+    expect(cache.prepare(0, 'first', 768, 256).shouldRender).toBe(true)
+  })
+
   it('caches backgrounds and shapes but leaves text dependent on live font resources', () => {
     expect(backgroundPassSignature(initialDocument, {})).toBe(backgroundPassSignature(initialDocument, {}))
     expect(layerPassSignature(createShapeLayer('rectangle', 0), {})).not.toBeNull()
