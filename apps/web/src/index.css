@@ -45,12 +45,82 @@
 }
 
 @layer components {
+  .studio-editor {
+    scrollbar-color: #45454d #151518;
+    scrollbar-width: thin;
+  }
+
+  .studio-editor * {
+    scrollbar-color: #45454d #151518;
+    scrollbar-width: thin;
+  }
+
+  .studio-editor *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .studio-editor *::-webkit-scrollbar-track {
+    background: #151518;
+  }
+
+  .studio-editor *::-webkit-scrollbar-thumb {
+    border: 2px solid #151518;
+    border-radius: 999px;
+    background: #45454d;
+  }
+
+  .studio-editor *::-webkit-scrollbar-thumb:hover {
+    background: #5d5d67;
+  }
+
+  .studio-editor *::-webkit-scrollbar-thumb:active {
+    background: #71717a;
+  }
+
+  .studio-editor *::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  .studio-editor *::-webkit-scrollbar-corner {
+    background: #101012;
+  }
+
+  .studio-tab-strip {
+    scrollbar-width: none !important;
+  }
+
+  .studio-tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+
   .stage-grid {
+    scrollbar-color: #55555f #101012 !important;
+    scrollbar-gutter: stable;
     background-color: #0b0b0c;
     background-image:
       linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
     background-size: 28px 28px;
+  }
+
+  .stage-grid::-webkit-scrollbar {
+    width: 11px !important;
+    height: 11px !important;
+  }
+
+  .stage-grid::-webkit-scrollbar-track {
+    background: #101012 !important;
+  }
+
+  .stage-grid::-webkit-scrollbar-thumb {
+    border: 3px solid #101012 !important;
+    border-radius: 999px;
+    background: #55555f !important;
+  }
+
+  .stage-grid::-webkit-scrollbar-thumb:hover {
+    background: #6b6b76 !important;
   }
 
   .transparency-grid {
@@ -120,6 +190,13 @@
   input[type='color']::-moz-color-swatch {
     border: 0;
     border-radius: 5px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .studio-editor {
+    height: 100dvh;
+    overflow: hidden;
   }
 }
 
