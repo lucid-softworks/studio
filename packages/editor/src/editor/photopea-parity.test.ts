@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { shortcutCommands } from './shortcuts'
-import { missingPhotopeaCapabilities, studioAdjustmentParity, studioFilterParity, studioPanelParity, studioToolParity } from './photopea-parity'
+import {
+  completeParityInventory,
+  missingPhotopeaCapabilities,
+  studioAdjustmentParity,
+  studioFilterParity,
+  studioFormatOperationParity,
+  studioLayerTypeParity,
+  studioMenuCommandParity,
+  studioPanelParity,
+  studioPresetOperationParity,
+  studioShortcutParity,
+  studioToolParity,
+} from './photopea-parity'
 
 describe('Photopea parity registry', () => {
   it('classifies every current tool and every tool shortcut target', () => {
@@ -27,5 +39,24 @@ describe('Photopea parity registry', () => {
   it('uses stable unique identifiers for missing capabilities', () => {
     const ids = missingPhotopeaCapabilities.map((capability) => capability.id)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('tracks every individual parity inventory item with stable identifiers', () => {
+    expect(studioMenuCommandParity.length).toBeGreaterThanOrEqual(65)
+    expect(studioLayerTypeParity.length).toBeGreaterThanOrEqual(25)
+    expect(studioFormatOperationParity.length).toBeGreaterThanOrEqual(40)
+    expect(studioPresetOperationParity.length).toBeGreaterThanOrEqual(14)
+    expect(studioShortcutParity.length).toBeGreaterThanOrEqual(shortcutCommands.length + 10)
+
+    const ids = completeParityInventory.map((entry) => entry.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(completeParityInventory.every((entry) => entry.studio.trim() && entry.photopea.trim())).toBe(true)
+    expect(completeParityInventory.every((entry) => entry.assessment.gap.trim().length >= 12)).toBe(true)
+  })
+
+  it('includes every registered shortcut and every built-in tool in the shortcut matrix', () => {
+    const shortcutIds = new Set(studioShortcutParity.map((entry) => entry.id))
+    for (const command of shortcutCommands) expect(shortcutIds.has(`shortcut.${command.id}`)).toBe(true)
+    for (const tool of Object.keys(studioToolParity)) expect(shortcutIds.has(`shortcut.tool.${tool}`)).toBe(true)
   })
 })

@@ -86,9 +86,9 @@ type MenuBarProps = {
   hasArtboards: boolean
 }
 
-function MenuItem({ children, shortcut, disabled, checked, onSelect }: { children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
+function MenuItem({ commandId, children, shortcut, disabled, checked, onSelect }: { commandId: string; children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
   return (
-    <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked={checked} disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
+    <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} data-command-id={commandId} aria-checked={checked} disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
       <span className="flex items-center gap-2"><span aria-hidden="true" className="w-2 text-[9px] text-violet-300">{checked ? '✓' : ''}</span>{children}</span>{shortcut && <span className="font-mono text-[9px] text-zinc-600">{shortcut}</span>}
     </button>
   )
@@ -160,127 +160,127 @@ export function MenuBar(props: MenuBarProps) {
   return (
     <div ref={rootRef} className="ml-1 flex h-full items-center border-l border-white/[0.07] pl-2">
       {menu('file', 'File', <>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.new'])} onSelect={() => select(props.onNew)}>New document</MenuItem>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.open'])} onSelect={() => select(props.onOpen)}>Open…</MenuItem>
+        <MenuItem commandId="file.new" shortcut={shortcutLabel(props.shortcuts['file.new'])} onSelect={() => select(props.onNew)}>New document</MenuItem>
+        <MenuItem commandId="file.open" shortcut={shortcutLabel(props.shortcuts['file.open'])} onSelect={() => select(props.onOpen)}>Open…</MenuItem>
         <Separator />
-        <MenuItem onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
-        <MenuItem onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>
-        <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
-        <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
-        <MenuItem onSelect={() => select(props.onOpenPlugins)}>Manage plugins…</MenuItem>
-        {props.desktopAvailable && <MenuItem onSelect={() => select(props.onManageScratch)}>Desktop scratch storage…</MenuItem>}
+        <MenuItem commandId="file.place-image" onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
+        <MenuItem commandId="file.place-linked" onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>
+        <MenuItem commandId="file.load-font" onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
+        <MenuItem commandId="file.load-brush" onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
+        <MenuItem commandId="file.plugins" onSelect={() => select(props.onOpenPlugins)}>Manage plugins…</MenuItem>
+        {props.desktopAvailable && <MenuItem commandId="file.desktop-scratch" onSelect={() => select(props.onManageScratch)}>Desktop scratch storage…</MenuItem>}
         <Separator />
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
+        <MenuItem commandId="file.save-project" shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />
-        <MenuItem disabled={props.exporting} onSelect={() => select(props.onOpenExportWorkspace)}>Export assets…</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(props.onOpenPrint)}>Print and PDF…</MenuItem>
+        <MenuItem commandId="file.export-assets" disabled={props.exporting} onSelect={() => select(props.onOpenExportWorkspace)}>Export assets…</MenuItem>
+        <MenuItem commandId="file.print" disabled={props.exporting} onSelect={() => select(props.onOpenPrint)}>Print and PDF…</MenuItem>
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Export as</p>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('png'))}>PNG image</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('jpeg'))}>JPEG image</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('svg'))}>Editable SVG</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('psb'))}>Large document PSB</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('tiff'))}>Layered multipage TIFF</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('pdf'))}>PDF</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('avif'))}>AVIF image</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('gif'))}>Animated GIF from layers</MenuItem>
-        <MenuItem disabled={props.exporting} onSelect={() => select(() => props.onExport('apng'))}>Animated PNG from layers</MenuItem>
-        {props.pluginExporters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin exporters</p>{props.pluginExporters.map((hook) => <MenuItem key={`${hook.pluginId}:${hook.id}`} disabled={props.exporting} onSelect={() => select(() => props.onPluginExport(hook))}>{hook.label}</MenuItem>)}</>}
+        <MenuItem commandId="file.export.png" disabled={props.exporting} onSelect={() => select(() => props.onExport('png'))}>PNG image</MenuItem>
+        <MenuItem commandId="file.export.jpeg" disabled={props.exporting} onSelect={() => select(() => props.onExport('jpeg'))}>JPEG image</MenuItem>
+        <MenuItem commandId="file.export.webp" disabled={props.exporting} onSelect={() => select(() => props.onExport('webp'))}>WebP image</MenuItem>
+        <MenuItem commandId="file.export.svg" disabled={props.exporting} onSelect={() => select(() => props.onExport('svg'))}>Editable SVG</MenuItem>
+        <MenuItem commandId="file.export.psd" disabled={props.exporting} onSelect={() => select(() => props.onExport('psd'))}>Layered PSD</MenuItem>
+        <MenuItem commandId="file.export.psb" disabled={props.exporting} onSelect={() => select(() => props.onExport('psb'))}>Large document PSB</MenuItem>
+        <MenuItem commandId="file.export.tiff" disabled={props.exporting} onSelect={() => select(() => props.onExport('tiff'))}>Layered multipage TIFF</MenuItem>
+        <MenuItem commandId="file.export.pdf" disabled={props.exporting} onSelect={() => select(() => props.onExport('pdf'))}>PDF</MenuItem>
+        <MenuItem commandId="file.export.avif" disabled={props.exporting} onSelect={() => select(() => props.onExport('avif'))}>AVIF image</MenuItem>
+        <MenuItem commandId="file.export.gif" disabled={props.exporting} onSelect={() => select(() => props.onExport('gif'))}>Animated GIF from layers</MenuItem>
+        <MenuItem commandId="file.export.apng" disabled={props.exporting} onSelect={() => select(() => props.onExport('apng'))}>Animated PNG from layers</MenuItem>
+        {props.pluginExporters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin exporters</p>{props.pluginExporters.map((hook) => <MenuItem commandId={`plugin.export.${hook.pluginId}.${hook.id}`} key={`${hook.pluginId}:${hook.id}`} disabled={props.exporting} onSelect={() => select(() => props.onPluginExport(hook))}>{hook.label}</MenuItem>)}</>}
         <Separator />
-        <MenuItem disabled={props.exporting || !props.hasArtboards} onSelect={() => select(props.onExportArtboards)}>Export artboards as PNGs</MenuItem>
+        <MenuItem commandId="file.export-artboards" disabled={props.exporting || !props.hasArtboards} onSelect={() => select(props.onExportArtboards)}>Export artboards as PNGs</MenuItem>
       </>, 'w-60')}
 
       {menu('edit', 'Edit', <>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.undo'])} disabled={!props.canUndo} onSelect={() => select(props.onUndo)}>Undo</MenuItem>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.redo'])} disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
+        <MenuItem commandId="edit.undo" shortcut={shortcutLabel(props.shortcuts['edit.undo'])} disabled={!props.canUndo} onSelect={() => select(props.onUndo)}>Undo</MenuItem>
+        <MenuItem commandId="edit.redo" shortcut={shortcutLabel(props.shortcuts['edit.redo'])} disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
         <Separator />
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['edit.transform-again'])} disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
+        <MenuItem commandId="edit.transform-again" shortcut={shortcutLabel(props.shortcuts['edit.transform-again'])} disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
         <Separator />
-        <MenuItem disabled={!props.canContentAwareFill} onSelect={() => select(props.onContentAwareFill)}>Content-Aware Fill…</MenuItem>
+        <MenuItem commandId="edit.content-aware-fill" disabled={!props.canContentAwareFill} onSelect={() => select(props.onContentAwareFill)}>Content-Aware Fill…</MenuItem>
         <Separator />
-        <MenuItem onSelect={() => select(props.onEditShortcuts)}>Keyboard Shortcuts…</MenuItem>
-        <MenuItem onSelect={() => select(props.onOpenScripts)}>Local Scripts…</MenuItem>
+        <MenuItem commandId="edit.shortcuts" onSelect={() => select(props.onEditShortcuts)}>Keyboard Shortcuts…</MenuItem>
+        <MenuItem commandId="edit.scripts" onSelect={() => select(props.onOpenScripts)}>Local Scripts…</MenuItem>
       </>)}
 
       {menu('image', 'Image', <>
-        <MenuItem onSelect={() => select(() => props.onRotateCanvas('cw'))}>Rotate canvas 90° clockwise</MenuItem>
-        <MenuItem onSelect={() => select(() => props.onRotateCanvas('ccw'))}>Rotate canvas 90° counter-clockwise</MenuItem>
+        <MenuItem commandId="image.rotate-cw" onSelect={() => select(() => props.onRotateCanvas('cw'))}>Rotate canvas 90° clockwise</MenuItem>
+        <MenuItem commandId="image.rotate-ccw" onSelect={() => select(() => props.onRotateCanvas('ccw'))}>Rotate canvas 90° counter-clockwise</MenuItem>
         <Separator />
-        <MenuItem onSelect={() => select(() => props.onFlipCanvas('x'))}>Flip canvas horizontal</MenuItem>
-        <MenuItem onSelect={() => select(() => props.onFlipCanvas('y'))}>Flip canvas vertical</MenuItem>
+        <MenuItem commandId="image.flip-x" onSelect={() => select(() => props.onFlipCanvas('x'))}>Flip canvas horizontal</MenuItem>
+        <MenuItem commandId="image.flip-y" onSelect={() => select(() => props.onFlipCanvas('y'))}>Flip canvas vertical</MenuItem>
       </>, 'w-64')}
 
       {menu('layer', 'Layer', <>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['layer.new'])} onSelect={() => select(props.onNewLayer)}>New layer</MenuItem>
-        <MenuItem onSelect={() => select(props.onNewGroup)}>New group</MenuItem>
+        <MenuItem commandId="layer.new" shortcut={shortcutLabel(props.shortcuts['layer.new'])} onSelect={() => select(props.onNewLayer)}>New layer</MenuItem>
+        <MenuItem commandId="layer.new-group" onSelect={() => select(props.onNewGroup)}>New group</MenuItem>
         <Separator />
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['layer.duplicate'])} disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
-        <MenuItem disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
-        <MenuItem disabled={!props.canConvertToSmartObject} onSelect={() => select(props.onConvertToSmartObject)}>Convert to smart object</MenuItem>
-        <MenuItem disabled={props.smartObjectKind !== 'embedded'} onSelect={() => select(props.onReplaceSmartObject)}>Replace smart-object contents…</MenuItem>
-        <MenuItem disabled={props.smartObjectKind !== 'linked'} onSelect={() => select(props.onRelinkSmartObject)}>Relink smart object…</MenuItem>
-        <MenuItem disabled={!props.smartObjectKind} onSelect={() => select(props.onExportSmartObject)}>Export smart-object contents…</MenuItem>
-        <MenuItem disabled={!props.hasLayerEffects} onSelect={() => select(props.onClearLayerEffects)}>Clear layer effects</MenuItem>
+        <MenuItem commandId="layer.duplicate" shortcut={shortcutLabel(props.shortcuts['layer.duplicate'])} disabled={!props.hasLayerSelection} onSelect={() => select(props.onDuplicateLayer)}>Duplicate layer or group</MenuItem>
+        <MenuItem commandId="layer.rasterize" disabled={!props.canRasterize} onSelect={() => select(props.onRasterizeLayer)}>Rasterize layer</MenuItem>
+        <MenuItem commandId="layer.smart-object.convert" disabled={!props.canConvertToSmartObject} onSelect={() => select(props.onConvertToSmartObject)}>Convert to smart object</MenuItem>
+        <MenuItem commandId="layer.smart-object.replace" disabled={props.smartObjectKind !== 'embedded'} onSelect={() => select(props.onReplaceSmartObject)}>Replace smart-object contents…</MenuItem>
+        <MenuItem commandId="layer.smart-object.relink" disabled={props.smartObjectKind !== 'linked'} onSelect={() => select(props.onRelinkSmartObject)}>Relink smart object…</MenuItem>
+        <MenuItem commandId="layer.smart-object.export" disabled={!props.smartObjectKind} onSelect={() => select(props.onExportSmartObject)}>Export smart-object contents…</MenuItem>
+        <MenuItem commandId="layer.effects.clear" disabled={!props.hasLayerEffects} onSelect={() => select(props.onClearLayerEffects)}>Clear layer effects</MenuItem>
         <Separator />
-        <MenuItem shortcut="⌫" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDeleteLayer)}>Delete layer or group</MenuItem>
+        <MenuItem commandId="layer.delete" shortcut="⌫" disabled={!props.hasLayerSelection} onSelect={() => select(props.onDeleteLayer)}>Delete layer or group</MenuItem>
       </>, 'w-60')}
 
       {menu('select', 'Select', <>
-        <MenuItem shortcut="⌘A" onSelect={() => select(props.onSelectAll)}>All</MenuItem>
-        <MenuItem shortcut="⌘D" disabled={!props.hasPixelSelection} onSelect={() => select(props.onDeselect)}>Deselect</MenuItem>
-        <MenuItem shortcut="⇧⌘I" onSelect={() => select(props.onInvertSelection)}>Inverse</MenuItem>
+        <MenuItem commandId="select.all" shortcut="⌘A" onSelect={() => select(props.onSelectAll)}>All</MenuItem>
+        <MenuItem commandId="select.deselect" shortcut="⌘D" disabled={!props.hasPixelSelection} onSelect={() => select(props.onDeselect)}>Deselect</MenuItem>
+        <MenuItem commandId="select.inverse" shortcut="⇧⌘I" onSelect={() => select(props.onInvertSelection)}>Inverse</MenuItem>
         <Separator />
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onFeatherSelection)}>Feather 4 px</MenuItem>
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onExpandSelection)}>Expand 4 px</MenuItem>
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onContractSelection)}>Contract 4 px</MenuItem>
+        <MenuItem commandId="select.feather" disabled={!props.hasPixelSelection} onSelect={() => select(props.onFeatherSelection)}>Feather 4 px</MenuItem>
+        <MenuItem commandId="select.expand" disabled={!props.hasPixelSelection} onSelect={() => select(props.onExpandSelection)}>Expand 4 px</MenuItem>
+        <MenuItem commandId="select.contract" disabled={!props.hasPixelSelection} onSelect={() => select(props.onContractSelection)}>Contract 4 px</MenuItem>
         <Separator />
-        <MenuItem onSelect={() => select(props.onColorRange)}>Color range from foreground</MenuItem>
-        <MenuItem onSelect={() => select(() => props.onLuminosityRange('shadows'))}>Luminosity range: Shadows</MenuItem>
-        <MenuItem onSelect={() => select(() => props.onLuminosityRange('midtones'))}>Luminosity range: Midtones</MenuItem>
-        <MenuItem onSelect={() => select(() => props.onLuminosityRange('highlights'))}>Luminosity range: Highlights</MenuItem>
-        <MenuItem onSelect={() => select(props.onEdgeSelection)}>Find subject edges</MenuItem>
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onGrowSelection)}>Grow</MenuItem>
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onSimilarSelection)}>Similar</MenuItem>
+        <MenuItem commandId="select.color-range" onSelect={() => select(props.onColorRange)}>Color range from foreground</MenuItem>
+        <MenuItem commandId="select.luminosity.shadows" onSelect={() => select(() => props.onLuminosityRange('shadows'))}>Luminosity range: Shadows</MenuItem>
+        <MenuItem commandId="select.luminosity.midtones" onSelect={() => select(() => props.onLuminosityRange('midtones'))}>Luminosity range: Midtones</MenuItem>
+        <MenuItem commandId="select.luminosity.highlights" onSelect={() => select(() => props.onLuminosityRange('highlights'))}>Luminosity range: Highlights</MenuItem>
+        <MenuItem commandId="select.subject-edges" onSelect={() => select(props.onEdgeSelection)}>Find subject edges</MenuItem>
+        <MenuItem commandId="select.grow" disabled={!props.hasPixelSelection} onSelect={() => select(props.onGrowSelection)}>Grow</MenuItem>
+        <MenuItem commandId="select.similar" disabled={!props.hasPixelSelection} onSelect={() => select(props.onSimilarSelection)}>Similar</MenuItem>
         <Separator />
-        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onSelectAndMask)}>Select and Mask…</MenuItem>
+        <MenuItem commandId="select.mask-workspace" disabled={!props.hasPixelSelection} onSelect={() => select(props.onSelectAndMask)}>Select and Mask…</MenuItem>
       </>)}
 
       {menu('filter', 'Filter', <>
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('blur'))}>Gaussian blur</MenuItem>
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('sharpen'))}>Sharpen</MenuItem>
+        <MenuItem commandId="filter.gaussian-blur" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('blur'))}>Gaussian blur</MenuItem>
+        <MenuItem commandId="filter.sharpen" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('sharpen'))}>Sharpen</MenuItem>
         <Separator />
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('grayscale'))}>Grayscale</MenuItem>
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('sepia'))}>Sepia</MenuItem>
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('invert'))}>Invert</MenuItem>
+        <MenuItem commandId="filter.grayscale" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('grayscale'))}>Grayscale</MenuItem>
+        <MenuItem commandId="filter.sepia" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('sepia'))}>Sepia</MenuItem>
+        <MenuItem commandId="filter.invert" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('invert'))}>Invert</MenuItem>
         <Separator />
-        <MenuItem disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('reset'))}>Reset layer filters</MenuItem>
-        {props.pluginFilters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin filters</p>{props.pluginFilters.map((hook) => <MenuItem key={`${hook.pluginId}:${hook.id}`} disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onPluginFilter(hook))}>{hook.label}</MenuItem>)}</>}
+        <MenuItem commandId="filter.reset" disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onFilter('reset'))}>Reset layer filters</MenuItem>
+        {props.pluginFilters.length > 0 && <><Separator /><p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Plugin filters</p>{props.pluginFilters.map((hook) => <MenuItem commandId={`plugin.filter.${hook.pluginId}.${hook.id}`} key={`${hook.pluginId}:${hook.id}`} disabled={!props.hasFilterTarget} onSelect={() => select(() => props.onPluginFilter(hook))}>{hook.label}</MenuItem>)}</>}
       </>)}
 
       {menu('view', 'View', <>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.zoom-in'])} onSelect={() => select(() => props.onZoom('in'))}>Zoom in</MenuItem>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.zoom-out'])} onSelect={() => select(() => props.onZoom('out'))}>Zoom out</MenuItem>
-        <MenuItem shortcut={shortcutLabel(props.shortcuts['view.actual'])} onSelect={() => select(() => props.onZoom('actual'))}>100%</MenuItem>
+        <MenuItem commandId="view.zoom-in" shortcut={shortcutLabel(props.shortcuts['view.zoom-in'])} onSelect={() => select(() => props.onZoom('in'))}>Zoom in</MenuItem>
+        <MenuItem commandId="view.zoom-out" shortcut={shortcutLabel(props.shortcuts['view.zoom-out'])} onSelect={() => select(() => props.onZoom('out'))}>Zoom out</MenuItem>
+        <MenuItem commandId="view.actual" shortcut={shortcutLabel(props.shortcuts['view.actual'])} onSelect={() => select(() => props.onZoom('actual'))}>100%</MenuItem>
         <Separator />
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Panels</p>
-        <MenuItem checked={props.propertiesPanelVisible} onSelect={() => select(() => props.onTogglePanel('properties'))}>Properties</MenuItem>
-        <MenuItem checked={props.layersPanelVisible} onSelect={() => select(() => props.onTogglePanel('layers'))}>Layers</MenuItem>
-        <MenuItem checked={props.timelineVisible} onSelect={() => select(props.onToggleTimeline)}>Timeline</MenuItem>
+        <MenuItem commandId="view.panel.properties" checked={props.propertiesPanelVisible} onSelect={() => select(() => props.onTogglePanel('properties'))}>Properties</MenuItem>
+        <MenuItem commandId="view.panel.layers" checked={props.layersPanelVisible} onSelect={() => select(() => props.onTogglePanel('layers'))}>Layers</MenuItem>
+        <MenuItem commandId="view.panel.timeline" checked={props.timelineVisible} onSelect={() => select(props.onToggleTimeline)}>Timeline</MenuItem>
         <Separator />
         <p className="px-2.5 py-1 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Workspace</p>
         {props.workspacePresets.map((workspace) => workspace.builtIn
-          ? <MenuItem key={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))}>{workspace.name}</MenuItem>
+          ? <MenuItem commandId="view.workspace.apply" key={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))}>{workspace.name}</MenuItem>
           : <SavedWorkspaceItem key={workspace.name} name={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))} onDelete={() => select(() => props.onDeleteWorkspace(workspace.name))} />)}
         <Separator />
-        <MenuItem onSelect={() => select(props.onSaveWorkspace)}>Save current workspace…</MenuItem>
+        <MenuItem commandId="view.workspace.save" onSelect={() => select(props.onSaveWorkspace)}>Save current workspace…</MenuItem>
       </>, 'w-60')}
 
       {menu('help', 'Help', <>
-        <MenuItem shortcut="⌘K" onSelect={() => select(props.onOpenCommands)}>Search commands…</MenuItem>
-        <MenuItem shortcut="F1" onSelect={() => select(props.onOpenHelp)}>Contextual help…</MenuItem>
+        <MenuItem commandId="help.commands" shortcut="⌘K" onSelect={() => select(props.onOpenCommands)}>Search commands…</MenuItem>
+        <MenuItem commandId="help.context" shortcut="F1" onSelect={() => select(props.onOpenHelp)}>Contextual help…</MenuItem>
         <Separator />
-        <MenuItem onSelect={() => select(props.onExportDiagnostics)}>Export diagnostics…</MenuItem>
+        <MenuItem commandId="help.diagnostics" onSelect={() => select(props.onExportDiagnostics)}>Export diagnostics…</MenuItem>
         <p className="px-2.5 py-1.5 text-[8px] leading-relaxed text-zinc-700">Diagnostics exclude document content, names, paths, and local resource data.</p>
       </>, 'w-60')}
     </div>
