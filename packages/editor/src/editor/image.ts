@@ -16,22 +16,26 @@ export function validateImageFile(file: File) {
   }
 }
 
-function decodeImage(src: string) {
+function decodeImage(src: string, signal?: AbortSignal) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.decoding = 'async'
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('The image could not be decoded.'))
+    const cleanup = () => signal?.removeEventListener('abort', cancel)
+    const cancel = () => { image.src = ''; cleanup(); reject(signal?.reason instanceof Error ? signal.reason : new DOMException('Image decoding was cancelled.', 'AbortError')) }
+    image.onload = () => { cleanup(); resolve(image) }
+    image.onerror = () => { cleanup(); reject(new Error('The image could not be decoded.')) }
+    signal?.addEventListener('abort', cancel, { once: true })
     image.src = src
   })
 }
 
-export async function loadImageFile(file: File): Promise<SourceImage> {
+export async function loadImageFile(file: File, signal?: AbortSignal): Promise<SourceImage> {
   validateImageFile(file)
+  signal?.throwIfAborted()
   const objectUrl = URL.createObjectURL(file)
 
   try {
-    const element = await decodeImage(objectUrl)
+    const element = await decodeImage(objectUrl, signal)
     return { element, name: file.name, blob: file, objectUrl }
   } catch (error) {
     URL.revokeObjectURL(objectUrl)
@@ -39,10 +43,11 @@ export async function loadImageFile(file: File): Promise<SourceImage> {
   }
 }
 
-export async function loadImageBlob(blob: Blob, name: string): Promise<SourceImage> {
+export async function loadImageBlob(blob: Blob, name: string, signal?: AbortSignal): Promise<SourceImage> {
+  signal?.throwIfAborted()
   const objectUrl = URL.createObjectURL(blob)
   try {
-    const element = await decodeImage(objectUrl)
+    const element = await decodeImage(objectUrl, signal)
     return { element, name, blob, objectUrl }
   } catch (error) {
     URL.revokeObjectURL(objectUrl)

@@ -1791,12 +1791,17 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
         importWarnings = imported.warnings
       } else if (extension === 'svg' || file.type === 'image/svg+xml') {
         const { importSvgFile } = await import('./editor/svg')
-        loaded = await importSvgFile(file)
+        loaded = await runCancelableJob('SVG import', async (signal) => {
+          signal.throwIfAborted()
+          const imported = await importSvgFile(file)
+          signal.throwIfAborted()
+          return imported
+        })
       } else {
         const advancedFormats = await import('./editor/advanced-formats')
         const advancedFormat = advancedFormats.advancedFormatForFile(file)
         if (advancedFormat) {
-          const imported = await advancedFormats.importAdvancedRaster(file)
+          const imported = await runCancelableJob(`${advancedFormat.toUpperCase()} import`, (signal) => advancedFormats.importAdvancedRaster(file, signal))
           const nextAssets: AssetMap = {}
           const layers = imported.pages.map((page, index) => {
             const assetId = createId()
@@ -1821,9 +1826,13 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
           }
           importWarnings = imported.warnings
         } else {
-          const source = createRasterSurface(await loadImageFile(file))
-          const { readImageMetadata } = await import('./editor/metadata')
-          const metadata = await readImageMetadata(file)
+          const { source, metadata } = await runCancelableJob('Image import', async (signal) => {
+            const source = createRasterSurface(await loadImageFile(file, signal))
+            const { readImageMetadata } = await import('./editor/metadata')
+            const metadata = await readImageMetadata(file)
+            signal.throwIfAborted()
+            return { source, metadata }
+          })
           const assetId = createId()
           const layer = createRasterLayer(assetId, file.name.replace(/\.[^.]+$/, ''), source.surface!.width, source.surface!.height)
           loaded = {
