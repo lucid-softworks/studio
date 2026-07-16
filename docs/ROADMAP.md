@@ -1,223 +1,214 @@
-# Studio parity roadmap
+# Studio → Photopea parity roadmap
 
-This is the working TODO for turning Studio into a serious local-first image editor. The order is intentional: later editing features depend on a stable document model, renderer, history system, and file round-tripping.
+This roadmap contains only unfinished work required to match Photopea's core offline image-editing workflows. Completed implementation history belongs in Git, not in this file.
 
 ## Product boundaries
 
-- Everything runs in the browser or the future Electron desktop shell.
-- No server runtime, account system, cloud dependency, telemetry requirement, or AI features.
-- Large local data belongs in IndexedDB / OPFS in browsers and the local filesystem in Electron.
-- Expensive work can use Web Workers, OffscreenCanvas, WebAssembly, and WebGPU.
-- All WebGPU code uses [TypeGPU](https://github.com/software-mansion/TypeGPU), with Canvas2D as a supported fallback.
-- Browser and desktop share the document model, editor UI, renderer, codecs, and test fixtures.
-
-## Already usable
-
-- [x] Blank transparent document on launch and configurable new documents
-- [x] PNG, JPEG, WebP, GIF, BMP, SVG, TIFF, PSD, and Studio project import
-- [x] PNG, JPEG, and WebP image export plus Studio project save/load
-- [x] Raster, image, text, shape, adjustment, and grouped layers
-- [x] Layer ordering, clipping, opacity, visibility, locking, and common blend modes
-- [x] Raster masks and non-destructive layer effects
-- [x] Move, transform, crop, straighten, selection, paint, erase, fill, gradient, retouch, text, and shape tools
-- [x] Pressure-sensitive brush dynamics and local custom brush tips
-- [x] Locally loaded fonts
-- [x] Canvas-edge rulers, guides, snapping, measurement, alignment, history, and keyboard shortcuts
-- [x] Layer and folder drag-and-drop reordering with nested drop targets
-- [x] Local recovery storage
-
-## M0 — editor and rendering foundation
-
-- [x] Version the Studio document schema and add explicit migrations
-- [x] Separate serializable document data from runtime image/GPU resources
-- [x] Replace full-document history snapshots with typed commands and transaction groups
-- [x] Put composition rendering behind a backend interface
-- [x] Keep a Canvas2D compatibility renderer
-- [x] Add lazy TypeGPU capability detection and runtime lifecycle management
-- [x] Implement the TypeGPU compositor with parity snapshots against Canvas2D
-  - [x] Present native per-layer textures with every blend mode, raster masks, and clipping
-  - [x] Apply brightness, contrast, saturation, and hue adjustment layers natively
-  - [x] Composite isolated and nested group passes through TypeGPU with group opacity and blend modes
-  - [x] Apply blur adjustment layers through a native TypeGPU sampling pass
-  - [x] Apply brightness, contrast, saturation, hue, grayscale, sepia, and invert layer filters natively
-  - [x] Apply layer-filter blur through separable native TypeGPU passes
-  - [x] Apply color-overlay layer effects natively
-  - [x] Add native drop-shadow and outer-glow effects
-  - [x] Add GPU/Canvas pixel-parity snapshots
-- [x] Move layer surfaces to a shared texture/resource registry
-- [x] Add dirty rectangles, tile invalidation, mipmaps, and render caching
-  - [x] Cache unchanged native background, image, raster, shape, clipping, and isolated-group passes
-  - [x] Add dirty rectangles, tile invalidation, mipmaps, and tile-level cache eviction
-- [x] Move rendering and heavy pixel operations to a Worker with OffscreenCanvas where supported
-  - [x] Compose bitmap-safe documents in an OffscreenCanvas Worker with automatic main-thread fallback
-  - [x] Downsample and reduce histogram pixels entirely in a Worker
-  - [x] Keep text composition on the main thread until worker font resources can preserve exact typography
-- [x] Add GPU device-loss recovery and automatic Canvas2D fallback
-- [x] Add deterministic renderer fixtures for blend modes, masks, effects, and color transforms
-
-## M1 — PSD fidelity and round-tripping
-
-- [x] Build a corpus of legal PSD/PSB fixtures and visual golden tests
-- [x] Preserve editable text layers, font metadata, and text bounds on import
-  - [x] Preserve single-style horizontal text, font, color, alignment, tracking, rotation, and bounds
-  - [x] Preserve mixed style runs, paragraph boxes, vertical text, warps, and missing-font metadata
-- [x] Preserve vector shape layers and paths on import
-  - [x] Import solid rectangles, rounded rectangles, ellipses, and basic strokes as editable shapes
-  - [x] Preserve compound/custom paths, gradient and pattern fills, and complete stroke metadata
-- [x] Preserve raster and vector masks, clipping groups, channels, and blend-if data
-  - [x] Import PSD raster masks as editable Studio masks
-  - [x] Consume basic shape vector masks as editable rectangle and ellipse geometry
-  - [x] Preserve and render independent/compound vector masks, mask density/feather, and non-default blend-if data
-  - [x] Decode editable 8-bit extra-channel pixels and rewrite locally changed channel planes
-- [x] Preserve adjustment layers and layer styles as editable Studio properties
-  - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
-  - [x] Import brightness/contrast and global hue/saturation adjustment layers as editable adjustments
-  - [x] Preserve and render primary inner shadow/glow, bevel, satin, gradient/pattern overlay, and stroke styles
-  - [x] Preserve every PSD adjustment descriptor as typed Studio data and render supported adjustments locally
-  - [x] Evaluate embedded `.cube` Color Lookup LUT previews entirely on-device
-  - [x] Preserve and render deterministic seeded noise-gradient layer styles
-  - [x] Preserve and render multiple style instances while retaining custom contour descriptors
-  - [x] Preview embedded `.3dl` Color Lookup LUTs, including input shaper tables
-  - [x] Preview embedded Iridas `.look` Color Lookup LUTs
-  - [x] Bake abstract and device-link ICC-profile Color Lookup previews through lazy client-side LittleCMS WASM
-  - [x] Preview and round-trip gradient and pattern layer-effect strokes
-- [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
-- [x] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents
-  - [x] Preserve exact unedited high-depth raster and alpha samples with deterministic 8-bit canvas previews
-  - [x] Write layered 16/32-bit PSD/PSB files with promoted edited pixels, masks, and composite channels
-- [x] Write layered PSD files from Studio documents
-- [x] Add import → export → import structural and pixel-diff tests
-- [x] Warn precisely when an unsupported PSD feature must be flattened
-
-## M2 — smart objects and non-destructive filters
-
-- [x] Add embedded and linked smart-object layer types
-- [x] Open smart-object contents as nested documents and propagate saved edits
-- [x] Add replace/relink/export-contents actions
-- [x] Add non-destructive affine transform matrices independent of source pixels
-- [x] Add ordered smart-filter stacks with visibility, masks, opacity, and blend modes
-- [x] Cache smart-object and smart-filter results by content hash
-
-## M3 — selections, masks, and channels
-
-- [x] Make selections sparse tile-based pixel masks rather than rectangle-only state
-- [x] Add elliptical marquee, single-row/column marquee, polygonal lasso, magnetic lasso, and object/contiguous selection tools
-- [x] Add add/subtract/intersect selection modes to every selection tool
-- [x] Add color range, luminosity range, subject-free edge selection, grow, and similar
-- [x] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination
-- [x] Add quick mask mode
-- [x] Add vector masks and editable raster/vector mask density, feather, and linking
-- [x] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
-- [x] Save, load, combine, and transform alpha-channel selections
-
-## M4 — paths, vectors, and shapes
-
-- [x] Add a Pen tool with Bézier handles, path continuation, and point conversion
-- [x] Add direct/path selection tools and keyboard editing
-- [x] Add a Paths panel with work paths, saved paths, clipping paths, and fill/stroke actions
-- [x] Support compound paths and boolean shape operations
-- [x] Add editable stroke alignment, caps, joins, dashes, gradients, and pattern fills
-- [x] Add custom shape import/export and a reusable local shape library
-- [x] Preserve vector data through SVG and PSD round-trips
-
-## M5 — transforms, layout, and documents
-
-- [x] Add skew, perspective, distort, and multi-point warp transforms
-- [x] Add perspective crop and perspective warp
-- [x] Add puppet warp with editable mesh pins
-- [x] Add content-aware scale without server or AI dependencies
-- [x] Add transform-again, numeric reference points, and precise interpolation controls
-- [x] Add artboards, artboard export, and per-artboard backgrounds
-- [x] Add multiple open documents, tabs, duplicate document, and move/copy layers between documents
-- [x] Add linked views, split views, navigator, rotate view, and scrubby zoom
-- [x] Add configurable grids, guide layouts, smart guides, and reusable workspace layouts
-
-## M6 — adjustments, filters, and color
-
-- [x] Add Curves with per-channel points, eyedroppers, histogram, and presets
-- [x] Add Levels, Exposure, Vibrance, Selective Color, Channel Mixer, Color Lookup, Gradient Map, and Black & White
-- [x] Add Camera Raw-style local controls implemented entirely on-device
-- [x] Build a TypeGPU filter graph for blur, sharpen, noise, distort, stylize, render, and pixelate families
-- [x] Add filter masks, live previews, cancelable jobs, and reusable presets
-- [x] Add editable 8/16/32-bit document precision
-- [x] Add ICC profile parsing, conversion, assign/convert profile, proof colors, and gamut warnings
-- [x] Add RGB, grayscale, indexed, and CMYK document modes where browser color APIs permit accurate output
-- [x] Add histogram, info, and scopes panels backed by worker/GPU reductions
-  - [x] Add a sampled RGB/luminance histogram with local Worker reduction and live statistics
-  - [x] Add exact tiled/high-precision histograms, point sampling, and waveform/vectorscope GPU reductions
-
-## M7 — typography
-
-- [x] Add point text and paragraph text boxes with resize/reflow behavior
-- [x] Add full character and paragraph panels
-- [x] Add kerning, tracking, leading, baseline shift, horizontal/vertical scale, faux styles, underline, and strikethrough
-- [x] Add OpenType feature controls, variable-font axes, and font fallback runs
-- [x] Add text-on-path, vertical text, warp text, and editable text transforms
-- [x] Preserve advanced text metadata through Studio and PSD documents
-- [x] Add a persistent local font library with missing-font substitution controls
-  - [x] Persist imported web fonts locally and expose them through the Libraries panel and text controls
-  - [x] Add missing-font detection, substitution mapping, and font-library removal controls
-
-## M8 — painting and retouching
-
-- [x] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
-- [x] Support ABR brush import and preserve compatible dynamics (legacy v1/v2 computed and sampled brushes plus modern v6 sampled-tip packs)
-- [x] Add pencil, color replacement, mixer brush, and history brush tools
-- [x] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
-- [x] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
-- [x] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
-- [x] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
-  - [x] Add persistent local custom-swatch, two-colour gradient, and procedural-pattern libraries connected to live editor state
-  - [x] Expose browser-persisted custom brush tips and fonts through the Libraries panel
-  - [x] Add tool-preset and expanded brush-preset libraries plus multi-stop gradients and bitmap pattern import/export
-- [x] Add tablet tilt, twist, barrel button, and per-device pressure calibration
-
-## M9 — workflow and extensibility
-
-- [x] Add editable keyboard shortcuts and menus
-- [x] Add dockable/resizable panels and saved workspaces
-  - [x] Swap the Properties and Layers docks, resize both side panels, and persist the layout and widths locally
-  - [x] Add collapsible docks and built-in or user-named workspace presets
-  - [x] Add a persisted tabbed utility-panel stack
-  - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
-  - [x] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
-- [x] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
-  - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
-  - [x] Add Actions panel
-  - [x] Add Channels panel
-  - [x] Add Paths panel
-- [x] Add actions recording, playback, conditional steps, and batch processing in a Worker
-- [x] Add a sandboxed local scripting API with explicit filesystem permissions
-- [x] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server
-- [x] Add searchable commands, contextual help, crash recovery, and diagnostic export
-
-## M10 — formats and output
-
-- [x] Add robust TIFF, OpenEXR, HDR, HEIF/AVIF, ICO, PDF, and RAW import where client-side codecs exist
-- [x] Add layered TIFF, PDF, SVG, GIF/APNG, AVIF, and PSD/PSB export
-- [x] Add frame animation and timeline animation with onion skinning
-- [x] Add slices, asset generation, export presets, metadata controls, and batch export
-- [x] Add print sizing, bleed, crop marks, and local print/PDF workflows
-- [x] Preserve resolution, EXIF, XMP, ICC, and orientation metadata intentionally
-
-## M11 — Electron desktop shell
-
-- [x] Keep Electron a thin shell around the shared web editor
-- [x] Add native open/save dialogs, recent files, drag/drop, and OS file associations
-- [x] Add safe atomic filesystem writes and external-change detection
-- [x] Add native menus, shortcuts, clipboard integration, and color picker
-- [x] Add optional local scratch-disk/cache management for documents larger than memory
-- [x] Package signed macOS, Windows, and Linux builds with automatic updates
-
-## Long-tail parity
-
-- [ ] Layer comps and states
-- [ ] Notes and annotations
-- [ ] Count, sampler, and advanced measurement records
-- [ ] Variables and data-driven graphics
-- [ ] Vanishing Point and advanced lens correction
-- [ ] 3D/imported model features only if they still serve the product direction
+- Studio remains fully client-side and local-first.
+- No server runtime, accounts, cloud dependency, telemetry requirement, or AI features.
+- Browser storage uses IndexedDB and OPFS; a future Electron shell may use the local filesystem.
+- Expensive work may use Web Workers, OffscreenCanvas, WebAssembly, and WebGPU.
+- All WebGPU work uses [TypeGPU](https://github.com/software-mansion/TypeGPU), with a supported Canvas2D fallback.
+- Photopea parity means its core local editing behavior and file compatibility, excluding its online storage, account, advertising, and AI-assisted features.
 
 ## Definition of parity
 
-A feature is not complete merely because a control exists. It needs undo/redo, save/load fidelity, keyboard access, useful error handling, acceptable large-document performance, browser and Electron behavior, and automated tests. PSD-related work also needs a documented round-trip result or a clear flattening warning.
+A feature is complete only when it has:
+
+- Equivalent editing behavior and useful parameter depth.
+- Correct undo/redo and transaction grouping.
+- Reliable Studio project save/load behavior.
+- Documented import/export behavior for applicable external formats.
+- Keyboard access, modifier keys, contextual controls, and useful errors.
+- Acceptable performance on large documents.
+- Automated unit, interaction, and visual-regression coverage.
+- Matching behavior in TypeGPU and Canvas2D, where both renderers support it.
+
+## P0 — parity audit and performance baseline
+
+- [ ] Build a living Photopea → Studio capability matrix covering every menu command, tool, panel, layer type, filter, adjustment, format, preset, and shortcut.
+- [ ] Classify each capability as missing, partial, visually inaccurate, incompatible on round-trip, too slow, or parity-validated.
+- [ ] Add browser-driven interaction tests for every built-in tool and its modifier-key variants.
+- [ ] Add visual golden tests for every renderer feature at multiple zoom levels and document precisions.
+- [ ] Create standard performance fixtures for 2K, 4K, 8K, deeply layered, high-bit-depth, and animation documents.
+- [ ] Track pointer latency, dropped frames, render count, memory, save time, and export time in repeatable benchmarks.
+- [ ] Resolve the conflicting support claims in the README, UI, codec warnings, and test fixtures.
+
+## P1 — interactive performance and large documents
+
+- [ ] Move Paint Bucket, Magic Wand, Object Select, and gradient commits off the main thread or make them incremental and cancelable.
+- [ ] Keep gradient commits below one frame for common document sizes and show progress for genuinely long jobs.
+- [ ] Give path editing, direct selection, warp, and puppet warp local previews that commit document state once per interaction.
+- [ ] Eliminate full-surface copies at the start of clone, healing, retouch, and history-brush strokes.
+- [ ] Replace remaining full-canvas raster mutation paths with sparse tiles and dirty regions.
+- [ ] Enforce renderer cache and texture-memory budgets with deterministic eviction.
+- [ ] Add OPFS-backed scratch storage and recovery for documents that exceed the safe memory budget.
+- [ ] Stream large project and PSD/PSB saves instead of constructing every payload in memory.
+- [ ] Make all long filters, imports, exports, and batch jobs cancelable without corrupting document state.
+- [ ] Meet the interaction budgets defined by the performance fixtures on supported browsers.
+
+## P2 — PSD/PSB fidelity and round-trip confidence
+
+- [ ] Build a broad legal corpus of real Photoshop and Photopea documents rather than relying mainly on generated fixtures.
+- [ ] Validate Photoshop/Photopea → Studio → Photoshop/Photopea round-trips structurally and visually.
+- [ ] Cover RGB, CMYK, Lab, grayscale, indexed, duotone, multichannel, 8-bit, 16-bit, and 32-bit PSD/PSB variants.
+- [ ] Validate nested groups, clipping stacks, blend-if, knockout, fill opacity, artboards, channels, guides, slices, and metadata in combination.
+- [ ] Validate mixed-style text, complex scripts, vertical text, text-on-path, text warp, paragraph layout, and missing-font substitution.
+- [ ] Validate compound shapes, custom paths, vector masks, raster masks, mask linking, density, and feathering.
+- [ ] Validate every supported adjustment, layer effect, multiple effect instance, contour, gradient, pattern, and smart filter.
+- [ ] Validate embedded and linked smart objects, shared sources, nested documents, transforms, replacement, and relinking.
+- [ ] Preserve unsupported descriptors losslessly when possible and warn precisely before any destructive edit or export.
+- [ ] Add differential fuzzing for PSD/PSB parsing and writing with deterministic crash fixtures.
+- [ ] Publish a tested compatibility table rather than a single broad “PSD supported” claim.
+
+## P3 — precision, color, and typography
+
+- [ ] Make 16-bit and 32-bit raster editing end-to-end rather than preserving high-depth source samples behind an 8-bit editing surface.
+- [ ] Use float or high-precision TypeGPU textures and filter passes without silent 8-bit quantization.
+- [ ] Preserve precision through masks, selections, compositing, adjustments, smart filters, history, and export.
+- [ ] Complete color-managed display and conversion for RGB, CMYK, Lab, grayscale, indexed, duotone, and spot-channel workflows.
+- [ ] Verify ICC assign/convert, proof colors, rendering intents, black-point compensation, and gamut warnings against reference outputs.
+- [ ] Add accurate high-depth histograms, scopes, samplers, and numeric readouts.
+- [ ] Integrate a browser-safe shaping engine for complex scripts, bidirectional text, CJK layout, ligatures, and font fallback.
+- [ ] Support color fonts and verify OpenType features and variable axes against reference shaping.
+- [ ] Make text layout deterministic across browser and desktop environments.
+
+## P4 — missing Photopea workflows
+
+### Layer comps and data-driven documents
+
+- [ ] Add a Layer Comps panel with create, apply, update, rename, delete, and last-document-state behavior.
+- [ ] Capture visibility, position, appearance, and smart-object comp selection with per-comp flags.
+- [ ] Preserve and edit layer comps through PSD/PSB and Studio project round-trips.
+- [ ] Add layer variables for visibility, text replacement, and pixel replacement.
+- [ ] Import CSV datasets, map local source images, preview records, and batch-export datasets locally.
+- [ ] Preserve compatible variable and dataset metadata through PSD documents.
+
+### Perspective and distortion workspaces
+
+- [ ] Add a Vanishing Point workspace with editable perspective planes and connected planes.
+- [ ] Add perspective-aware brush, clone, marquee, paste, move, and transform behavior.
+- [ ] Preserve Vanishing Point plane data and support local measurement records where formats allow it.
+- [ ] Add a Liquify workspace with push, reconstruct, smooth, twirl, pucker, bloat, freeze, and thaw tools.
+- [ ] Add advanced lens correction and adaptive wide-angle controls with editable correction guides.
+
+### Blur and photographic workflows
+
+- [ ] Add Blur Gallery field, iris, tilt-shift, path, and spin blur with multiple editable controls.
+- [ ] Add editable bokeh, motion, noise, mask, and smart-filter behavior for Blur Gallery effects.
+- [ ] Add local panorama stitching with alignment, seam blending, and projection controls.
+- [ ] Add exposure fusion and HDR merge without AI or network services.
+- [ ] Add local focus stacking and automatic layer alignment/blending.
+- [ ] Add a real RAW development pipeline with sensor demosaicing, camera white balance, lens metadata, and non-destructive settings.
+
+### Measurement and annotation
+
+- [ ] Add persistent color samplers with per-sampler color-space readouts.
+- [ ] Add count groups, count markers, labels, and exportable count records.
+- [ ] Add calibrated measurements, measurement scale, measurement log, and CSV export.
+- [ ] Add notes and annotations that persist in Studio projects and compatible external documents.
+
+### Vectorization
+
+- [ ] Add local bitmap vectorization with color, monochrome, threshold, smoothing, corner, and noise controls.
+- [ ] Produce editable compound paths and shape layers from vectorization results.
+
+## P5 — depth of existing editing systems
+
+### Painting and retouching
+
+- [ ] Expand ABR compatibility across computed brushes, sampled brushes, textures, dual brushes, transfer, pose, and color dynamics.
+- [ ] Match Photopea brush spacing, smoothing, build-up, scatter, pressure, tilt, and stamp interpolation on reference strokes.
+- [ ] Improve mixer-brush wetness, load, mix, flow, canvas sampling, and clean/load behavior.
+- [ ] Improve healing and patch matching across texture, luminosity, edges, transformed layers, and current-and-below sampling.
+- [ ] Add complete dodge/burn range controls and sponge saturate/desaturate behavior.
+- [ ] Add clone-source overlays, multiple sources, flip, offset, rotation, scale, and source presets.
+- [ ] Add Adobe-compatible PAT import/export and verify bitmap pattern transforms.
+
+### Selections and masks
+
+- [ ] Improve magnetic-lasso edge following, anchor editing, frequency, contrast, and width controls.
+- [ ] Improve object selection and non-AI foreground extraction for difficult edges, holes, transparency, hair, and repeated colors.
+- [ ] Complete Select and Mask brush, edge refinement, view modes, output modes, and decontamination behavior.
+- [ ] Add channel-based calculations and Apply Image-style selection/mask workflows.
+- [ ] Verify selection operations on transformed, high-depth, CMYK, Lab, and artboard documents.
+
+### Layers, effects, and smart objects
+
+- [ ] Complete advanced blending options including channel-specific blending, knockout, transparency-shapes-layer, and interior-effect grouping.
+- [ ] Match layer-effect contours, noise, jitter, source, technique, range, choke, spread, and scale behavior.
+- [ ] Add ASL style import/export and a persistent style preset library.
+- [ ] Complete smart-filter reorder, per-filter masks, blending options, editable dialogs, and shared smart-object source behavior.
+- [ ] Verify linked smart objects with browser file handles and desktop filesystem changes.
+- [ ] Add complete fill-layer behavior for solid color, gradient, and pattern layers.
+
+### Paths, vectors, and shapes
+
+- [ ] Match Pen, Free Pen, Curvature Pen, Add/Delete Anchor, Convert Point, and modifier-key behavior.
+- [ ] Complete live-shape properties for rectangles, ellipses, polygons, lines, stars, and custom shapes.
+- [ ] Add Adobe-compatible CSH custom-shape import/export.
+- [ ] Verify compound operations, fill rules, stroke alignment, gradients, patterns, transforms, and PSD/SVG round-trips.
+
+### Adjustments and filters
+
+- [ ] Audit every Photopea adjustment and filter parameter against Studio rather than treating filter-family coverage as parity.
+- [ ] Add missing destructive and smart-filter variants, selection/mask behavior, previews, presets, and blending options.
+- [ ] Match Camera Raw-style local controls without depending on Adobe services or AI masks.
+- [ ] Add reusable filter and adjustment preset formats where Photopea supports them.
+
+### Animation
+
+- [ ] Match frame creation, duplication, disposal, delays, tweening, onion skinning, playback, and export behavior.
+- [ ] Complete timeline keyframes for position, opacity, transforms, styles, masks, and smart objects.
+- [ ] Add video-layer and local media timeline support only where browser codecs provide deterministic behavior.
+- [ ] Validate GIF, APNG, WebP, and supported video exports against timing and color reference fixtures.
+
+## P6 — formats and presets
+
+- [ ] Match Photopea's practical import coverage for AI/EPS, XCF, KRA, Sketch, XD, Affinity, Clip Studio, and other documented local formats.
+- [ ] Preserve editable PDF text and vectors when the source data permits it instead of always rasterizing pages.
+- [ ] Improve SVG import/export for filters, masks, clipping, text, gradients, patterns, symbols, and compound paths.
+- [ ] Add multi-page and layered TIFF interoperability tests across compression and color modes.
+- [ ] Complete RAW-family detection and decoding beyond embedded preview extraction.
+- [ ] Add Adobe-compatible ACO/ASE swatches, GRD gradients, PAT patterns, CSH shapes, ASL styles, and ATN actions.
+- [ ] Verify metadata preservation and intentional stripping for every supported input/output format.
+- [ ] Add a format capability dialog that explains whether content will remain editable, be preserved opaquely, or be rasterized.
+
+## P7 — automation and extensibility
+
+- [ ] Expand action recording so every user-visible command has stable, serializable parameters.
+- [ ] Add ATN import/export for compatible action steps and precise warnings for unsupported commands.
+- [ ] Add a Photopea/Photoshop-like document scripting compatibility layer over the sandboxed local API.
+- [ ] Provide deterministic script permissions, timeouts, cancellation, undo grouping, and diagnostics.
+- [ ] Expand plugin hooks beyond command mapping so tools and filters can own interactive state, previews, properties, and serialization safely.
+- [ ] Add conformance fixtures for actions, scripts, batch processing, and plugins.
+
+## P8 — workflow and interface parity
+
+- [ ] Audit every Photopea shortcut, temporary tool switch, modifier key, context menu, and double-click action.
+- [ ] Complete tool-specific option bars so all important parameters are available without opening unrelated panels.
+- [ ] Match layer-panel affordances for effects, masks, clipping, smart filters, smart objects, comps, channels, and animation state.
+- [ ] Complete panel docking, grouping, floating, resizing, keyboard focus, and workspace restoration edge cases.
+- [ ] Add robust clipboard transfer for pixels, vectors, text, masks, paths, and layers between Studio and external applications.
+- [ ] Add multi-document drag/copy workflows with predictable smart-object and linked-resource behavior.
+- [ ] Improve touch, stylus, high-DPI, zoomed-page, and reduced-motion behavior.
+- [ ] Complete screen-reader names, focus order, keyboard-only operation, contrast, and error announcement.
+- [ ] Add localization infrastructure before interface strings become harder to extract safely.
+
+## P9 — release confidence
+
+- [ ] Run the complete parity matrix in Chromium, Firefox, and Safari with documented capability fallbacks.
+- [ ] Add crash and recovery tests for tab termination, GPU loss, worker failure, quota exhaustion, and interrupted saves.
+- [ ] Add fuzz and malformed-file tests for every parser and project migration.
+- [ ] Add deterministic memory-leak tests for repeated open/close, undo/redo, smart-object editing, and animation playback.
+- [ ] Add visual and structural round-trip reports to CI artifacts.
+- [ ] Publish supported-browser, format, color, precision, and maximum-tested-document guidance.
+- [ ] Require every parity claim to link to a fixture, benchmark, or compatibility test.
+
+## Explicitly out of scope
+
+- Generative Fill, Generative Expand, neural filters, and other AI-dependent features.
+- Accounts, advertising, cloud documents, shared libraries, and online collaboration.
+- Server-side conversion, rendering, storage, or batch processing.
+- Legacy Photoshop 3D and external model-editing workflows.
+- Exact compatibility with proprietary Photoshop plugins that cannot run safely in a browser.
