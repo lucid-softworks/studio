@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { getLayerBounds } from '../editor/renderer'
 import type { AssetMap } from '../editor/runtime-assets'
-import { geometryMesh, normalizeGeometryTransform } from '../editor/transform'
+import { axisConstrainedPosition, geometryMesh, normalizeGeometryTransform } from '../editor/transform'
 import { createId } from '../editor/presets'
 import type { EditorDispatch, EditorDocument, Position } from '../editor/types'
 import { canvas2dCompositionRenderer } from '../editor/rendering/composition-renderer'
 
 type Props = { canvasRef: RefObject<HTMLCanvasElement | null>; document: EditorDocument; assets: AssetMap; dispatch: EditorDispatch; mode: 'warp' | 'puppet'; enabled: boolean }
-type Drag = { pointerId: number; index: number; source: ReturnType<typeof normalizeGeometryTransform>; draft: ReturnType<typeof normalizeGeometryTransform>; moved: boolean }
+type Drag = { pointerId: number; index: number; start: Position; source: ReturnType<typeof normalizeGeometryTransform>; draft: ReturnType<typeof normalizeGeometryTransform>; moved: boolean }
 
 export function WarpOverlay({ canvasRef, document, assets, dispatch, mode, enabled }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -122,7 +122,7 @@ export function WarpOverlay({ canvasRef, document, assets, dispatch, mode, enabl
     event.preventDefault()
     event.stopPropagation()
     const source = structuredClone(geometry)
-    dragRef.current = { pointerId: event.pointerId, index, source, draft: source, moved: false }
+    dragRef.current = { pointerId: event.pointerId, index, start: local(pointer(event)), source, draft: source, moved: false }
     setDraftGeometry(source)
     preparePreview()
     renderPreview(source)
@@ -138,7 +138,7 @@ export function WarpOverlay({ canvasRef, document, assets, dispatch, mode, enabl
   const move = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current
     if (!drag || drag.pointerId !== event.pointerId) return
-    const position = local(pointer(event))
+    const position = axisConstrainedPosition(drag.start, local(pointer(event)), event.shiftKey)
     if (mode === 'warp') {
       const warp = drag.source.warp ?? { columns: 3, rows: 3, points: Array.from({ length: 9 }, (_, index) => ({ x: index % 3 / 2, y: Math.floor(index / 3) / 2 })) }
       const points = structuredClone(warp.points)
@@ -162,21 +162,34 @@ export function WarpOverlay({ canvasRef, document, assets, dispatch, mode, enabl
     finishPreview(drag.moved)
   }
 
+  const cancel = () => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setDraftGeometry(null)
+    finishPreview(false)
+  }
+
   useEffect(() => () => clearPreview(), [])
 
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && dragRef.current) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        cancel()
+        return
+      }
       if (!enabled || mode !== 'puppet' || selectedPin === null || !layer || (event.key !== 'Delete' && event.key !== 'Backspace')) return
       update({ ...geometry, puppetPins: (geometry.puppetPins ?? []).filter((_, index) => index !== selectedPin) })
       setSelectedPin(null)
       event.preventDefault()
     }
-    window.addEventListener('keydown', keyDown)
-    return () => window.removeEventListener('keydown', keyDown)
+    window.addEventListener('keydown', keyDown, true)
+    return () => window.removeEventListener('keydown', keyDown, true)
   })
 
   const warpPoints = (visibleGeometry.warp ? geometryMesh(visibleGeometry).destination : geometryMesh({ ...visibleGeometry, warp: { columns: 3, rows: 3, points: Array.from({ length: 9 }, (_, index) => ({ x: index % 3 / 2, y: Math.floor(index / 3) / 2 })) } }).destination).map(world)
-  return <Fragment><div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden"><canvas ref={previewCanvasRef} data-warp-preview={mode} className="absolute hidden" /></div><svg ref={svgRef} aria-label={enabled ? `${mode} editing surface` : undefined} viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+  return <Fragment><div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden"><canvas ref={previewCanvasRef} data-warp-preview={mode} className="absolute hidden" /></div><svg ref={svgRef} aria-label={enabled ? `${mode} editing surface` : undefined} viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} onPointerDown={down} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel}>
     {enabled && bounds && mode === 'warp' && <>{Array.from({ length: 3 }, (_, row) => <polyline key={`r${row}`} points={warpPoints.slice(row * 3, row * 3 + 3).map((point) => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#22d3ee" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}{Array.from({ length: 3 }, (_, column) => <polyline key={`c${column}`} points={[0, 1, 2].map((row) => warpPoints[row * 3 + column]).map((point) => `${point.x},${point.y}`).join(' ')} fill="none" stroke="#22d3ee" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}{warpPoints.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r="6" fill="#111113" stroke="#67e8f9" strokeWidth="2" vectorEffect="non-scaling-stroke" onPointerDown={(event) => downHandle(event, index)} />)}</>}
     {enabled && bounds && mode === 'puppet' && <>{(visibleGeometry.puppetPins ?? []).map((pin, index) => { const point = world(pin.position); return <circle key={pin.id} cx={point.x} cy={point.y} r="8" fill={selectedPin === index ? '#f59e0b' : '#111113'} stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke" onPointerDown={(event) => downHandle(event, index)} /> })}<path d={`M${world({ x: 0, y: 0 }).x} ${world({ x: 0, y: 0 }).y}L${world({ x: 1, y: 0 }).x} ${world({ x: 1, y: 0 }).y}L${world({ x: 1, y: 1 }).x} ${world({ x: 1, y: 1 }).y}L${world({ x: 0, y: 1 }).x} ${world({ x: 0, y: 1 }).y}Z`} fill="none" stroke="#fbbf24" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" className="pointer-events-none" /></>}
   </svg></Fragment>

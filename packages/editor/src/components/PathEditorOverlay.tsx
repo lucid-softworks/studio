@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { createId } from '../editor/presets'
 import type { DocumentPath, EditorDispatch, EditorDocument, Position, VectorPath } from '../editor/types'
+import { axisConstrainedPosition } from '../editor/transform'
 
 type PathTool = 'pen' | 'direct-select' | 'path-select'
-type DragTarget = { pathIndex: number; knotIndex?: number; handle?: 'in' | 'out'; start: Position; source: DocumentPath; draft: DocumentPath }
+type DragTarget = { pointerId: number; pathIndex: number; knotIndex?: number; handle?: 'in' | 'out'; start: Position; source: DocumentPath; draft: DocumentPath }
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -71,7 +72,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
     const knot = { linked: true, in: point, anchor: point, out: point }
     path.knots.push(knot)
     const knotIndex = path.knots.length - 1
-    dragRef.current = { pathIndex, knotIndex, start: point, source, draft: source }
+    dragRef.current = { pointerId: event.pointerId, pathIndex, knotIndex, start: point, source, draft: source }
     event.currentTarget.setPointerCapture(event.pointerId)
     setPreview(source)
     setSelected({ pathIndex, knotIndex })
@@ -83,7 +84,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
     event.stopPropagation()
     const start = normalizedPoint(event)
     const source = structuredClone(active)
-    if (tool === 'direct-select' && knotIndex !== undefined && event.altKey) {
+    if (tool === 'direct-select' && knotIndex !== undefined && !handle && event.altKey) {
       const knot = source.paths[pathIndex].knots[knotIndex]
       const collapsed = distance(knot.in, knot.anchor) > 0.001 || distance(knot.out, knot.anchor) > 0.001
       knot.linked = !collapsed
@@ -93,7 +94,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
       setSelected({ pathIndex, knotIndex })
       return
     }
-    dragRef.current = { pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex, handle, start, source, draft: source }
+    dragRef.current = { pointerId: event.pointerId, pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex, handle, start, source, draft: source }
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelected({ pathIndex, knotIndex: tool === 'path-select' ? undefined : knotIndex })
   }
@@ -101,7 +102,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
   const move = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current
     if (!drag) return
-    const point = normalizedPoint(event)
+    const point = axisConstrainedPosition(drag.start, normalizedPoint(event), event.shiftKey)
     const source = structuredClone(drag.source)
     const dx = point.x - drag.start.x
     const dy = point.y - drag.start.y
@@ -112,13 +113,15 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
       const knot = path.knots[drag.knotIndex]
       if (drag.handle) {
         knot[drag.handle] = point
-        if (knot.linked) {
+        if (event.altKey) knot.linked = false
+        else if (knot.linked) {
           const opposite = drag.handle === 'in' ? 'out' : 'in'
           knot[opposite] = { x: knot.anchor.x * 2 - point.x, y: knot.anchor.y * 2 - point.y }
         }
       } else if (tool === 'pen') {
         knot.out = point
-        knot.in = { x: knot.anchor.x * 2 - point.x, y: knot.anchor.y * 2 - point.y }
+        if (event.altKey) knot.linked = false
+        else knot.in = { x: knot.anchor.x * 2 - point.x, y: knot.anchor.y * 2 - point.y }
       } else {
         for (const key of ['in', 'anchor', 'out'] as const) knot[key] = { x: knot[key].x + dx, y: knot[key].y + dy }
       }
@@ -135,8 +138,20 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
     update(drag.draft)
   }
 
+  const cancel = () => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setPreview(null)
+  }
+
   useEffect(() => {
     const keyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && dragRef.current) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        cancel()
+        return
+      }
       if (!enabled || tool !== 'direct-select' || !active || selected?.knotIndex === undefined || (event.key !== 'Backspace' && event.key !== 'Delete')) return
       const source = structuredClone(active)
       const path = source.paths[selected.pathIndex]
@@ -146,12 +161,12 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
       setSelected(null)
       event.preventDefault()
     }
-    window.addEventListener('keydown', keyDown)
-    return () => window.removeEventListener('keydown', keyDown)
+    window.addEventListener('keydown', keyDown, true)
+    return () => window.removeEventListener('keydown', keyDown, true)
   })
 
   return (
-    <svg aria-label={enabled ? `${tool} path editing surface` : undefined} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} style={{ cursor: tool === 'pen' ? 'crosshair' : 'default' }} onPointerDown={penDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}>
+    <svg aria-label={enabled ? `${tool} path editing surface` : undefined} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className={`absolute inset-0 size-full touch-none ${enabled ? '' : 'pointer-events-none'}`} style={{ cursor: tool === 'pen' ? 'crosshair' : 'default' }} onPointerDown={penDown} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel}>
       {visiblePath?.paths.map((path, pathIndex) => <g key={pathIndex}>
         <path d={pathData(path, width, height)} fill="none" stroke="#38bdf8" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className={tool === 'path-select' ? 'pointer-events-auto' : 'pointer-events-none'} onPointerDown={(event) => startDrag(event, pathIndex)} />
         {(tool === 'direct-select' || tool === 'pen') && path.knots.map((knot, knotIndex) => <g key={knotIndex}>

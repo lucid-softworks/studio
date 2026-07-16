@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ImageData } from '@napi-rs/canvas'
-import { calculateLayerResize, calculateRotation, geometryMesh, geometryTransformIsIdentity, perspectiveCropPixels } from './transform'
+import { axisConstrainedPosition, calculateLayerResize, calculateRotation, geometryMesh, geometryTransformIsIdentity, perspectiveCropPixels } from './transform'
 import type { ShapeLayer } from './types'
 
 Object.assign(globalThis, { ImageData })
@@ -20,6 +20,11 @@ const snapshot = {
 }
 
 describe('transform calculations', () => {
+  it('constrains modifier drags to their dominant axis', () => {
+    expect(axisConstrainedPosition({ x: 0.5, y: 0.5 }, { x: 0.8, y: 0.6 }, true)).toEqual({ x: 0.8, y: 0.5 })
+    expect(axisConstrainedPosition({ x: 0.5, y: 0.5 }, { x: 0.55, y: 0.9 }, true)).toEqual({ x: 0.5, y: 0.9 })
+    expect(axisConstrainedPosition({ x: 0.5, y: 0.5 }, { x: 0.8, y: 0.6 }, false)).toEqual({ x: 0.8, y: 0.6 })
+  })
   it('builds editable skew, perspective, distort, and warp meshes', () => {
     expect(geometryTransformIsIdentity()).toBe(true)
     const mesh = geometryMesh({ skewX: 10, skewY: 0, perspectiveX: 20, perspectiveY: 0, corners: [{ x: -0.1, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0.1 }, { x: 0, y: 0 }], warp: { columns: 3, rows: 3, points: Array.from({ length: 9 }, (_, index) => ({ x: index % 3 / 2, y: Math.floor(index / 3) / 2 })) }, interpolation: 'bilinear', referencePoint: { x: 0.5, y: 0.5 } })

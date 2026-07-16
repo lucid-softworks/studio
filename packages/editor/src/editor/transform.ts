@@ -13,6 +13,13 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const hasX = (handle: ResizeHandle) => handle.includes('e') || handle.includes('w')
 const hasY = (handle: ResizeHandle) => handle.includes('n') || handle.includes('s')
 
+export function axisConstrainedPosition(start: Position, point: Position, constrained: boolean) {
+  if (!constrained) return point
+  const dx = point.x - start.x
+  const dy = point.y - start.y
+  return Math.abs(dx) >= Math.abs(dy) ? { x: point.x, y: start.y } : { x: start.x, y: point.y }
+}
+
 export const defaultGeometryTransform: LayerGeometryTransform = {
   skewX: 0,
   skewY: 0,
