@@ -97,7 +97,7 @@ export function useCanvasRenderer(
     requestRef.current = requestId
     let cancelled = false
     const frame = requestAnimationFrame(() => {
-      if (renderSuspendedRef.current) return
+      if (cancelled || requestId !== requestRef.current || renderSuspendedRef.current) return
       const supportsWorker = !root
         && !workerFailedRef.current
         && typeof Worker !== 'undefined'

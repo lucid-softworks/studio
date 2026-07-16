@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { findLayerAtPoint, getLayerBounds, type LayerBounds, type ResizeHandle } from '../editor/renderer'
 import { canvas2dCompositionRenderer } from '../editor/rendering/composition-renderer'
 import { layerIsLocked, layerIsVisible } from '../editor/stack'
@@ -41,6 +41,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const xGuideRef = useRef<SVGLineElement>(null)
   const yGuideRef = useRef<SVGLineElement>(null)
   const previewCleanupRef = useRef<(() => void) | null>(null)
+  const clearSelectionTransformOnCommitRef = useRef(false)
   const [displayWidth, setDisplayWidth] = useState(0)
   const interactionRef = useRef<Interaction | null>(null)
   const canvas = canvasRef.current
@@ -67,6 +68,12 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   }, [])
 
   useEffect(() => () => previewCleanupRef.current?.(), [])
+
+  useLayoutEffect(() => {
+    if (!clearSelectionTransformOnCommitRef.current) return
+    clearSelectionTransformOnCommitRef.current = false
+    movingSelectionRef.current?.removeAttribute('transform')
+  }, [document])
 
   const point = (event: ReactPointerEvent<SVGSVGElement | SVGRectElement | SVGCircleElement>): Position => {
     const svg = svgRef.current
@@ -336,6 +343,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
         resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
+        clearSelectionTransformOnCommitRef.current = true
         dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) })
         resumeCanvasRenderer()
         schedulePreviewCleanup()
@@ -346,6 +354,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
         resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
+        clearSelectionTransformOnCommitRef.current = true
         dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: interaction.lastPatch })
         resumeCanvasRenderer()
         schedulePreviewCleanup()
@@ -356,6 +365,7 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
         resumeCanvasRenderer()
         previewCleanupRef.current?.()
       } else {
+        clearSelectionTransformOnCommitRef.current = true
         dispatch({ type: 'update-layer', id: interaction.layerId, patch: { rotation: interaction.lastRotation } })
         resumeCanvasRenderer()
         schedulePreviewCleanup()
