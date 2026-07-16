@@ -6,13 +6,22 @@ async function setZoom(page: Page, zoom: number) {
   while (await readZoom() > zoom) await page.getByRole('button', { name: 'Zoom out', exact: true }).click()
 }
 
-async function stabilizeCanvasPresentation(page: Page) {
-  await page.getByLabel('Composition canvas').evaluate((canvas: HTMLCanvasElement) => {
-    canvas.style.width = '744px'
-    canvas.style.height = 'auto'
+async function stabilizeCanvasPresentation(page: Page, zoom: number) {
+  await page.getByLabel('Composition canvas').evaluate((canvas: HTMLCanvasElement, scale: number) => {
+    const transformContainer = canvas.parentElement?.parentElement
+    if (transformContainer instanceof HTMLElement) {
+      transformContainer.style.aspectRatio = 'auto'
+      transformContainer.style.transform = 'none'
+    }
+    const width = 744 * scale
+    canvas.style.position = 'fixed'
+    canvas.style.top = '0'
+    canvas.style.left = '0'
+    canvas.style.width = `${width}px`
+    canvas.style.height = `${width * canvas.height / canvas.width}px`
     canvas.style.maxWidth = 'none'
     canvas.style.maxHeight = 'none'
-  })
+  }, zoom / 100)
 }
 
 test.describe('composition visual baselines', () => {
@@ -24,9 +33,9 @@ test.describe('composition visual baselines', () => {
         await page.goto(`/app?benchmark=${fixture}`)
         const canvas = page.getByLabel('Composition canvas')
         await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
-        await stabilizeCanvasPresentation(page)
 
         await setZoom(page, zoom)
+        await stabilizeCanvasPresentation(page, zoom)
 
         await expect(canvas).toHaveScreenshot(`${fixture}-${zoom}.png`, {
           animations: 'disabled',
@@ -43,8 +52,8 @@ test.describe('composition visual baselines', () => {
         const canvas = page.getByLabel('Composition canvas')
         await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
         await expect(canvas).toHaveAttribute('data-renderer', 'canvas2d')
-        await stabilizeCanvasPresentation(page)
         await setZoom(page, zoom)
+        await stabilizeCanvasPresentation(page, zoom)
         await expect(canvas).toHaveScreenshot(`${fixture}-canvas2d-${zoom}.png`, {
           animations: 'disabled',
           maxDiffPixelRatio: 0.001,
