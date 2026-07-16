@@ -17,6 +17,7 @@ type MenuBarProps = {
   onUndo: () => void
   onRedo: () => void
   onTransformAgain: () => void
+  onContentAwareFill: () => void
   onRotateCanvas: (direction: 'cw' | 'ccw') => void
   onFlipCanvas: (axis: 'x' | 'y') => void
   onNewLayer: () => void
@@ -53,6 +54,7 @@ type MenuBarProps = {
   canUndo: boolean
   canRedo: boolean
   canTransformAgain: boolean
+  canContentAwareFill: boolean
   hasLayerSelection: boolean
   canRasterize: boolean
   canConvertToSmartObject: boolean
@@ -164,6 +166,8 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem shortcut="⇧⌘Z" disabled={!props.canRedo} onSelect={() => select(props.onRedo)}>Redo</MenuItem>
         <Separator />
         <MenuItem shortcut="⇧⌘T" disabled={!props.canTransformAgain} onSelect={() => select(props.onTransformAgain)}>Transform Again</MenuItem>
+        <Separator />
+        <MenuItem disabled={!props.canContentAwareFill} onSelect={() => select(props.onContentAwareFill)}>Content-Aware Fill…</MenuItem>
       </>)}
 
       {menu('image', 'Image', <>

@@ -165,7 +165,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add pencil, color replacement, mixer brush, and history brush tools
 - [x] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
 - [x] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
-- [ ] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
+- [x] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
 - [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
   - [x] Add persistent local custom-swatch, two-colour gradient, and procedural-pattern libraries connected to live editor state
   - [x] Expose browser-persisted custom brush tips and fonts through the Libraries panel

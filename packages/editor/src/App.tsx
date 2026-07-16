@@ -17,9 +17,9 @@ import { useRendererCapabilities } from './editor/rendering/use-renderer-capabil
 import type { AssetMap, SourceImage } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
-import type { RasterEdit, RasterRegion } from './editor/raster'
+import { extractImageData, type RasterEdit, type RasterRegion } from './editor/raster'
 import type { DocumentChannel, DocumentPath, EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerGeometryTransform, LayerPatch, Position, ShapeKind } from './editor/types'
-import { applySelectionAlphaMask, colorRangeMask, componentChannelMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, similarSelectionMask, type ComponentChannel, type SelectionBounds, type SelectionMode, type SelectionState } from './editor/selection'
+import { applySelectionAlphaMask, colorRangeMask, componentChannelMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, selectionAlphaAt, similarSelectionMask, type ComponentChannel, type SelectionBounds, type SelectionMode, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrushes, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, removeFont, roundBrush, serializeBrushPreset, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
@@ -729,6 +729,61 @@ function App({ onExit }: AppProps) {
       setNotice(`Content-aware scaled ${layer.name} to ${output.width} × ${output.height}px.`, 'success')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Content-aware scale could not finish.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const contentAwareFillSelection = async () => {
+    const layer = document.layers.find((candidate): candidate is Extract<EditorLayer, { type: 'raster' }> => candidate.id === document.selectedLayerId && candidate.type === 'raster')
+    const surface = layer ? assets[layer.assetId]?.surface : null
+    const surfaceContext = surface?.getContext('2d', { willReadFrequently: true })
+    const canvas = canvasRef.current
+    const canvasContext = canvas?.getContext('2d')
+    const selectionContext = selection?.mask.getContext('2d', { willReadFrequently: true })
+    if (!layer || !surface || !surfaceContext || !canvas || !canvasContext || !selection?.bounds || !selectionContext || layerIsLocked(document, layer)) return
+    const bounds = getLayerBounds(canvasContext, canvas, layer, assets)
+    if (!bounds) return
+    const selectionData = selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height)
+    const input = surfaceContext.getImageData(0, 0, surface.width, surface.height)
+    const beforeFull = new ImageData(new Uint8ClampedArray(input.data), input.width, input.height)
+    const mask = new Uint8Array(surface.width * surface.height)
+    const angle = bounds.rotation * Math.PI / 180
+    const centerX = bounds.x + bounds.width / 2
+    const centerY = bounds.y + bounds.height / 2
+    let left = surface.width
+    let top = surface.height
+    let right = -1
+    let bottom = -1
+    for (let y = 0; y < surface.height; y += 1) for (let x = 0; x < surface.width; x += 1) {
+      const localX = (x / surface.width - 0.5) * bounds.width
+      const localY = (y / surface.height - 0.5) * bounds.height
+      const documentX = centerX + localX * Math.cos(angle) - localY * Math.sin(angle)
+      const documentY = centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
+      if (selectionAlphaAt(selectionData, documentX, documentY) < 0.5) continue
+      mask[y * surface.width + x] = 1
+      left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y)
+    }
+    if (right < left) { setNotice('The selection does not overlap the selected raster layer.'); return }
+    setIsLoading(true)
+    setNotice('Content-aware fill is matching local texture patches…', 'info')
+    try {
+      const worker = new Worker(new URL('./editor/workers/patch-match.worker.ts', import.meta.url), { type: 'module' })
+      const response = await new Promise<{ data?: ArrayBuffer; error?: string }>((resolve, reject) => {
+        worker.onmessage = (event) => resolve(event.data as { data?: ArrayBuffer; error?: string })
+        worker.onerror = () => reject(new Error('The local PatchMatch worker stopped unexpectedly.'))
+        worker.postMessage({ data: input.data.buffer, mask: mask.buffer, width: input.width, height: input.height }, [input.data.buffer, mask.buffer])
+      }).finally(() => worker.terminate())
+      if (response.error || !response.data) throw new Error(response.error || 'The local PatchMatch worker returned no pixels.')
+      const afterFull = new ImageData(new Uint8ClampedArray(response.data), surface.width, surface.height)
+      surfaceContext.putImageData(afterFull, 0, 0)
+      const width = right - left + 1
+      const height = bottom - top + 1
+      refreshRasterAsset(layer.assetId, { x: left, y: top, width, height })
+      commitRasterEdit({ assetId: layer.assetId, x: left, y: top, before: extractImageData(beforeFull, left, top, width, height), after: extractImageData(afterFull, left, top, width, height) })
+      setNotice(`Filled ${width} × ${height}px using local PatchMatch.`, 'success')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Content-aware fill could not finish.')
     } finally {
       setIsLoading(false)
     }
@@ -1522,6 +1577,7 @@ function App({ onExit }: AppProps) {
             onUndo={performUndo}
             onRedo={performRedo}
             onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
+            onContentAwareFill={() => void contentAwareFillSelection()}
             onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}
             onFlipCanvas={(axis) => transformCanvas(axis === 'x' ? 'flip-x' : 'flip-y')}
             onNewLayer={addEmptyLayer}
@@ -1565,6 +1621,7 @@ function App({ onExit }: AppProps) {
             canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
             canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
             canTransformAgain={Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment'))}
+            canContentAwareFill={Boolean(selection?.bounds && selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && !layerIsLocked(document, selectedLayers[0]))}
             hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
             canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
             canConvertToSmartObject={selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type)}

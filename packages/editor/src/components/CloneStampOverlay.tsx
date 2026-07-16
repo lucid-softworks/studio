@@ -68,6 +68,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       context.arc(x, y, stroke.radius, 0, Math.PI * 2)
       context.clip()
       context.globalAlpha = tool === 'healing' ? Math.min(0.72, strength / 100) : strength / 100
+      context.globalCompositeOperation = tool === 'healing' ? 'luminosity' : 'source-over'
       context.translate(x, y)
       context.rotate(sourceRotation * Math.PI / 180)
       context.scale(sourceScale / 100, sourceScale / 100)
