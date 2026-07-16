@@ -40,7 +40,7 @@ import { normalizeShortcutMap, type ShortcutMap } from './editor/shortcuts'
 import { actionConditionMatches, type ActionStep } from './editor/actions'
 import { ScriptSandboxDialog } from './components/ScriptSandboxDialog'
 import { PluginManagerDialog } from './components/PluginManagerDialog'
-import { applyColorMatrix, normalizePlugins, type PluginFilterHook, type StudioPlugin } from './editor/plugins'
+import { normalizePlugins, type PluginFilterHook, type StudioPlugin } from './editor/plugins'
 import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
 import { ContextualHelpDialog } from './components/ContextualHelpDialog'
 import { createDiagnosticReport, installDiagnosticListeners } from './editor/diagnostics'
@@ -1266,17 +1266,35 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
 
   const resetFilters = () => applyFilter(defaultLayerFilters)
 
-  const applyPluginFilter = (filter: PluginFilterHook) => {
+  const applyPluginFilter = async (filter: PluginFilterHook) => {
     const layer = selectedLayers.length === 1 && selectedLayers[0].type === 'raster' ? selectedLayers[0] : null
     const surface = layer ? assets[layer.assetId]?.surface : null
     const context = surface?.getContext('2d', { willReadFrequently: true })
     if (!layer || !surface || !context || layerIsLocked(document, layer)) return
-    const before = context.getImageData(0, 0, surface.width, surface.height)
-    const after = new ImageData(applyColorMatrix(before.data, filter.matrix), before.width, before.height)
-    context.putImageData(after, 0, 0)
-    refreshRasterAsset(layer.assetId, { x: 0, y: 0, width: surface.width, height: surface.height })
-    commitRasterEdit({ assetId: layer.assetId, x: 0, y: 0, before, after })
-    setNotice(`Applied ${filter.label} from a local plugin.`, 'success')
+    setIsLoading(true)
+    setNotice(`Applying ${filter.label} in a local worker… Press Escape to cancel.`, 'info')
+    try {
+      const input = context.getImageData(0, 0, surface.width, surface.height)
+      const worker = new Worker(new URL('./editor/workers/color-matrix.worker.ts', import.meta.url), { type: 'module' })
+      const response = await runWorkerJob<{ before?: ArrayBuffer; after?: ArrayBuffer; error?: string }>(
+        filter.label,
+        worker,
+        { data: input.data.buffer, width: input.width, height: input.height, matrix: filter.matrix },
+        [input.data.buffer],
+      )
+      if (response.error || !response.before || !response.after) throw new Error(response.error || 'The plugin filter returned no pixels.')
+      const before = new ImageData(new Uint8ClampedArray(response.before), surface.width, surface.height)
+      const after = new ImageData(new Uint8ClampedArray(response.after), surface.width, surface.height)
+      context.putImageData(after, 0, 0)
+      refreshRasterAsset(layer.assetId, { x: 0, y: 0, width: surface.width, height: surface.height })
+      commitRasterEdit({ assetId: layer.assetId, x: 0, y: 0, before, after })
+      setNotice(`Applied ${filter.label} from a local plugin.`, 'success')
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      setNotice(error instanceof Error ? error.message : `${filter.label} could not finish.`)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const deleteSelection = () => {

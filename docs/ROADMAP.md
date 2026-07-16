@@ -34,9 +34,9 @@ A feature is complete only when it has:
 
 - [ ] Extend path and warp interaction coverage from representative anchors, pins, Shift constraints, Alt handle conversion, deletion, and Escape cancellation to exhaustive multi-anchor, linked/unlinked-handle, and every-grid-point cases.
 - [ ] Extend tiled dirty-region regression coverage across every retouch mode and transformed/masked targets; Current & Below sampling now renders and caches only touched 256px source tiles.
-- [ ] Replace remaining whole-surface raster operations (notably plugin color matrices, ICC conversion, and full-layer filters) with sparse tiles or explicitly bounded jobs; selected-pixel clearing and content-aware-fill scanning, result transfer, commits, and history are now selection-bounded.
+- [ ] Replace remaining whole-surface raster operations (notably ICC conversion and full-layer filters) with sparse tiles or explicitly bounded jobs; selected-pixel clearing and content-aware-fill scanning, result transfer, commits, and history are selection-bounded, while plugin color matrices run off-thread against their explicit layer bounds.
 - [ ] Replace ag-psd's remaining contiguous PSD/PSB writer buffer with a segmented or seekable worker writer; browser file-handle saves and Studio project serialization now stream incrementally.
-- [ ] Make the remaining long filters, imports, exports, and batch jobs cancelable without corrupting document state; raster fill/selection workers, content-aware fill, and content-aware scale now discard cancelled results deterministically.
+- [ ] Make the remaining long filters, imports, exports, and batch jobs cancelable without corrupting document state; raster fill/selection workers, plugin color matrices, content-aware fill, and content-aware scale now discard cancelled results deterministically.
 - [ ] Meet the interaction budgets defined by the performance fixtures on supported browsers.
 
 ## P2 — PSD/PSB fidelity and round-trip confidence
