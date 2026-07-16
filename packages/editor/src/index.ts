@@ -1,3 +1,7 @@
 export { default as StudioEditor } from './App'
 export { EditorErrorBoundary } from './components/EditorErrorBoundary'
 export type { EditorDocument, EditorLayer, LayerGroup } from './editor/types'
+export { createPerformanceFixture, performanceFixtureIds } from './editor/performance-fixtures'
+export type { PerformanceFixtureId } from './editor/performance-fixtures'
+export { EditorPerformanceMetrics } from './editor/performance-metrics'
+export type { PerformanceSnapshot } from './editor/performance-metrics'

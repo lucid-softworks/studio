@@ -48,17 +48,18 @@ import { AnimationTimeline } from './components/AnimationTimeline'
 import { ExportWorkspace, type AssetExportSettings } from './components/ExportWorkspace'
 import { PrintDialog } from './components/PrintDialog'
 import { desktopBridge, nativeFile, type DesktopNativeFile } from './editor/desktop'
+import type { EditorPerformanceMetrics } from './editor/performance-metrics'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
-type AppProps = { onExit?: () => void }
+type AppProps = { onExit?: () => void; initialState?: HistoryState['present']; performanceMetrics?: EditorPerformanceMetrics }
 type DocumentTab = { id: string; name: string; history: HistoryState; assets: AssetMap }
 
-function App({ onExit }: AppProps) {
-  const [history, historyDispatch] = useReducer(historyReducer, initialHistoryState)
+function App({ onExit, initialState, performanceMetrics }: AppProps) {
+  const [history, historyDispatch] = useReducer(historyReducer, initialState, (document) => document ? { ...structuredClone(initialHistoryState), present: structuredClone(document) } : structuredClone(initialHistoryState))
   const initialTabId = useRef<string>(createId()).current
-  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [{ id: initialTabId, name: 'Untitled', history: structuredClone(initialHistoryState), assets: {} }])
+  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [{ id: initialTabId, name: initialState ? 'Performance fixture' : 'Untitled', history: structuredClone(history), assets: {} }])
   const documentTabsRef = useRef(documentTabs)
   const [activeTabId, setActiveTabId] = useState<string>(initialTabId)
   const [layerTransferTarget, setLayerTransferTarget] = useState('')
@@ -66,7 +67,7 @@ function App({ onExit }: AppProps) {
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [selectionWorkspaceSource, setSelectionWorkspaceSource] = useState<SelectionState | null>(null)
   const [assets, setAssets] = useState<AssetMap>({})
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(!initialState)
   const [isExporting, setIsExporting] = useState(false)
   const [notice, setNoticeState] = useState<ToastMessage | null>(null)
   const setNotice = useCallback((message: string | null, tone: ToastTone = 'error') => setNoticeState(message ? { message, tone } : null), [])
@@ -152,7 +153,7 @@ function App({ onExit }: AppProps) {
   const patternInputRef = useRef<HTMLInputElement>(null)
   const profileInputRef = useRef<HTMLInputElement>(null)
   const profileActionRef = useRef<'assign' | 'convert' | 'proof'>('assign')
-  const hydratedRef = useRef(false)
+  const hydratedRef = useRef(Boolean(initialState))
   const rasterUndoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const assetsRef = useRef(assets)
@@ -201,7 +202,39 @@ function App({ onExit }: AppProps) {
 
   assetsRef.current = assets
   documentTabsRef.current = documentTabs
-  useCanvasRenderer(canvasRef, renderDocument, assets, resourceRevision, rendererCapabilities.activeRenderer)
+  useCanvasRenderer(canvasRef, renderDocument, assets, resourceRevision, rendererCapabilities.activeRenderer, performanceMetrics)
+
+  useEffect(() => {
+    if (!performanceMetrics) return
+    const pointer = (event: PointerEvent) => performanceMetrics.recordPointer(event.timeStamp)
+    let frame = 0
+    const recordFrame = (timestamp: number) => {
+      performanceMetrics.recordFrame(timestamp)
+      frame = window.requestAnimationFrame(recordFrame)
+    }
+    const memory = window.setInterval(() => {
+      const runtime = performance as Performance & { memory?: { usedJSHeapSize?: number } }
+      performanceMetrics.recordMemory(runtime.memory?.usedJSHeapSize)
+    }, 250)
+    window.addEventListener('pointermove', pointer, true)
+    frame = window.requestAnimationFrame(recordFrame)
+    return () => {
+      window.removeEventListener('pointermove', pointer, true)
+      window.cancelAnimationFrame(frame)
+      window.clearInterval(memory)
+    }
+  }, [performanceMetrics])
+
+  const saveMetricStopRef = useRef<(() => void) | null>(null)
+  const exportMetricStopRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (isProjectSaving && !saveMetricStopRef.current) saveMetricStopRef.current = performanceMetrics?.start('save') ?? null
+    else if (!isProjectSaving && saveMetricStopRef.current) { saveMetricStopRef.current(); saveMetricStopRef.current = null }
+  }, [isProjectSaving, performanceMetrics])
+  useEffect(() => {
+    if (isExporting && !exportMetricStopRef.current) exportMetricStopRef.current = performanceMetrics?.start('export') ?? null
+    else if (!isExporting && exportMetricStopRef.current) { exportMetricStopRef.current(); exportMetricStopRef.current = null }
+  }, [isExporting, performanceMetrics])
 
   useEffect(() => {
     if (document.bitDepth === 8) return
@@ -269,6 +302,7 @@ function App({ onExit }: AppProps) {
   }, [notice])
 
   useEffect(() => {
+    if (initialState) return
     let cancelled = false
     Promise.all([loadFontLibrary(), loadBrushLibrary()]).then(([fonts, brushes]) => {
       if (cancelled) return
@@ -279,7 +313,7 @@ function App({ onExit }: AppProps) {
       if (!cancelled) setNotice('The local font and brush library could not be restored.')
     })
     return () => { cancelled = true }
-  }, [setNotice])
+  }, [initialState, setNotice])
 
   const loadFontFile = useCallback(async (file: File) => {
     try {
@@ -443,7 +477,7 @@ function App({ onExit }: AppProps) {
   }, [setNotice])
 
   useEffect(() => {
-    if (!hydratedRef.current || isLoading) return
+    if (initialState || !hydratedRef.current || isLoading) return
     setSaveStatus('saving')
     const timer = window.setTimeout(() => {
       saveRecoveryProject(document, assets)
@@ -451,7 +485,7 @@ function App({ onExit }: AppProps) {
         .catch(() => setSaveStatus('idle'))
     }, 700)
     return () => window.clearTimeout(timer)
-  }, [assets, document, isLoading])
+  }, [assets, document, initialState, isLoading])
 
   useEffect(() => {
     const desktop = desktopBridge()

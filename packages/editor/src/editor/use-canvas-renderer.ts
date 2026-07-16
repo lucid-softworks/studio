@@ -4,6 +4,7 @@ import { getTypeGpuRoot } from './rendering/typegpu-runtime'
 import { supportsWorkerComposition, type WorkerCompositionRequest, type WorkerCompositionResponse } from './rendering/worker-composition'
 import type { AssetMap } from './runtime-assets'
 import type { EditorDocument } from './types'
+import type { EditorPerformanceMetrics } from './performance-metrics'
 
 export function useCanvasRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
@@ -11,19 +12,26 @@ export function useCanvasRenderer(
   assets: AssetMap,
   resourceRevision = 0,
   activeRenderer: 'canvas2d' | 'webgpu' = 'canvas2d',
+  performanceMetrics?: EditorPerformanceMetrics,
 ) {
   const typegpuRenderer = useRef<{ root: NonNullable<ReturnType<typeof getTypeGpuRoot>>; renderer: CompositionRenderer } | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const workerFailedRef = useRef(false)
   const renderSuspendedRef = useRef(false)
   const requestRef = useRef(0)
+  const renderStartedRef = useRef(new Map<number, number>())
   const latestFrameRef = useRef({ document, assets })
   latestFrameRef.current = { document, assets }
 
-  const markRendered = (canvas: HTMLCanvasElement, requestId: number) => {
+  const markRendered = useCallback((canvas: HTMLCanvasElement, requestId: number) => {
+    const startedAt = renderStartedRef.current.get(requestId)
+    if (startedAt !== undefined) {
+      performanceMetrics?.recordRender(performance.now() - startedAt)
+      renderStartedRef.current.delete(requestId)
+    } else performanceMetrics?.recordRender()
     canvas.dataset.renderRevision = String(requestId)
     canvas.dispatchEvent(new CustomEvent('studio:canvas-rendered', { detail: { requestId } }))
-  }
+  }, [performanceMetrics])
 
   const workerRenderer = useCallback(() => {
     if (workerRef.current || workerFailedRef.current) return workerRef.current
@@ -31,6 +39,7 @@ export function useCanvasRenderer(
     worker.onmessage = (event: MessageEvent<WorkerCompositionResponse>) => {
       const response = event.data
       if (response.id !== requestRef.current || renderSuspendedRef.current) {
+        renderStartedRef.current.delete(response.id)
         response.frame.close()
         return
       }
@@ -59,7 +68,7 @@ export function useCanvasRenderer(
     }
     workerRef.current = worker
     return worker
-  }, [canvasRef])
+  }, [canvasRef, markRendered])
 
   useEffect(() => () => {
     typegpuRenderer.current?.renderer.dispose()
@@ -74,6 +83,7 @@ export function useCanvasRenderer(
     const suspend = () => {
       renderSuspendedRef.current = true
       requestRef.current += 1
+      renderStartedRef.current.clear()
     }
     const resume = () => { renderSuspendedRef.current = false }
     canvas.addEventListener('studio:transform-preview-start', suspend)
@@ -87,6 +97,7 @@ export function useCanvasRenderer(
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const renderStarts = renderStartedRef.current
     const root = activeRenderer === 'webgpu' ? getTypeGpuRoot() : null
     if (root && typegpuRenderer.current?.root !== root) {
       typegpuRenderer.current?.renderer.dispose()
@@ -95,6 +106,7 @@ export function useCanvasRenderer(
     const renderer = root ? typegpuRenderer.current?.renderer ?? canvas2dCompositionRenderer : canvas2dCompositionRenderer
     const requestId = requestRef.current + 1
     requestRef.current = requestId
+    renderStarts.set(requestId, performance.now())
     let cancelled = false
     const frame = requestAnimationFrame(() => {
       if (cancelled || requestId !== requestRef.current || renderSuspendedRef.current) return
@@ -134,7 +146,8 @@ export function useCanvasRenderer(
     })
     return () => {
       cancelled = true
+      renderStarts.delete(requestId)
       cancelAnimationFrame(frame)
     }
-  }, [activeRenderer, assets, canvasRef, document, resourceRevision, workerRenderer])
+  }, [activeRenderer, assets, canvasRef, document, markRendered, performanceMetrics, resourceRevision, workerRenderer])
 }

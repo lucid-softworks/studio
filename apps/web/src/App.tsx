@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
-import { EditorErrorBoundary, StudioEditor } from '@studio/editor'
+import { useEffect, useMemo, useState } from 'react'
+import { createPerformanceFixture, EditorErrorBoundary, EditorPerformanceMetrics, performanceFixtureIds, StudioEditor, type PerformanceSnapshot } from '@studio/editor'
 import { LandingPage } from './LandingPage'
+
+declare global {
+  interface Window {
+    __studioPerformance?: { fixture: string; snapshot: () => PerformanceSnapshot }
+  }
+}
 
 function editorRoute() {
   return window.location.pathname === '/app' || window.location.hash === '#/app'
@@ -8,6 +14,18 @@ function editorRoute() {
 
 export default function App() {
   const [isEditor, setIsEditor] = useState(editorRoute)
+  const benchmark = useMemo(() => {
+    if (!import.meta.env.DEV) return null
+    const id = new URLSearchParams(window.location.search).get('benchmark')
+    return id && performanceFixtureIds.includes(id as (typeof performanceFixtureIds)[number]) ? createPerformanceFixture(id as (typeof performanceFixtureIds)[number]) : null
+  }, [])
+  const performanceMetrics = useMemo(() => benchmark ? new EditorPerformanceMetrics() : undefined, [benchmark])
+
+  useEffect(() => {
+    if (!benchmark || !performanceMetrics) return
+    window.__studioPerformance = { fixture: benchmark.id, snapshot: () => performanceMetrics.snapshot() }
+    return () => { delete window.__studioPerformance }
+  }, [benchmark, performanceMetrics])
 
   useEffect(() => {
     const syncRoute = () => setIsEditor(editorRoute())
@@ -32,6 +50,6 @@ export default function App() {
   }
 
   return isEditor
-    ? <EditorErrorBoundary onExit={() => navigate('home')}><StudioEditor onExit={() => navigate('home')} /></EditorErrorBoundary>
+    ? <EditorErrorBoundary onExit={() => navigate('home')}><StudioEditor onExit={() => navigate('home')} initialState={benchmark?.document} performanceMetrics={performanceMetrics} /></EditorErrorBoundary>
     : <LandingPage onOpenEditor={() => navigate('editor')} />
 }
