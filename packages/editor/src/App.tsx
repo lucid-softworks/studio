@@ -59,6 +59,22 @@ type AppProps = { onExit?: () => void; initialState?: HistoryState['present']; p
 type DocumentTab = { id: string; name: string; history: HistoryState; assets: AssetMap }
 type ActiveWorkerJob = { label: string; cancel: () => void }
 
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number | undefined, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  return new Promise<Blob>((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', cancel)
+      callback()
+    }
+    const cancel = () => finish(() => reject(signal?.reason instanceof Error ? signal.reason : new DOMException('Image encoding was cancelled.', 'AbortError')))
+    signal?.addEventListener('abort', cancel, { once: true })
+    canvas.toBlob((blob) => finish(() => blob ? resolve(blob) : reject(new Error('The browser image encoder returned no file.'))), type, quality)
+  })
+}
+
 function App({ onExit, initialState, performanceMetrics }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialState, (document) => document ? { ...structuredClone(initialHistoryState), present: structuredClone(document) } : structuredClone(initialHistoryState))
   const initialTabId = useRef<string>(createId()).current
@@ -1251,16 +1267,21 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     const layer = selectedLayers.length === 1 ? selectedLayers[0] : null
     if (!layer || layer.type !== 'smart-object') return
     try {
-      if (layer.embeddedDocument) {
-        const json = await serializeProject(layer.embeddedDocument, assets)
-        downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), layer.source.fileName.replace(/\.[^.]+$/, '') + '.studio')
-        return
-      }
-      const source = assets[layer.assetId]
-      const blob = source?.blob ?? (source?.surface ? await surfaceToBlob(source.surface) : undefined)
-      if (!blob) throw new Error('This smart object does not have exportable local contents.')
-      downloadBlob(blob, layer.source.fileName)
+      await runCancelableJob('Smart object export', async (signal) => {
+        if (layer.embeddedDocument) {
+          const json = await serializeProject(layer.embeddedDocument, assets, signal)
+          signal.throwIfAborted()
+          downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), layer.source.fileName.replace(/\.[^.]+$/, '') + '.studio')
+          return
+        }
+        const source = assets[layer.assetId]
+        const blob = source?.blob ?? (source?.surface ? await surfaceToBlob(source.surface) : undefined)
+        signal.throwIfAborted()
+        if (!blob) throw new Error('This smart object does not have exportable local contents.')
+        downloadBlob(blob, layer.source.fileName)
+      })
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The smart-object contents could not be exported.')
     }
   }
@@ -1601,37 +1622,41 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       }
       return
     }
-    const mime = `image/${format}`
-    exportCanvas.toBlob((blob) => {
-      if (!blob) {
-        setNotice(`The ${format.toUpperCase()} could not be created.`)
-        setIsExporting(false)
-        return
-      }
-      import('./editor/metadata').then(({ applyImageMetadata }) => applyImageMetadata(blob, format, document.fileMetadata ?? {})).then((tagged) => {
+    try {
+      await runCancelableJob(`${format.toUpperCase()} export`, async (signal) => {
+        const blob = await canvasBlob(exportCanvas, `image/${format}`, format === 'png' ? undefined : 0.92, signal)
+        const { applyImageMetadata } = await import('./editor/metadata')
+        const tagged = await applyImageMetadata(blob, format, document.fileMetadata ?? {})
+        signal.throwIfAborted()
         downloadBlob(tagged, `studio-composition.${format === 'jpeg' ? 'jpg' : format}`)
-      }).catch((error) => setNotice(error instanceof Error ? error.message : 'Image metadata could not be written.')).finally(() => setIsExporting(false))
-    }, mime, format === 'png' ? undefined : 0.92)
+      })
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) setNotice(error instanceof Error ? error.message : 'Image metadata could not be written.')
+    } finally { setIsExporting(false) }
   }
 
   const exportArtboards = async () => {
     if (!document.artboards?.length) return
     setIsExporting(true)
     try {
-      const composition = window.document.createElement('canvas')
-      canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
-      for (const [index, artboard] of document.artboards.entries()) {
-        const output = window.document.createElement('canvas')
-        output.width = Math.max(1, Math.round(artboard.width))
-        output.height = Math.max(1, Math.round(artboard.height))
-        output.getContext('2d')?.drawImage(composition, artboard.x, artboard.y, artboard.width, artboard.height, 0, 0, output.width, output.height)
-        const blob = await new Promise<Blob | null>((resolve) => output.toBlob(resolve, 'image/png'))
-        if (!blob) throw new Error(`Could not render ${artboard.name}.`)
-        const name = artboard.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `artboard-${index + 1}`
-        downloadBlob(blob, `${name}.png`)
-      }
+      await runCancelableJob('Artboard export', async (signal) => {
+        const composition = window.document.createElement('canvas')
+        canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
+        for (const [index, artboard] of document.artboards!.entries()) {
+          signal.throwIfAborted()
+          const output = window.document.createElement('canvas')
+          output.width = Math.max(1, Math.round(artboard.width))
+          output.height = Math.max(1, Math.round(artboard.height))
+          output.getContext('2d')?.drawImage(composition, artboard.x, artboard.y, artboard.width, artboard.height, 0, 0, output.width, output.height)
+          const blob = await canvasBlob(output, 'image/png', undefined, signal)
+          const name = artboard.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `artboard-${index + 1}`
+          signal.throwIfAborted()
+          downloadBlob(blob, `${name}.png`)
+        }
+      })
       setNotice(`Exported ${document.artboards.length} artboard${document.artboards.length === 1 ? '' : 's'} locally.`, 'success')
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The artboards could not be exported.')
     } finally {
       setIsExporting(false)
@@ -1641,49 +1666,55 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
   const exportGeneratedAssets = async (settings: AssetExportSettings) => {
     setIsExporting(true)
     try {
-      const composition = window.document.createElement('canvas')
-      canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
-      const safeName = (name: string, fallback: string) => name.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback
-      const targets: Array<{ name: string; source: HTMLCanvasElement; x: number; y: number; width: number; height: number }> = []
-      if (settings.targets === 'document') targets.push({ name: 'studio-composition', source: composition, x: 0, y: 0, width: composition.width, height: composition.height })
-      else if (settings.targets === 'slices') for (const [index, slice] of (document.slices ?? []).entries()) targets.push({ name: safeName(slice.name, `slice-${index + 1}`), source: composition, x: slice.x, y: slice.y, width: slice.width, height: slice.height })
-      else if (settings.targets === 'artboards') for (const [index, artboard] of (document.artboards ?? []).entries()) targets.push({ name: safeName(artboard.name, `artboard-${index + 1}`), source: composition, x: artboard.x, y: artboard.y, width: artboard.width, height: artboard.height })
-      else {
-        const boundsContext = composition.getContext('2d')
-        if (!boundsContext) throw new Error('Layer bounds are unavailable for export.')
-        for (const [index, layer] of document.layers.filter((candidate) => candidate.visible && candidate.type !== 'adjustment').entries()) {
-          const surface = window.document.createElement('canvas')
-          canvas2dCompositionRenderer.render(surface, { ...document, background: { ...document.background, kind: 'transparent' }, layers: [layer], selectedLayerId: null, selectedLayerIds: [] }, assets)
-          const bounds = getLayerBounds(boundsContext, composition, layer, assets) ?? { x: 0, y: 0, width: composition.width, height: composition.height }
-          targets.push({ name: safeName(layer.name, `layer-${index + 1}`), source: surface, x: Math.floor(bounds.x), y: Math.floor(bounds.y), width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) })
+      const targetCount = await runCancelableJob('Asset export', async (signal) => {
+        const composition = window.document.createElement('canvas')
+        canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
+        const safeName = (name: string, fallback: string) => name.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback
+        const targets: Array<{ name: string; source: HTMLCanvasElement; x: number; y: number; width: number; height: number }> = []
+        if (settings.targets === 'document') targets.push({ name: 'studio-composition', source: composition, x: 0, y: 0, width: composition.width, height: composition.height })
+        else if (settings.targets === 'slices') for (const [index, slice] of (document.slices ?? []).entries()) targets.push({ name: safeName(slice.name, `slice-${index + 1}`), source: composition, x: slice.x, y: slice.y, width: slice.width, height: slice.height })
+        else if (settings.targets === 'artboards') for (const [index, artboard] of (document.artboards ?? []).entries()) targets.push({ name: safeName(artboard.name, `artboard-${index + 1}`), source: composition, x: artboard.x, y: artboard.y, width: artboard.width, height: artboard.height })
+        else {
+          const boundsContext = composition.getContext('2d')
+          if (!boundsContext) throw new Error('Layer bounds are unavailable for export.')
+          for (const [index, layer] of document.layers.filter((candidate) => candidate.visible && candidate.type !== 'adjustment').entries()) {
+            const surface = window.document.createElement('canvas')
+            canvas2dCompositionRenderer.render(surface, { ...document, background: { ...document.background, kind: 'transparent' }, layers: [layer], selectedLayerId: null, selectedLayerIds: [] }, assets)
+            const bounds = getLayerBounds(boundsContext, composition, layer, assets) ?? { x: 0, y: 0, width: composition.width, height: composition.height }
+            targets.push({ name: safeName(layer.name, `layer-${index + 1}`), source: surface, x: Math.floor(bounds.x), y: Math.floor(bounds.y), width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) })
+          }
         }
-      }
-      if (!targets.length) throw new Error(`There are no ${settings.targets} to export.`)
-      for (const target of targets) {
-        const outputCanvas = window.document.createElement('canvas')
-        outputCanvas.width = Math.max(1, Math.round(target.width * settings.scale))
-        outputCanvas.height = Math.max(1, Math.round(target.height * settings.scale))
-        const context = outputCanvas.getContext('2d', { willReadFrequently: true })
-        if (!context) throw new Error('Could not allocate an asset export surface.')
-        context.imageSmoothingEnabled = true
-        context.imageSmoothingQuality = 'high'
-        context.drawImage(target.source, target.x, target.y, target.width, target.height, 0, 0, outputCanvas.width, outputCanvas.height)
-        let blob: Blob
-        if (settings.format === 'avif') {
-          const frame = { name: target.name, pixels: context.getImageData(0, 0, outputCanvas.width, outputCanvas.height) }
-          const worker = new Worker(new URL('./editor/workers/raster-export.worker.ts', import.meta.url), { type: 'module' })
-          const response = await runWorkerJob<{ blob?: Blob; error?: string }>('AVIF asset export', worker, { format: 'avif', frames: [frame] }, [frame.pixels.data.buffer])
-          if (response.error || !response.blob) throw new Error(response.error || `Could not encode ${target.name}.`)
-          blob = response.blob
-        } else {
-          const mime = settings.format === 'jpeg' ? 'image/jpeg' : `image/${settings.format}`
-          blob = await new Promise<Blob>((resolve, reject) => outputCanvas.toBlob((value) => value ? resolve(value) : reject(new Error(`Could not encode ${target.name}.`)), mime, settings.format === 'png' ? undefined : settings.quality / 100))
+        if (!targets.length) throw new Error(`There are no ${settings.targets} to export.`)
+        for (const target of targets) {
+          signal.throwIfAborted()
+          const outputCanvas = window.document.createElement('canvas')
+          outputCanvas.width = Math.max(1, Math.round(target.width * settings.scale))
+          outputCanvas.height = Math.max(1, Math.round(target.height * settings.scale))
+          const context = outputCanvas.getContext('2d', { willReadFrequently: true })
+          if (!context) throw new Error('Could not allocate an asset export surface.')
+          context.imageSmoothingEnabled = true
+          context.imageSmoothingQuality = 'high'
+          context.drawImage(target.source, target.x, target.y, target.width, target.height, 0, 0, outputCanvas.width, outputCanvas.height)
+          let blob: Blob
+          if (settings.format === 'avif') {
+            const frame = { name: target.name, pixels: context.getImageData(0, 0, outputCanvas.width, outputCanvas.height) }
+            const worker = new Worker(new URL('./editor/workers/raster-export.worker.ts', import.meta.url), { type: 'module' })
+            const response = await runWorkerTask<{ blob?: Blob; error?: string }>('AVIF asset export', worker, { format: 'avif', frames: [frame] }, [frame.pixels.data.buffer], signal)
+            if (response.error || !response.blob) throw new Error(response.error || `Could not encode ${target.name}.`)
+            blob = response.blob
+          } else {
+            const mime = settings.format === 'jpeg' ? 'image/jpeg' : `image/${settings.format}`
+            blob = await canvasBlob(outputCanvas, mime, settings.format === 'png' ? undefined : settings.quality / 100, signal)
+          }
+          const extension = settings.format === 'jpeg' ? 'jpg' : settings.format
+          const { applyImageMetadata } = await import('./editor/metadata')
+          const tagged = await applyImageMetadata(blob, settings.format, document.fileMetadata ?? {}, settings.stripMetadata)
+          signal.throwIfAborted()
+          downloadBlob(tagged, `${target.name}${settings.suffix}.${extension}`)
         }
-        const extension = settings.format === 'jpeg' ? 'jpg' : settings.format
-        const { applyImageMetadata } = await import('./editor/metadata')
-        downloadBlob(await applyImageMetadata(blob, settings.format, document.fileMetadata ?? {}, settings.stripMetadata), `${target.name}${settings.suffix}.${extension}`)
-      }
-      setNotice(`Generated ${targets.length} ${settings.format.toUpperCase()} asset${targets.length === 1 ? '' : 's'} locally.`, 'success')
+        return targets.length
+      })
+      setNotice(`Generated ${targetCount} ${settings.format.toUpperCase()} asset${targetCount === 1 ? '' : 's'} locally.`, 'success')
       setExportWorkspaceOpen(false)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return

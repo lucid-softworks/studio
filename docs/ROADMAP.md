@@ -30,10 +30,6 @@ A feature is complete only when it has:
 - [ ] Expand browser coverage from tool activation, assigned shortcuts, and selection modes to functional canvas interactions and modifier-key results for every built-in tool.
 - [ ] Expand the wired 2K and 32-bit shape-composition goldens to every renderer feature, add 16-bit cases, and validate Canvas2D/TypeGPU outputs at multiple zoom levels.
 
-## P1 — interactive performance and large documents
-
-- [ ] Make the remaining long filters, imports, exports, and batch jobs cancelable without corrupting document state; raster fill/selection workers, plugin color matrices, atomic ICC conversion, content-aware fill, and content-aware scale now discard cancelled results deterministically.
-
 ## P2 — PSD/PSB fidelity and round-trip confidence
 
 - [ ] Build a broad legal corpus of real Photoshop and Photopea documents rather than relying mainly on generated fixtures.
