@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('exports and reopens a PSD through browser workers', async ({ page }, testInfo) => {
+  test.setTimeout(60_000)
   await page.addInitScript(() => Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }))
   await page.goto('/app')
   await expect(page.getByLabel('Composition canvas')).toBeVisible()

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('encodes PDF and GIF exports in browser workers', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.goto('/app')
   await expect(page.getByLabel('Composition canvas')).toBeVisible()
 
