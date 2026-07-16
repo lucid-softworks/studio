@@ -81,6 +81,29 @@ describe('artboard backgrounds', () => {
   })
 })
 
+describe('composition viewport capture', () => {
+  it('captures selected raster pixels that begin outside the document', () => {
+    const preview = createCanvas(1, 1) as unknown as HTMLCanvasElement
+    const surface = createCanvas(100, 100) as unknown as HTMLCanvasElement
+    const sourceContext = surface.getContext('2d')!
+    sourceContext.fillStyle = '#ff3b81'
+    sourceContext.fillRect(0, 0, 100, 100)
+    const layer = createRasterLayer('paint', 'Paint', 100, 100)
+    layer.position.x = -0.25
+    renderComposition(preview, {
+      ...initialDocument,
+      canvasPreset: 'custom',
+      canvasSize: { width: 100, height: 100 },
+      background: { ...initialDocument.background, kind: 'transparent' },
+      layers: [layer],
+    }, {
+      paint: { element: surface as unknown as HTMLImageElement, name: 'Paint', surface, contentBounds: { x: 0, y: 0, width: 100, height: 100 } },
+    }, { viewport: { x: -25, y: 0, width: 100, height: 100 } })
+    expect([preview.width, preview.height]).toEqual([100, 100])
+    expect([...preview.getContext('2d')!.getImageData(5, 50, 1, 1).data]).toEqual([255, 59, 129, 255])
+  })
+})
+
 describe('advanced masks', () => {
   it('renders compound vector masks with density and Blend If thresholds', () => {
     const path = (left: number, right: number) => ({

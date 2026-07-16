@@ -36,6 +36,7 @@ const handles: Array<{ id: ResizeHandle; x: number; y: number; cursor: string }>
 export function TransformOverlay({ canvasRef, document, assets, dispatch, endHistoryGroup, enabled = true }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
+  const previewViewportRef = useRef({ x: 0, y: 0, width: 1, height: 1 })
   const movingSelectionRef = useRef<SVGGElement>(null)
   const xGuideRef = useRef<SVGLineElement>(null)
   const yGuideRef = useRef<SVGLineElement>(null)
@@ -113,7 +114,29 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       selectedLayerIds: [],
       selectedGroupId: null,
     }
-    canvas2dCompositionRenderer.render(preview, previewDocument, assets)
+    const captureBounds = document.layers.filter((layer) => ids.has(layer.id)).flatMap((layer) => {
+      const bounds = context ? getLayerBounds(context, canvas, layer, assets) : null
+      if (!bounds) return []
+      const angle = bounds.rotation * Math.PI / 180
+      const width = Math.abs(bounds.width * Math.cos(angle)) + Math.abs(bounds.height * Math.sin(angle))
+      const height = Math.abs(bounds.width * Math.sin(angle)) + Math.abs(bounds.height * Math.cos(angle))
+      const centerX = bounds.x + bounds.width / 2
+      const centerY = bounds.y + bounds.height / 2
+      return [{ left: centerX - width / 2, top: centerY - height / 2, right: centerX + width / 2, bottom: centerY + height / 2 }]
+    })
+    const left = Math.floor(Math.min(...captureBounds.map((bounds) => bounds.left)))
+    const top = Math.floor(Math.min(...captureBounds.map((bounds) => bounds.top)))
+    const right = Math.ceil(Math.max(...captureBounds.map((bounds) => bounds.right)))
+    const bottom = Math.ceil(Math.max(...captureBounds.map((bounds) => bounds.bottom)))
+    const viewport = captureBounds.length
+      ? { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+      : { x: 0, y: 0, width: canvas.width, height: canvas.height }
+    previewViewportRef.current = viewport
+    canvas2dCompositionRenderer.render(preview, previewDocument, assets, { viewport })
+    preview.style.left = `${viewport.x / canvas.width * 100}%`
+    preview.style.top = `${viewport.y / canvas.height * 100}%`
+    preview.style.width = `${viewport.width / canvas.width * 100}%`
+    preview.style.height = `${viewport.height / canvas.height * 100}%`
     preview.style.display = 'block'
     preview.style.transform = 'translate3d(0, 0, 0)'
     canvas2dCompositionRenderer.render(canvas, baseDocument, assets)
@@ -127,12 +150,13 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const dy = toCenter.y - fromCenter.y
     const scaleX = to.width / Math.max(0.0001, from.width)
     const scaleY = to.height / Math.max(0.0001, from.height)
+    const viewport = previewViewportRef.current
     const transform = rotationDelta
-      ? `translate(${dx / canvas.width * 100}%, ${dy / canvas.height * 100}%) rotate(${rotationDelta}deg)`
-      : `translate(${dx / canvas.width * 100}%, ${dy / canvas.height * 100}%) rotate(${axisRotation}deg) scale(${scaleX}, ${scaleY}) rotate(${-axisRotation}deg)`
+      ? `translate(${dx / viewport.width * 100}%, ${dy / viewport.height * 100}%) rotate(${rotationDelta}deg)`
+      : `translate(${dx / viewport.width * 100}%, ${dy / viewport.height * 100}%) rotate(${axisRotation}deg) scale(${scaleX}, ${scaleY}) rotate(${-axisRotation}deg)`
     const preview = previewCanvasRef.current
     if (preview) {
-      preview.style.transformOrigin = `${fromCenter.x / canvas.width * 100}% ${fromCenter.y / canvas.height * 100}%`
+      preview.style.transformOrigin = `${(fromCenter.x - viewport.x) / viewport.width * 100}% ${(fromCenter.y - viewport.y) / viewport.height * 100}%`
       preview.style.transform = transform
     }
     const group = movingSelectionRef.current
@@ -150,7 +174,17 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const cleanup = () => {
       canvas.removeEventListener('studio:canvas-rendered', rendered)
       window.clearTimeout(timeout)
-      if (preview) { preview.style.display = 'none'; preview.style.transform = 'none'; preview.width = 1; preview.height = 1 }
+      if (preview) {
+        preview.style.display = 'none'
+        preview.style.transform = 'none'
+        preview.style.transformOrigin = 'center'
+        preview.style.left = '0'
+        preview.style.top = '0'
+        preview.style.width = '1px'
+        preview.style.height = '1px'
+        preview.width = 1
+        preview.height = 1
+      }
       if (movingSelectionRef.current) movingSelectionRef.current.removeAttribute('transform')
       previewCleanupRef.current = null
     }
@@ -258,7 +292,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       }
       interaction.lastDx = pixelDx
       interaction.lastDy = pixelDy
-      const transform = `translate(${pixelDx / canvas.width * 100}% , ${pixelDy / canvas.height * 100}%)`
+      const viewport = previewViewportRef.current
+      const transform = `translate(${pixelDx / viewport.width * 100}% , ${pixelDy / viewport.height * 100}%)`
       if (previewCanvasRef.current) previewCanvasRef.current.style.transform = transform
       movingSelectionRef.current?.setAttribute('transform', `translate(${pixelDx} ${pixelDy})`)
     } else if (interaction.mode === 'resize') {
@@ -336,7 +371,9 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
 
   return (
     <Fragment>
-    <canvas ref={previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full will-change-transform" />
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      <canvas ref={previewCanvasRef} className="absolute hidden will-change-transform" />
+    </div>
     <svg
       ref={svgRef}
       aria-label="Transform overlay"

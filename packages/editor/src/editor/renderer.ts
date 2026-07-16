@@ -17,7 +17,11 @@ import { patternBitmapCanvas } from './patterns'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
-export type RenderCompositionOptions = { showSelection?: boolean }
+export type RenderCompositionOptions = {
+  showSelection?: boolean
+  /** Capture a document-space region without clipping layers to the document edges. */
+  viewport?: { x: number; y: number; width: number; height: number }
+}
 export type NativeTextureLayerPass = {
   kind: 'layer'
   source: HTMLCanvasElement
@@ -1901,18 +1905,27 @@ export function renderComposition(
   resources = new RenderResourceRegistry(),
 ) {
   const preset = getDocumentSize(document)
-  if (canvas.width !== preset.width) canvas.width = preset.width
-  if (canvas.height !== preset.height) canvas.height = preset.height
+  const viewport = options.viewport
+  const outputWidth = viewport ? Math.max(1, Math.ceil(viewport.width)) : preset.width
+  const outputHeight = viewport ? Math.max(1, Math.ceil(viewport.height)) : preset.height
+  if (canvas.width !== outputWidth) canvas.width = outputWidth
+  if (canvas.height !== outputHeight) canvas.height = outputHeight
   const context = canvas.getContext('2d')
   if (!context) return
+  const layoutCanvas = viewport ? {
+    width: preset.width,
+    height: preset.height,
+    getContext: () => context,
+  } as unknown as HTMLCanvasElement : canvas
 
   context.clearRect(0, 0, canvas.width, canvas.height)
+  context.save()
+  if (viewport) context.translate(-viewport.x, -viewport.y)
   resources.prune('canvas2d', new Set(Object.keys(assets)))
-  drawBackground(context, canvas.width, canvas.height, document, assets, resources)
-  drawPattern(context, canvas.width, canvas.height, document)
+  drawBackground(context, preset.width, preset.height, document, assets, resources)
+  drawPattern(context, preset.width, preset.height, document)
 
-  drawRenderPlan(context, canvas, document, assets, resources, buildCompositionRenderPlan(document).nodes)
-  applyDocumentColorOutput(context, canvas, document)
+  drawRenderPlan(context, layoutCanvas, document, assets, resources, buildCompositionRenderPlan(document).nodes)
 
   if (document.artboards?.length) {
     context.save()
@@ -1926,8 +1939,10 @@ export function renderComposition(
 
   if (options.showSelection && document.selectedLayerId) {
     const selected = document.layers.find((layer) => layer.id === document.selectedLayerId)
-    if (selected?.visible) drawSelection(context, canvas, selected, assets)
+    if (selected?.visible) drawSelection(context, layoutCanvas, selected, assets)
   }
+  context.restore()
+  applyDocumentColorOutput(context, canvas, document)
 }
 
 export function renderNativeLayerPasses(
