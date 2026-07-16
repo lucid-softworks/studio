@@ -19,6 +19,9 @@ describe('Photopea parity registry', () => {
     ]
     expect(assessments.length).toBeGreaterThan(80)
     expect(assessments.every((assessment) => assessment.gap.trim().length >= 12)).toBe(true)
+    expect(assessments.every((assessment) => assessment.concerns.length > 0)).toBe(true)
+    const concerns = new Set(assessments.flatMap((assessment) => assessment.concerns))
+    expect(concerns).toEqual(new Set(['missing', 'partial', 'visually-inaccurate', 'round-trip-incompatible', 'too-slow']))
   })
 
   it('uses stable unique identifiers for missing capabilities', () => {

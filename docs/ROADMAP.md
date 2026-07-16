@@ -26,9 +26,8 @@ A feature is complete only when it has:
 
 ## P0 — parity audit and performance baseline
 
-- [ ] Build a living Photopea → Studio capability matrix covering every menu command, tool, panel, layer type, filter, adjustment, format, preset, and shortcut.
-- [ ] Classify each capability as missing, partial, visually inaccurate, incompatible on round-trip, too slow, or parity-validated.
-- [ ] Add browser-driven interaction tests for every built-in tool and its modifier-key variants.
+- [ ] Expand the living Photopea → Studio matrix from the current typed family inventory to every individual menu command, layer type, format operation, preset operation, and shortcut.
+- [ ] Expand browser coverage from tool activation, assigned shortcuts, and selection modes to functional canvas interactions and modifier-key results for every built-in tool.
 - [ ] Add visual golden tests for every renderer feature at multiple zoom levels and document precisions.
 - [ ] Create standard performance fixtures for 2K, 4K, 8K, deeply layered, high-bit-depth, and animation documents.
 - [ ] Track pointer latency, dropped frames, render count, memory, save time, and export time in repeatable benchmarks.

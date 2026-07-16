@@ -26,6 +26,8 @@ Photopea references:
 
 No capability should move to **Parity validated** without linking to its interaction, visual, persistence, and compatibility evidence.
 
+Typed assessments also carry one or more searchable concerns: `missing`, `partial`, `visually-inaccurate`, `round-trip-incompatible`, `too-slow`, `parity-validated`, or `excluded`. A workflow status describes delivery state; concerns describe why it has not reached parity.
+
 ## Menus and commands
 
 | Photopea area | Studio coverage | Status | Principal remaining gap |
