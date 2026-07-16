@@ -1,0 +1,320 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index b397a0d4d0a04de26b9e1eda4558acf094b7af9b..94b5cbdff4adfc203210af776beaaa11d2bf8e63 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -17,4 +17,5 @@ export { decodeLayerPixels, getLayerImageData, getLayerMaskImageData, getLayerRe
+ export declare function readPsd(buffer: ArrayBuffer | BufferLike, options?: ReadOptions): Psd;
+ export declare function writePsd(psd: Psd, options?: WriteOptions): ArrayBuffer;
+ export declare function writePsdUint8Array(psd: Psd, options?: WriteOptions): Uint8Array;
++export declare function writePsdSegments(psd: Psd, options?: WriteOptions, segmentSize?: number): Uint8Array<ArrayBuffer>[];
+ export declare function writePsdBuffer(psd: Psd, options?: WriteOptions): Buffer;
+diff --git a/dist/index.js b/dist/index.js
+index 41a1be2f1666e8b4ff33d64dbcb9f80f7c6471cb..0fcdb4cac9d197e5e78fb446ae446974d02a244c 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -18,6 +18,7 @@ exports.getCompositeCanvas = exports.getCompositeImageData = exports.getLayerRea
+ exports.readPsd = readPsd;
+ exports.writePsd = writePsd;
+ exports.writePsdUint8Array = writePsdUint8Array;
++exports.writePsdSegments = writePsdSegments;
+ exports.writePsdBuffer = writePsdBuffer;
+ const psdWriter_1 = require("./psdWriter");
+ const psdReader_1 = require("./psdReader");
+@@ -53,6 +54,11 @@ function writePsdUint8Array(psd, options) {
+     (0, psdWriter_1.writePsd)(writer, psd, options);
+     return (0, psdWriter_1.getWriterBufferNoCopy)(writer);
+ }
++function writePsdSegments(psd, options, segmentSize) {
++    const writer = (0, psdWriter_1.createSegmentedWriter)(segmentSize);
++    (0, psdWriter_1.writePsd)(writer, psd, options);
++    return (0, psdWriter_1.getWriterSegments)(writer);
++}
+ function writePsdBuffer(psd, options) {
+     if (typeof Buffer === 'undefined') {
+         throw new Error('Buffer not supported on this platform');
+diff --git a/dist/psdWriter.d.ts b/dist/psdWriter.d.ts
+index 6467f715a6f7e1ecb4c182bea6b65bea95405b01..0a88d999f583649b0d7776bd6bea063194a65f26 100644
+--- a/dist/psdWriter.d.ts
++++ b/dist/psdWriter.d.ts
+@@ -2,12 +2,16 @@ import { Psd, WriteOptions, Color, PatternInfo } from './psd';
+ export interface PsdWriter {
+     offset: number;
+     buffer: ArrayBuffer;
+-    view: DataView;
++    view: Pick<DataView, 'setUint8' | 'setInt16' | 'setUint16' | 'setInt32' | 'setUint32' | 'setFloat32' | 'setFloat64'>;
+     tempBuffer: Uint8Array | undefined;
++    segments?: Uint8Array[];
++    segmentSize?: number;
+ }
+ export declare function createWriter(size?: number): PsdWriter;
++export declare function createSegmentedWriter(segmentSize?: number): PsdWriter;
+ export declare function getWriterBuffer(writer: PsdWriter): ArrayBuffer;
+ export declare function getWriterBufferNoCopy(writer: PsdWriter): Uint8Array<ArrayBuffer>;
++export declare function getWriterSegments(writer: PsdWriter): Uint8Array<ArrayBuffer>[];
+ export declare function writeUint8(writer: PsdWriter, value: number): void;
+ export declare function writeInt16(writer: PsdWriter, value: number): void;
+ export declare function writeUint16(writer: PsdWriter, value: number): void;
+diff --git a/dist/psdWriter.js b/dist/psdWriter.js
+index c57f67980f8fa483c1e827ac15b9d01eb01dfe94..c017621f7203d669a0dc5b0fdaa1347d9d1ce8ea 100644
+--- a/dist/psdWriter.js
++++ b/dist/psdWriter.js
+@@ -1,8 +1,10 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createWriter = createWriter;
++exports.createSegmentedWriter = createSegmentedWriter;
+ exports.getWriterBuffer = getWriterBuffer;
+ exports.getWriterBufferNoCopy = getWriterBufferNoCopy;
++exports.getWriterSegments = getWriterSegments;
+ exports.writeUint8 = writeUint8;
+ exports.writeInt16 = writeInt16;
+ exports.writeUint16 = writeUint16;
+@@ -36,12 +38,64 @@ function createWriter(size = 4096) {
+     const offset = 0;
+     return { buffer, view, offset, tempBuffer: undefined };
+ }
++function createSegmentedWriter(segmentSize = 1024 * 1024) {
++    const writer = { buffer: new ArrayBuffer(0), view: undefined, offset: 0, tempBuffer: undefined, segments: [], segmentSize: Math.max(4096, segmentSize) };
++    writer.view = segmentedDataView(writer);
++    return writer;
++}
++function segmentedDataView(writer) {
++    const buffer = new ArrayBuffer(8);
++    const view = new DataView(buffer);
++    const write = (method, size) => (offset, value, littleEndian = false) => {
++        view[method](0, value, littleEndian);
++        writeAt(writer, offset, new Uint8Array(buffer, 0, size));
++    };
++    return {
++        setUint8: write('setUint8', 1),
++        setInt16: write('setInt16', 2),
++        setUint16: write('setUint16', 2),
++        setInt32: write('setInt32', 4),
++        setUint32: write('setUint32', 4),
++        setFloat32: write('setFloat32', 4),
++        setFloat64: write('setFloat64', 8),
++    };
++}
++function writeAt(writer, offset, bytes) {
++    if (!writer.segments)
++        throw new Error('Writer is not segmented');
++    ensureSize(writer, offset + bytes.length);
++    let sourceOffset = 0;
++    while (sourceOffset < bytes.length) {
++        const segmentIndex = Math.floor(offset / writer.segmentSize);
++        const segmentOffset = offset % writer.segmentSize;
++        const count = Math.min(bytes.length - sourceOffset, writer.segmentSize - segmentOffset);
++        writer.segments[segmentIndex].set(bytes.subarray(sourceOffset, sourceOffset + count), segmentOffset);
++        offset += count;
++        sourceOffset += count;
++    }
++}
+ function getWriterBuffer(writer) {
++    if (writer.segments) {
++        const output = new Uint8Array(writer.offset);
++        let offset = 0;
++        for (const segment of getWriterSegments(writer)) {
++            output.set(segment, offset);
++            offset += segment.length;
++        }
++        return output.buffer;
++    }
+     return writer.buffer.slice(0, writer.offset);
+ }
+ function getWriterBufferNoCopy(writer) {
++    if (writer.segments)
++        return new Uint8Array(getWriterBuffer(writer));
+     return new Uint8Array(writer.buffer, 0, writer.offset);
+ }
++function getWriterSegments(writer) {
++    if (!writer.segments)
++        return [getWriterBufferNoCopy(writer)];
++    return writer.segments.slice(0, Math.ceil(writer.offset / writer.segmentSize)).map((segment, index) => segment.subarray(0, Math.min(segment.length, writer.offset - index * writer.segmentSize)));
++}
+ function writeUint8(writer, value) {
+     const offset = addSize(writer, 1);
+     writer.view.setUint8(offset, value);
+@@ -88,6 +142,11 @@ function writeFixedPointPath32(writer, value) {
+ }
+ function writeBytes(writer, buffer) {
+     if (buffer) {
++        if (writer.segments) {
++            writeAt(writer, writer.offset, buffer);
++            writer.offset += buffer.length;
++            return;
++        }
+         ensureSize(writer, writer.offset + buffer.length);
+         const bytes = new Uint8Array(writer.buffer);
+         bytes.set(buffer, writer.offset);
+@@ -521,6 +580,11 @@ function resizeBuffer(writer, size) {
+     writer.view = new DataView(writer.buffer);
+ }
+ function ensureSize(writer, size) {
++    if (writer.segments) {
++        while (writer.segments.length * writer.segmentSize < size)
++            writer.segments.push(new Uint8Array(writer.segmentSize));
++        return;
++    }
+     if (size > writer.buffer.byteLength) {
+         resizeBuffer(writer, size);
+     }
+diff --git a/dist-es/index.d.ts b/dist-es/index.d.ts
+index b397a0d4d0a04de26b9e1eda4558acf094b7af9b..94b5cbdff4adfc203210af776beaaa11d2bf8e63 100644
+--- a/dist-es/index.d.ts
++++ b/dist-es/index.d.ts
+@@ -17,4 +17,5 @@ export { decodeLayerPixels, getLayerImageData, getLayerMaskImageData, getLayerRe
+ export declare function readPsd(buffer: ArrayBuffer | BufferLike, options?: ReadOptions): Psd;
+ export declare function writePsd(psd: Psd, options?: WriteOptions): ArrayBuffer;
+ export declare function writePsdUint8Array(psd: Psd, options?: WriteOptions): Uint8Array;
++export declare function writePsdSegments(psd: Psd, options?: WriteOptions, segmentSize?: number): Uint8Array<ArrayBuffer>[];
+ export declare function writePsdBuffer(psd: Psd, options?: WriteOptions): Buffer;
+diff --git a/dist-es/index.js b/dist-es/index.js
+index 41a1be2f1666e8b4ff33d64dbcb9f80f7c6471cb..0fcdb4cac9d197e5e78fb446ae446974d02a244c 100644
+--- a/dist-es/index.js
++++ b/dist-es/index.js
+@@ -18,6 +18,7 @@ exports.getCompositeCanvas = exports.getCompositeImageData = exports.getLayerRea
+ exports.readPsd = readPsd;
+ exports.writePsd = writePsd;
+ exports.writePsdUint8Array = writePsdUint8Array;
++exports.writePsdSegments = writePsdSegments;
+ exports.writePsdBuffer = writePsdBuffer;
+ const psdWriter_1 = require("./psdWriter");
+ const psdReader_1 = require("./psdReader");
+@@ -53,6 +54,11 @@ function writePsdUint8Array(psd, options) {
+     (0, psdWriter_1.writePsd)(writer, psd, options);
+     return (0, psdWriter_1.getWriterBufferNoCopy)(writer);
+ }
++function writePsdSegments(psd, options, segmentSize) {
++    const writer = (0, psdWriter_1.createSegmentedWriter)(segmentSize);
++    (0, psdWriter_1.writePsd)(writer, psd, options);
++    return (0, psdWriter_1.getWriterSegments)(writer);
++}
+ function writePsdBuffer(psd, options) {
+     if (typeof Buffer === 'undefined') {
+         throw new Error('Buffer not supported on this platform');
+diff --git a/dist-es/psdWriter.d.ts b/dist-es/psdWriter.d.ts
+index 6467f715a6f7e1ecb4c182bea6b65bea95405b01..0a88d999f583649b0d7776bd6bea063194a65f26 100644
+--- a/dist-es/psdWriter.d.ts
++++ b/dist-es/psdWriter.d.ts
+@@ -2,12 +2,16 @@ import { Psd, WriteOptions, Color, PatternInfo } from './psd';
+ export interface PsdWriter {
+     offset: number;
+     buffer: ArrayBuffer;
+-    view: DataView;
++    view: Pick<DataView, 'setUint8' | 'setInt16' | 'setUint16' | 'setInt32' | 'setUint32' | 'setFloat32' | 'setFloat64'>;
+     tempBuffer: Uint8Array | undefined;
++    segments?: Uint8Array[];
++    segmentSize?: number;
+ }
+ export declare function createWriter(size?: number): PsdWriter;
++export declare function createSegmentedWriter(segmentSize?: number): PsdWriter;
+ export declare function getWriterBuffer(writer: PsdWriter): ArrayBuffer;
+ export declare function getWriterBufferNoCopy(writer: PsdWriter): Uint8Array<ArrayBuffer>;
++export declare function getWriterSegments(writer: PsdWriter): Uint8Array<ArrayBuffer>[];
+ export declare function writeUint8(writer: PsdWriter, value: number): void;
+ export declare function writeInt16(writer: PsdWriter, value: number): void;
+ export declare function writeUint16(writer: PsdWriter, value: number): void;
+diff --git a/dist-es/psdWriter.js b/dist-es/psdWriter.js
+index c57f67980f8fa483c1e827ac15b9d01eb01dfe94..c017621f7203d669a0dc5b0fdaa1347d9d1ce8ea 100644
+--- a/dist-es/psdWriter.js
++++ b/dist-es/psdWriter.js
+@@ -1,8 +1,10 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.createWriter = createWriter;
++exports.createSegmentedWriter = createSegmentedWriter;
+ exports.getWriterBuffer = getWriterBuffer;
+ exports.getWriterBufferNoCopy = getWriterBufferNoCopy;
++exports.getWriterSegments = getWriterSegments;
+ exports.writeUint8 = writeUint8;
+ exports.writeInt16 = writeInt16;
+ exports.writeUint16 = writeUint16;
+@@ -36,12 +38,64 @@ function createWriter(size = 4096) {
+     const offset = 0;
+     return { buffer, view, offset, tempBuffer: undefined };
+ }
++function createSegmentedWriter(segmentSize = 1024 * 1024) {
++    const writer = { buffer: new ArrayBuffer(0), view: undefined, offset: 0, tempBuffer: undefined, segments: [], segmentSize: Math.max(4096, segmentSize) };
++    writer.view = segmentedDataView(writer);
++    return writer;
++}
++function segmentedDataView(writer) {
++    const buffer = new ArrayBuffer(8);
++    const view = new DataView(buffer);
++    const write = (method, size) => (offset, value, littleEndian = false) => {
++        view[method](0, value, littleEndian);
++        writeAt(writer, offset, new Uint8Array(buffer, 0, size));
++    };
++    return {
++        setUint8: write('setUint8', 1),
++        setInt16: write('setInt16', 2),
++        setUint16: write('setUint16', 2),
++        setInt32: write('setInt32', 4),
++        setUint32: write('setUint32', 4),
++        setFloat32: write('setFloat32', 4),
++        setFloat64: write('setFloat64', 8),
++    };
++}
++function writeAt(writer, offset, bytes) {
++    if (!writer.segments)
++        throw new Error('Writer is not segmented');
++    ensureSize(writer, offset + bytes.length);
++    let sourceOffset = 0;
++    while (sourceOffset < bytes.length) {
++        const segmentIndex = Math.floor(offset / writer.segmentSize);
++        const segmentOffset = offset % writer.segmentSize;
++        const count = Math.min(bytes.length - sourceOffset, writer.segmentSize - segmentOffset);
++        writer.segments[segmentIndex].set(bytes.subarray(sourceOffset, sourceOffset + count), segmentOffset);
++        offset += count;
++        sourceOffset += count;
++    }
++}
+ function getWriterBuffer(writer) {
++    if (writer.segments) {
++        const output = new Uint8Array(writer.offset);
++        let offset = 0;
++        for (const segment of getWriterSegments(writer)) {
++            output.set(segment, offset);
++            offset += segment.length;
++        }
++        return output.buffer;
++    }
+     return writer.buffer.slice(0, writer.offset);
+ }
+ function getWriterBufferNoCopy(writer) {
++    if (writer.segments)
++        return new Uint8Array(getWriterBuffer(writer));
+     return new Uint8Array(writer.buffer, 0, writer.offset);
+ }
++function getWriterSegments(writer) {
++    if (!writer.segments)
++        return [getWriterBufferNoCopy(writer)];
++    return writer.segments.slice(0, Math.ceil(writer.offset / writer.segmentSize)).map((segment, index) => segment.subarray(0, Math.min(segment.length, writer.offset - index * writer.segmentSize)));
++}
+ function writeUint8(writer, value) {
+     const offset = addSize(writer, 1);
+     writer.view.setUint8(offset, value);
+@@ -88,6 +142,11 @@ function writeFixedPointPath32(writer, value) {
+ }
+ function writeBytes(writer, buffer) {
+     if (buffer) {
++        if (writer.segments) {
++            writeAt(writer, writer.offset, buffer);
++            writer.offset += buffer.length;
++            return;
++        }
+         ensureSize(writer, writer.offset + buffer.length);
+         const bytes = new Uint8Array(writer.buffer);
+         bytes.set(buffer, writer.offset);
+@@ -521,6 +580,11 @@ function resizeBuffer(writer, size) {
+     writer.view = new DataView(writer.buffer);
+ }
+ function ensureSize(writer, size) {
++    if (writer.segments) {
++        while (writer.segments.length * writer.segmentSize < size)
++            writer.segments.push(new Uint8Array(writer.segmentSize));
++        return;
++    }
+     if (size > writer.buffer.byteLength) {
+         resizeBuffer(writer, size);
+     }

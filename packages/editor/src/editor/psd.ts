@@ -1,4 +1,4 @@
-import { initializeCanvas, readPsd, writePsdUint8Array, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsdSegments, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { bakeIccColorLookup } from './icc'
@@ -205,8 +205,59 @@ function rawLayerData(bitDepth: 16 | 32, psb: boolean, pixels?: ImageData, preci
   return { colorMode: 3, bitsPerChannel: bitDepth, channels, large: psb }
 }
 
-function replaceCompositeChannels(buffer: ArrayBuffer, width: number, height: number, pixels: ImageData, channelSources: SourceImage[], bitDepth: 8 | 16 | 32) {
-  const view = new DataView(buffer)
+function segmentedBytes(segments: Uint8Array<ArrayBuffer>[], start: number, length: number) {
+  const output = new Uint8Array(length)
+  let segmentStart = 0
+  let outputOffset = 0
+  const end = start + length
+  for (const segment of segments) {
+    const segmentEnd = segmentStart + segment.byteLength
+    if (segmentEnd > start && segmentStart < end) {
+      const from = Math.max(0, start - segmentStart)
+      const to = Math.min(segment.byteLength, end - segmentStart)
+      output.set(segment.subarray(from, to), outputOffset)
+      outputOffset += to - from
+    }
+    if (segmentEnd >= end) break
+    segmentStart = segmentEnd
+  }
+  if (outputOffset !== length) throw new Error('The segmented PSD output ended unexpectedly.')
+  return output
+}
+
+function segmentedRange(segments: Uint8Array<ArrayBuffer>[], start: number, end: number) {
+  const output: Uint8Array<ArrayBuffer>[] = []
+  let segmentStart = 0
+  for (const segment of segments) {
+    const segmentEnd = segmentStart + segment.byteLength
+    if (segmentEnd > start && segmentStart < end) {
+      output.push(segment.subarray(Math.max(0, start - segmentStart), Math.min(segment.byteLength, end - segmentStart)))
+    }
+    if (segmentEnd >= end) break
+    segmentStart = segmentEnd
+  }
+  return output
+}
+
+function segmentedCompositeOffset(segments: Uint8Array<ArrayBuffer>[]) {
+  const header = segmentedBytes(segments, 0, 26)
+  const psb = new DataView(header.buffer).getUint16(4) === 2
+  let offset = 26
+  const skipSection = (large = false) => {
+    const lengthBytes = segmentedBytes(segments, offset, large ? 8 : 4)
+    const lengthView = new DataView(lengthBytes.buffer)
+    const length = large ? Number(lengthView.getBigUint64(0)) : lengthView.getUint32(0)
+    offset += (large ? 8 : 4) + length
+  }
+  skipSection()
+  skipSection()
+  skipSection(psb)
+  return offset
+}
+
+function replaceCompositeChannels(segments: Uint8Array<ArrayBuffer>[], width: number, height: number, pixels: ImageData, channelSources: SourceImage[], bitDepth: 8 | 16 | 32): BlobPart[] {
+  const header = segmentedBytes(segments, 0, 26)
+  const view = new DataView(header.buffer)
   const originalChannelCount = view.getUint16(12)
   const planes = [
     encodeCanvasPlane(pixels, 0, bitDepth),
@@ -225,18 +276,10 @@ function replaceCompositeChannels(buffer: ArrayBuffer, width: number, height: nu
     const channelPixels = surface.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, width, height)
     if (channelPixels) planes.push(encodeCanvasPlane(channelPixels, 0, bitDepth, true))
   }
-  const { offset } = psdCompositeOffset(buffer)
-  const output = new Uint8Array(offset + 2 + planes.reduce((total, plane) => total + plane.length, 0))
-  output.set(new Uint8Array(buffer, 0, offset))
-  new DataView(output.buffer).setUint16(12, planes.length)
-  new DataView(output.buffer).setUint16(22, bitDepth)
-  new DataView(output.buffer).setUint16(offset, 0)
-  let cursor = offset + 2
-  for (const plane of planes) {
-    output.set(plane, cursor)
-    cursor += plane.length
-  }
-  return output.buffer
+  const offset = segmentedCompositeOffset(segments)
+  view.setUint16(12, planes.length)
+  view.setUint16(22, bitDepth)
+  return [header, ...segmentedRange(segments, 26, offset), new Uint8Array(2), ...planes]
 }
 
 function initializeBrowserCanvas() {
@@ -1557,13 +1600,13 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     xmpMetadata: documentState.fileMetadata?.xmp ?? preservedResources.xmpMetadata,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
-  const buffer = writePsdUint8Array({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
+  const segments = writePsdSegments({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
   const channelSources = (documentState.channels ?? []).flatMap((channel) => {
     const source = channel.assetId ? assets[channel.assetId] : undefined
     return source?.surface ? [source] : []
   })
-  const output: BlobPart = bitDepth !== 8 || channelSources.length
-    ? replaceCompositeChannels(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer, width, height, imageData, channelSources, bitDepth)
-    : buffer as Uint8Array<ArrayBuffer>
-  return new Blob([output], { type: 'image/vnd.adobe.photoshop' })
+  if (bitDepth === 8 && channelSources.length === 0) {
+    return new Blob(segments, { type: 'image/vnd.adobe.photoshop' })
+  }
+  return new Blob(replaceCompositeChannels(segments, width, height, imageData, channelSources, bitDepth), { type: 'image/vnd.adobe.photoshop' })
 }

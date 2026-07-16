@@ -4,6 +4,7 @@ packages:
 
 patchedDependencies:
   '@kittl/little-cms@1.0.3': patches/@kittl__little-cms@1.0.3.patch
+  ag-psd@31.0.2: patches/ag-psd@31.0.2.patch
 
 minimumReleaseAgeExclude:
   - electron@43.1.1

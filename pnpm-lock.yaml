@@ -6,6 +6,7 @@ settings:
 
 patchedDependencies:
   '@kittl/little-cms@1.0.3': 1da4ba35f6d3e7c7d12cfd70e45e68d5fcdb3560b34fa0d39e5bee60e27f98fa
+  ag-psd@31.0.2: 4085739cf49e3b391bb29ebe2d027f9ea6f9a26cd70a8344da017fab6bd135f4
 
 importers:
 
@@ -93,7 +94,7 @@ importers:
         version: 1.0.3(patch_hash=1da4ba35f6d3e7c7d12cfd70e45e68d5fcdb3560b34fa0d39e5bee60e27f98fa)
       ag-psd:
         specifier: ^31.0.2
-        version: 31.0.2
+        version: 31.0.2(patch_hash=4085739cf49e3b391bb29ebe2d027f9ea6f9a26cd70a8344da017fab6bd135f4)
       gifenc:
         specifier: 1.0.3
         version: 1.0.3
@@ -2867,7 +2868,7 @@ snapshots:
 
   abbrev@4.0.0: {}
 
-  ag-psd@31.0.2:
+  ag-psd@31.0.2(patch_hash=4085739cf49e3b391bb29ebe2d027f9ea6f9a26cd70a8344da017fab6bd135f4):
     dependencies:
       base64-js: 1.5.1
       pako: 2.1.0
