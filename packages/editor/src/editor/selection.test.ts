@@ -48,4 +48,13 @@ describe('selection coverage', () => {
     const image = selectionData([255, 255, 0, 255, 255], 5, 1)
     expect([...contiguousAlphaMask(image, 0, 0)]).toEqual([255, 255, 0, 0, 0])
   })
+
+  it('combines tiled selections with add, subtract, and intersect modes', () => {
+    let selection = applySelectionShape(null, { kind: 'rectangle', x: 0, y: 0, width: 4, height: 1 }, 'replace', 8, 1)
+    selection = applySelectionShape(selection, { kind: 'rectangle', x: 4, y: 0, width: 4, height: 1 }, 'add', 8, 1)
+    selection = applySelectionShape(selection, { kind: 'rectangle', x: 2, y: 0, width: 2, height: 1 }, 'subtract', 8, 1)
+    expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([1, 1, 0, 0, 1, 1, 1, 1])
+    selection = applySelectionShape(selection, { kind: 'rectangle', x: 1, y: 0, width: 5, height: 1 }, 'intersect', 8, 1)
+    expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([0, 1, 0, 0, 1, 1, 0, 0])
+  })
 })
