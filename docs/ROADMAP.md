@@ -32,7 +32,7 @@ A feature is complete only when it has:
 
 ## P1 — interactive performance and large documents
 
-- [ ] Extend path and warp interaction coverage from representative anchors, pins, Shift constraints, Alt handle conversion, deletion, and Escape cancellation to exhaustive multi-anchor, linked/unlinked-handle, and every-grid-point cases.
+- [ ] Extend path interaction coverage from representative anchors, Shift constraints, Alt handle conversion, deletion, and Escape cancellation to exhaustive multi-anchor and linked/unlinked-handle permutations; all nine warp grid points now have constrained-drag and commit coverage.
 - [ ] Extend tiled dirty-region regression coverage across every retouch mode and transformed/masked targets; Current & Below sampling now renders and caches only touched 256px source tiles.
 - [ ] Replace ag-psd's remaining contiguous PSD/PSB writer buffer with a segmented or seekable worker writer; browser file-handle saves and Studio project serialization now stream incrementally.
 - [ ] Make the remaining long filters, imports, exports, and batch jobs cancelable without corrupting document state; raster fill/selection workers, plugin color matrices, atomic ICC conversion, content-aware fill, and content-aware scale now discard cancelled results deterministically.

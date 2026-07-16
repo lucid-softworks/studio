@@ -219,6 +219,35 @@ test.describe('built-in tools', () => {
     await expect(puppetSurface.locator('circle')).toHaveCount(pinsBeforeDelete - 1)
   })
 
+  test('every warp grid point preserves dominant-axis constraints and commits on release', async ({ page }) => {
+    await page.goto('/app?benchmark=2k')
+    const canvas = page.getByLabel('Composition canvas')
+    await expect(canvas).toHaveAttribute('data-render-revision', /\d+/)
+    await page.getByRole('button', { name: /Fixture layer 4/ }).click()
+    await page.getByRole('slider', { name: 'Rotation', exact: true }).fill('0')
+    await page.getByRole('button', { name: 'Warp tool', exact: true }).click()
+    const warpSurface = page.getByLabel('warp editing surface')
+    await expect(warpSurface.locator('circle')).toHaveCount(9)
+
+    for (let index = 0; index < 9; index += 1) {
+      const handle = warpSurface.locator('circle').nth(index)
+      const handleBounds = await handle.boundingBox()
+      expect(handleBounds).not.toBeNull()
+      const yBefore = Number(await handle.getAttribute('cy'))
+      const revisionBefore = await canvas.getAttribute('data-render-revision')
+      await page.mouse.move(handleBounds!.x + handleBounds!.width / 2, handleBounds!.y + handleBounds!.height / 2)
+      await page.mouse.down()
+      await page.keyboard.down('Shift')
+      await page.mouse.move(handleBounds!.x + 30, handleBounds!.y + 8, { steps: 4 })
+      await expect(page.locator('[data-warp-preview="warp"]')).toBeVisible()
+      expect(Number(await handle.getAttribute('cy'))).toBeCloseTo(yBefore, 2)
+      await expect(canvas).toHaveAttribute('data-render-revision', revisionBefore!)
+      await page.mouse.up()
+      await page.keyboard.up('Shift')
+      await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBefore)
+    }
+  })
+
   test('clone and retouch strokes stay live with tiled undo snapshots', async ({ page }) => {
     const runtimeErrors: string[] = []
     page.on('pageerror', (error) => runtimeErrors.push(error.message))
