@@ -50,6 +50,7 @@ pnpm build
 ```
 
 Run `pnpm lint:fix` to apply safe Oxc fixes. Run all four checks with `pnpm check`.
+`pnpm lint` also runs React Doctor in full-repository mode and fails on warnings or errors. Run `pnpm doctor` to execute that blocking scan directly.
 
 ## Cloudflare deployment
 

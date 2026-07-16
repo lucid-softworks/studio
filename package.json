@@ -13,16 +13,19 @@
     "deploy:cloudflare": "pnpm --filter @studio/web build && wrangler deploy",
     "build": "turbo run build",
     "test:e2e": "playwright test",
-    "lint": "oxlint --report-unused-disable-directives .",
+    "lint": "pnpm lint:code && pnpm doctor",
+    "lint:code": "oxlint --report-unused-disable-directives .",
     "lint:fix": "oxlint --fix .",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "doctor": "npx react-doctor@latest . --yes --verbose --blocking warning"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
     "oxlint": "^1.74.0",
     "oxlint-tsgolint": "^0.24.0",
+    "react-doctor": "^0.7.8",
     "turbo": "^2.10.5",
     "typescript": "~6.0.2",
     "vitest": "^4.1.10",
