@@ -29,7 +29,7 @@ A feature is complete only when it has:
 - [ ] Expand the living Photopea → Studio matrix from the current typed family inventory to every individual menu command, layer type, format operation, preset operation, and shortcut.
 - [ ] Expand browser coverage from tool activation, assigned shortcuts, and selection modes to functional canvas interactions and modifier-key results for every built-in tool.
 - [ ] Expand the wired 2K and 32-bit shape-composition goldens to every renderer feature, add 16-bit cases, and validate Canvas2D/TypeGPU outputs at multiple zoom levels.
-- [ ] Expand the wired 2K browser benchmark across the 4K, 8K, deep-layer, high-depth, and animation fixtures; add export scenarios, set supported-browser budgets, and publish regressions in CI.
+- [ ] Add longitudinal trend comparisons against prior CI benchmark artifacts; current per-fixture measurements and failures are retained for 30 days.
 
 ## P1 — interactive performance and large documents
 

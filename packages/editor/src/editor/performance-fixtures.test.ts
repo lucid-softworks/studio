@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createPerformanceFixture, performanceFixtureDefinitions, performanceFixtureIds } from './performance-fixtures'
 import { EditorPerformanceMetrics } from './performance-metrics'
+import { browserPerformanceBudgets } from './performance-budgets'
 
 describe('performance fixtures', () => {
   it('provides deterministic documents for every required stress category', () => {
@@ -22,6 +23,16 @@ describe('performance fixtures', () => {
     const animation = createPerformanceFixture('animation').document.animation
     expect(animation?.mode).toBe('timeline')
     expect(animation?.keyframes).toHaveLength(240)
+  })
+
+  it('defines supported-browser budgets for every fixture', () => {
+    expect(Object.keys(browserPerformanceBudgets)).toEqual(performanceFixtureIds)
+    for (const budget of Object.values(browserPerformanceBudgets)) {
+      expect(budget.readyMs).toBeGreaterThan(0)
+      expect(budget.renderP95Ms).toBeGreaterThan(0)
+      expect(budget.pointerP95Ms).toBeGreaterThan(0)
+      expect(budget.saveP95Ms).toBeGreaterThan(0)
+    }
   })
 })
 
