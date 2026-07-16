@@ -340,9 +340,10 @@ export function selectAll(width: number, height: number) {
 }
 
 export function invertSelection(current: SelectionState | null, width: number, height: number) {
-  const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
-  const context = selection.mask.getContext('2d', { willReadFrequently: true })
-  if (!context) return selection
+  const mask = createMask(width, height)
+  const context = mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return createSelection(width, height)
+  if (current?.mask.width === width && current.mask.height === height) context.drawImage(current.mask, 0, 0)
   const image = context.getImageData(0, 0, width, height)
   for (let pixel = 0; pixel < width * height; pixel += 1) {
     const offset = pixel * 4
@@ -352,7 +353,7 @@ export function invertSelection(current: SelectionState | null, width: number, h
     image.data[offset + 3] = 255 - image.data[offset + 3]
   }
   context.putImageData(image, 0, 0)
-  return synchronizedSelection(selection.mask, selection.revision + 1)
+  return synchronizedSelection(mask, (current?.revision ?? 0) + 1)
 }
 
 export function featherSelection(current: SelectionState | null, radius: number) {

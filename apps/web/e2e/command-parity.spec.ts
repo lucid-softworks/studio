@@ -36,3 +36,32 @@ test('Select All and Deselect cover and clear the complete document', async ({ p
   await page.getByRole('menuitem', { name: /Deselect/i }).click()
   await expect(page.getByRole('button', { name: 'Clear selection', exact: true })).toHaveCount(0)
 })
+
+test('Inverse complements selection coverage through the menu and configurable shortcut', async ({ page }) => {
+  await page.getByRole('button', { name: 'Rectangular Marquee tool', exact: true }).click()
+  const surface = page.getByLabel('Rectangular selection surface').first()
+  const bounds = await surface.boundingBox()
+  expect(bounds).not.toBeNull()
+  await page.mouse.move(bounds!.x + bounds!.width * 0.35, bounds!.y + bounds!.height * 0.35)
+  await page.mouse.down()
+  await page.mouse.move(bounds!.x + bounds!.width * 0.55, bounds!.y + bounds!.height * 0.55)
+  await page.mouse.up()
+
+  const alphaAt = (x: number, y: number) => surface.evaluate((canvas: HTMLCanvasElement, point) => {
+    const pixelX = Math.floor(canvas.width * point.x)
+    const pixelY = Math.floor(canvas.height * point.y)
+    return canvas.getContext('2d')!.getImageData(pixelX, pixelY, 1, 1).data[3]
+  }, { x, y })
+
+  await expect.poll(() => alphaAt(0.45, 0.45)).toBeGreaterThan(0)
+  await expect.poll(() => alphaAt(0.05, 0.05)).toBe(0)
+
+  await page.getByRole('button', { name: 'Select', exact: true }).click()
+  await page.getByRole('menuitem', { name: /Inverse/ }).click()
+  await expect.poll(() => alphaAt(0.45, 0.45)).toBe(0)
+  await expect.poll(() => alphaAt(0.05, 0.05)).toBeGreaterThan(0)
+
+  await page.keyboard.press('Control+Shift+i')
+  await expect.poll(() => alphaAt(0.45, 0.45)).toBeGreaterThan(0)
+  await expect.poll(() => alphaAt(0.05, 0.05)).toBe(0)
+})

@@ -42,6 +42,7 @@ These bounded workflows are at 100% of the Photopea behavior applicable to Studi
 | Zoom tool | Parity validated | Click, Alt-click, scrubby drag, menu, shortcut, temporary modified-Space, and visual-scale coverage in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
 | Navigator panel | Parity validated | Color-managed preview, visible viewport, drag-to-pan, zoom controls, and large-document scaling in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
 | Layer create, group, duplicate, and delete commands | Parity validated | Menu, configurable shortcut, context-menu, nested-stack, Undo/Redo, and local project persistence coverage in [`layer-command-parity.spec.ts`](../apps/web/e2e/layer-command-parity.spec.ts), [`editor.reducer.test.ts`](../packages/editor/src/editor/editor.reducer.test.ts), and [`project.test.ts`](../packages/editor/src/editor/project.test.ts). |
+| Invert Selection | Parity validated | Binary and partial-alpha complements, complete-document behavior, menu interaction, and configurable shortcut coverage in [`selection.test.ts`](../packages/editor/src/editor/selection.test.ts) and [`command-parity.spec.ts`](../apps/web/e2e/command-parity.spec.ts). |
 
 ## Menus and commands
 
@@ -68,7 +69,7 @@ These bounded workflows are at 100% of the Photopea behavior applicable to Studi
 | Layer: arrange / align / distribute | Ordering, alignment, smart guides and snapping | Partial | Complete distribute/spacing/reference commands and mask/path target behavior. |
 | Layer: layer comps | PSD descriptor preservation only | Missing | Editable panel and create/apply/update/state workflow. |
 | Select: all / deselect | Available | Parity validated | Complete-document selection and clearing are covered by unit and browser evidence. |
-| Select: inverse | Available | Validation needed | Color-mode, high-depth, artboard and interaction fixtures. |
+| Select: inverse | Available | Parity validated | Selection masks are document-wide and independent of layer color mode and channel depth; binary, partial-alpha, menu, and configurable-shortcut behavior is covered. |
 | Select: modify | Fixed feather/expand/contract plus grow/similar | Partial | Dialog values, border, smooth, transform selection, save/load parity. |
 | Select: color / luminosity / subject edges | Local non-AI implementations | Partial | Sampling options, fuzziness/range UI, difficult-edge quality and reference masks. |
 | Select: Select and Mask | Dedicated workspace | Partial | Tool depth, views, output modes, edge brush and decontamination fidelity. |

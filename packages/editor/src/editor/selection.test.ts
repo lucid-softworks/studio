@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it, vi } from 'vitest'
-import { applySelectionShape, applySingleMarquee, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
+import { applySelectionShape, applySingleMarquee, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, createSelection, edgeSelectionMask, growSelectionMask, invertSelection, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, selectionFromMask, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -77,6 +77,27 @@ describe('selection coverage', () => {
     expect(selection.bounds).toEqual({ x: 3, y: 0, width: 1, height: 5 })
     selection = applySingleMarquee(selection, 'row', 4, 'intersect', 6, 5)
     expect(selection.bounds).toEqual({ x: 3, y: 4, width: 1, height: 1 })
+  })
+
+  it('inverts full, empty, and partial selection alpha across the complete document', () => {
+    const selection = createSelection(3, 1)
+    const context = selection.mask.getContext('2d')!
+    const pixels = context.createImageData(3, 1)
+    ;[0, 64, 255].forEach((alpha, pixel) => { pixels.data[pixel * 4 + 3] = alpha })
+    context.putImageData(pixels, 0, 0)
+    const source = selectionFromMask(selection.mask)
+    const inverted = invertSelection(source, 3, 1)
+
+    expect(Array.from({ length: 3 }, (_, x) => Math.round(selectionAlphaAtPoint(source, x, 0) * 255))).toEqual([0, 64, 255])
+    expect(Array.from({ length: 3 }, (_, x) => Math.round(selectionAlphaAtPoint(inverted, x, 0) * 255))).toEqual([255, 191, 0])
+    expect(inverted.bounds).toEqual({ x: 0, y: 0, width: 2, height: 1 })
+
+    const restored = invertSelection(inverted, 3, 1)
+    expect(Array.from({ length: 3 }, (_, x) => Math.round(selectionAlphaAtPoint(restored, x, 0) * 255))).toEqual([0, 64, 255])
+    expect(restored.bounds).toEqual({ x: 1, y: 0, width: 2, height: 1 })
+
+    const emptyInverted = invertSelection(null, 2, 2)
+    expect(emptyInverted.bounds).toEqual({ x: 0, y: 0, width: 2, height: 2 })
   })
 
   it('builds global color, luminosity, and local edge masks', () => {

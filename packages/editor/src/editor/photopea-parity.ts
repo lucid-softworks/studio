@@ -172,7 +172,7 @@ export const studioMenuCommandParity = [
   item('layer.delete', 'Layer > Delete layer or group', 'Layer > Delete', validated('Deletes selected layers or complete group stacks through menu, keyboard, and context-menu paths with Undo and Redo restoration.', 'apps/web/e2e/layer-command-parity.spec.ts', 'packages/editor/src/editor/editor.reducer.test.ts')),
   item('select.all', 'Select > All', 'Select > All', validated('Select All is covered across command and raster workflows.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
   item('select.deselect', 'Select > Deselect', 'Select > Deselect', validated('Deselect is covered across command and raster workflows.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
-  item('select.inverse', 'Select > Inverse', 'Select > Inverse', implemented('Inverts the current pixel selection.')),
+  item('select.inverse', 'Select > Inverse', 'Select > Inverse', validated('Inverts binary and partial-alpha selection coverage across the complete document through menu and configurable shortcut paths.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/command-parity.spec.ts')),
   item('select.feather', 'Select > Feather', 'Select > Modify > Feather', partial('Feathering works, but the menu currently exposes a fixed four-pixel value.')),
   item('select.expand', 'Select > Expand', 'Select > Modify > Expand', partial('Expansion works, but the menu currently exposes a fixed four-pixel value.')),
   item('select.contract', 'Select > Contract', 'Select > Modify > Contract', partial('Contraction works, but the menu currently exposes a fixed four-pixel value.')),
@@ -247,15 +247,30 @@ export const studioPresetOperationParity = [
 const explicitShortcutCommands = [
   ['select.all', 'Select all', 'mod+a'],
   ['select.deselect', 'Deselect', 'mod+d'],
-  ['select.inverse', 'Invert selection', 'mod+shift+i'],
   ['layer.delete', 'Delete layer or group', 'delete'],
   ['app.command-palette', 'Search commands', 'mod+k'],
   ['app.context-help', 'Contextual help', 'f1'],
   ['selection.quick-mask', 'Toggle Quick Mask', 'q'],
 ] as const
 
+const validatedShortcutEvidence: Readonly<Record<string, readonly string[]>> = {
+  'edit.undo': ['apps/web/e2e/layer-command-parity.spec.ts', 'packages/editor/src/editor/editor.reducer.test.ts'],
+  'edit.redo': ['apps/web/e2e/layer-command-parity.spec.ts', 'packages/editor/src/editor/editor.reducer.test.ts'],
+  'layer.new': ['apps/web/e2e/layer-command-parity.spec.ts'],
+  'layer.duplicate': ['apps/web/e2e/layer-command-parity.spec.ts'],
+  'select.inverse': ['apps/web/e2e/command-parity.spec.ts', 'packages/editor/src/editor/selection.test.ts'],
+  'view.actual': ['apps/web/e2e/navigation-parity.spec.ts', 'apps/web/e2e/visual.spec.ts'],
+  'view.zoom-in': ['apps/web/e2e/navigation-parity.spec.ts'],
+  'view.zoom-out': ['apps/web/e2e/navigation-parity.spec.ts'],
+}
+
 export const studioShortcutParity = [
-  ...shortcutCommands.map((command) => item(`shortcut.${command.id}`, `${command.label} · ${command.defaultBinding}`, `Photopea shortcut for ${command.label}`, implemented(`The ${command.label} binding is assignable in Studio.`))),
+  ...shortcutCommands.map((command) => {
+    const evidence = validatedShortcutEvidence[command.id]
+    return item(`shortcut.${command.id}`, `${command.label} · ${command.defaultBinding}`, `Photopea shortcut for ${command.label}`, evidence
+      ? validated(`The ${command.label} binding is assignable and covered through its browser interaction path.`, ...evidence)
+      : implemented(`The ${command.label} binding is assignable in Studio.`))
+  }),
   ...Object.keys(studioToolParity).filter((tool) => !shortcutCommands.some((command) => command.id === `tool.${tool}`)).map((tool) => item(`shortcut.tool.${tool}`, 'Unassigned', `Photopea shortcut for ${tool}`, partial(`The ${tool} tool is available but has no assignable default shortcut entry.`))),
   ...explicitShortcutCommands.map(([id, label, binding]) => item(`shortcut.${id}`, `${label} · ${binding}`, `Photopea shortcut for ${label}`, partial(`${label} works with a fixed binding but is not yet exposed in the shortcut editor.`))),
 ] as const

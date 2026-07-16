@@ -9,6 +9,7 @@ export const shortcutCommands: readonly ShortcutCommand[] = [
   { id: 'edit.transform-again', label: 'Transform Again', category: 'Edit', defaultBinding: 'mod+shift+t' },
   { id: 'layer.new', label: 'New layer', category: 'Edit', defaultBinding: 'mod+shift+n' },
   { id: 'layer.duplicate', label: 'Duplicate layer', category: 'Edit', defaultBinding: 'mod+j' },
+  { id: 'select.inverse', label: 'Invert selection', category: 'Edit', defaultBinding: 'mod+shift+i' },
   { id: 'view.actual', label: 'Actual pixels', category: 'View', defaultBinding: 'mod+0' },
   { id: 'view.zoom-in', label: 'Zoom in', category: 'View', defaultBinding: 'mod+=' },
   { id: 'view.zoom-out', label: 'Zoom out', category: 'View', defaultBinding: 'mod+-' },

@@ -131,6 +131,7 @@ export function MenuBar(props: MenuBarProps) {
       else if (command === 'edit.transform-again' && props.canTransformAgain) props.onTransformAgain()
       else if (command === 'layer.new') props.onNewLayer()
       else if (command === 'layer.duplicate' && props.hasLayerSelection) props.onDuplicateLayer()
+      else if (command === 'select.inverse') props.onInvertSelection()
       else if (command === 'view.actual') props.onZoom('actual')
       else if (command === 'view.zoom-in') props.onZoom('in')
       else if (command === 'view.zoom-out') props.onZoom('out')
@@ -229,7 +230,7 @@ export function MenuBar(props: MenuBarProps) {
       {menu('select', 'Select', <>
         <MenuItem commandId="select.all" shortcut="⌘A" onSelect={() => select(props.onSelectAll)}>All</MenuItem>
         <MenuItem commandId="select.deselect" shortcut="⌘D" disabled={!props.hasPixelSelection} onSelect={() => select(props.onDeselect)}>Deselect</MenuItem>
-        <MenuItem commandId="select.inverse" shortcut="⇧⌘I" onSelect={() => select(props.onInvertSelection)}>Inverse</MenuItem>
+        <MenuItem commandId="select.inverse" shortcut={shortcutLabel(props.shortcuts['select.inverse'])} onSelect={() => select(props.onInvertSelection)}>Inverse</MenuItem>
         <Separator />
         <MenuItem commandId="select.feather" disabled={!props.hasPixelSelection} onSelect={() => select(props.onFeatherSelection)}>Feather 4 px</MenuItem>
         <MenuItem commandId="select.expand" disabled={!props.hasPixelSelection} onSelect={() => select(props.onExpandSelection)}>Expand 4 px</MenuItem>
