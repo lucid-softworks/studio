@@ -41,6 +41,7 @@ These bounded workflows are at 100% of the Photopea behavior applicable to Studi
 | Hand tool | Parity validated | Direct panning and temporary Space switching with prior-tool restoration in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts). |
 | Zoom tool | Parity validated | Click, Alt-click, scrubby drag, menu, shortcut, temporary modified-Space, and visual-scale coverage in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
 | Navigator panel | Parity validated | Color-managed preview, visible viewport, drag-to-pan, zoom controls, and large-document scaling in [`navigation-parity.spec.ts`](../apps/web/e2e/navigation-parity.spec.ts) and [`visual.spec.ts`](../apps/web/e2e/visual.spec.ts). |
+| Layer create, group, duplicate, and delete commands | Parity validated | Menu, configurable shortcut, context-menu, nested-stack, Undo/Redo, and local project persistence coverage in [`layer-command-parity.spec.ts`](../apps/web/e2e/layer-command-parity.spec.ts), [`editor.reducer.test.ts`](../packages/editor/src/editor/editor.reducer.test.ts), and [`project.test.ts`](../packages/editor/src/editor/project.test.ts). |
 
 ## Menus and commands
 
@@ -60,7 +61,7 @@ These bounded workflows are at 100% of the Photopea behavior applicable to Studi
 | Image: adjustments | 17 typed adjustment descriptors | Partial | Destructive variants, complete parameters, presets, high-depth behavior and reference-output parity. |
 | Image: size / canvas size | Document properties and content-aware scale | Partial | Full resampling dialog, constrain/proportions, canvas anchors, trim/reveal-all and automation parity. |
 | Image: rotation / flip | Canvas rotate and flip commands | Validation needed | Metadata, artboard, guide, path, animation, high-depth and round-trip fixtures. |
-| Layer: create / duplicate / delete / group | Layer and nested group operations | Validation needed | Context-menu and keyboard parity plus stress/round-trip coverage. |
+| Layer: create / duplicate / delete / group | Layer and nested group operations | Parity validated | Core menu, shortcut, context-menu, nested-stack, Undo/Redo, and project persistence paths are covered; advanced group compositing remains tracked under layer types. |
 | Layer: style | Editable primary layer effects and clear effects | Partial | Full parameter depth, multiple instances, ASL presets, copy/paste/scale style commands. |
 | Layer: masks | Raster and vector masks | Partial | All reveal/hide/from-transparency commands, linking/movement details, Apply Image and calculations. |
 | Layer: smart objects / filters | Embedded and linked smart objects with filter stacks | Partial | Shared-source behavior, complete smart-filter dialogs/masks/blending, nested compatibility. |

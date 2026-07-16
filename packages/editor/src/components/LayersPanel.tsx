@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent, type RefObject } from 'react'
 import { hasEnabledLayerEffects } from '../editor/effects'
 import type { GradientPreset, GradientStop } from '../editor/gradients'
 import type { PatternPreset } from '../editor/patterns'
@@ -23,6 +23,7 @@ type LayersPanelProps = {
   onAddLayer: () => void
   onAddAdjustment: () => void
   onAddGroup: () => void
+  onDuplicateSelection: () => void
   editingMaskLayerId: string | null
   onAddMask: (layerId: string) => void
   onEditMask: (layerId: string) => void
@@ -120,9 +121,10 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, secondaryPanel, onSecondaryPanelChange, secondaryHeight, onSecondaryHeightChange, secondaryFloating, onToggleSecondaryFloating, secondaryFloatingPosition, onSecondaryFloatingPositionChange, onRunActions, plugins, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, onDuplicateSelection, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, secondaryPanel, onSecondaryPanelChange, secondaryHeight, onSecondaryHeightChange, secondaryFloating, onToggleSecondaryFloating, secondaryFloatingPosition, onSecondaryFloatingPositionChange, onRunActions, plugins, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: DraggedItem } | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId)
   const activeGroup = document.groups.find((group) => group.id === document.selectedGroupId)
@@ -145,6 +147,35 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   const visibleSecondaryFloatingPosition = typeof window === 'undefined' ? secondaryFloatingPosition : clampFloatingPanelPosition(secondaryFloatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
 
   useEffect(() => activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), [activePanel])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close() }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', keyDown)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('keydown', keyDown)
+    }
+  }, [contextMenu])
+
+  const openContextMenu = (event: MouseEvent, item: DraggedItem) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (item.type === 'layer') dispatch({ type: 'select-layer', id: item.id }, { record: false })
+    else dispatch({ type: 'select-group', id: item.id }, { record: false })
+    setContextMenu({
+      x: Math.max(8, Math.min(event.clientX, globalThis.innerWidth - 196)),
+      y: Math.max(8, Math.min(event.clientY, globalThis.innerHeight - 228)),
+      item,
+    })
+  }
+
+  const runContextAction = (action: () => void) => {
+    setContextMenu(null)
+    action()
+  }
 
   const startFloatingDrag = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -224,12 +255,13 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
         draggable
         onDragStart={(event) => startDrag(event, { type: 'layer', id: layer.id })}
         onDragEnd={() => { setDragging(null); setDropTarget(null) }}
+        onContextMenu={(event) => openContextMenu(event, { type: 'layer', id: layer.id })}
         onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); setDropTarget(edgeTarget(layer.groupId ?? null, layer.id, event.clientY < rect.top + rect.height / 2)) }}
         onDrop={dropAtTarget}
         style={{ marginLeft: depth * 14 }}
         className={`group flex w-[calc(100%-var(--indent,0px))] items-center rounded-lg border p-1 transition ${dropTarget?.key.endsWith(`:${layer.id}`) ? `${dropTarget.key.startsWith('above') ? 'border-t-violet-300' : 'border-b-violet-300'} bg-violet-400/10` : selected ? 'border-violet-400/25 bg-violet-400/10 text-zinc-100' : 'border-transparent text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300'}`}
       >
-        <button type="button" onClick={(event) => dispatch({ type: 'select-layer', id: layer.id, mode: event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace' }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-violet-400">
+        <button type="button" aria-label={`${layer.name} layer`} onClick={(event) => dispatch({ type: 'select-layer', id: layer.id, mode: event.shiftKey || event.metaKey || event.ctrlKey ? 'toggle' : 'replace' }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-violet-400">
           <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${active ? 'bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/30' : selected ? 'bg-violet-400/10 text-violet-400' : 'bg-white/[0.04]'}`}><LayerTypeIcon layer={layer} /></span>
           <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{layer.clipToBelow && <span className="mr-1 text-violet-300/60">↳</span>}{layer.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{layer.type}</span></span>
           {hasEnabledLayerEffects(layer.effects) && <span title="Layer effects enabled" className="font-serif text-[10px] italic text-violet-300/70">fx</span>}
@@ -257,11 +289,12 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
           draggable
           onDragStart={(event) => startDrag(event, { type: 'group', id: group.id })}
           onDragEnd={() => { setDragging(null); setDropTarget(null) }}
+          onContextMenu={(event) => openContextMenu(event, { type: 'group', id: group.id })}
           onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const ratio = (event.clientY - rect.top) / rect.height; setDropTarget(ratio < 0.3 ? edgeTarget(group.parentId ?? null, group.id, true) : ratio > 0.7 ? edgeTarget(group.parentId ?? null, group.id, false) : { key: `inside:${group.id}`, parentId: group.id }) }}
           onDrop={dropAtTarget}
         >
           <button type="button" aria-label={group.collapsed ? 'Expand group' : 'Collapse group'} onClick={() => dispatch({ type: 'update-group', id: group.id, patch: { collapsed: !group.collapsed } }, { record: false })} className="flex size-6 items-center justify-center rounded text-[10px] text-zinc-600 hover:text-zinc-300">{group.collapsed ? '›' : '⌄'}</button>
-          <button type="button" onClick={() => dispatch({ type: 'select-group', id: group.id }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-cyan-300">
+          <button type="button" aria-label={`${group.name} group`} onClick={() => dispatch({ type: 'select-group', id: group.id }, { record: false })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-2 focus-visible:outline-cyan-300">
             <span className={`flex size-7 shrink-0 items-center justify-center rounded-md ${selected ? 'bg-cyan-300/15 text-cyan-200 ring-1 ring-cyan-200/20' : 'bg-white/[0.04] text-zinc-600'}`}><FolderIcon open={!group.collapsed} /></span>
             <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-zinc-300">{group.name}</span><span className="block text-[9px] tracking-wide text-zinc-700 uppercase">{descendantCount} layer{descendantCount === 1 ? '' : 's'} · {children.filter((item) => item.type === 'group').length} folder{children.filter((item) => item.type === 'group').length === 1 ? '' : 's'}</span></span>
           </button>
@@ -300,6 +333,14 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
 
   return (
     <>
+    {contextMenu && <div role="menu" aria-label="Layer context menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()} className="fixed z-[90] w-48 rounded-xl border border-white/[0.1] bg-[#18181b]/98 p-1.5 shadow-[0_24px_70px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+      <button type="button" role="menuitem" onClick={() => runContextAction(onAddLayer)} className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-violet-400/15 hover:text-white">New layer</button>
+      <button type="button" role="menuitem" onClick={() => runContextAction(onAddGroup)} className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-violet-400/15 hover:text-white">{contextMenu.item.type === 'group' ? 'New nested group' : 'Group selection'}</button>
+      <div role="separator" className="my-1 border-t border-white/[0.07]" />
+      <button type="button" role="menuitem" onClick={() => runContextAction(onDuplicateSelection)} className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-violet-400/15 hover:text-white">Duplicate {contextMenu.item.type}</button>
+      {contextMenu.item.type === 'group' && <button type="button" role="menuitem" onClick={() => runContextAction(() => dispatch({ type: 'remove-group', id: contextMenu.item.id }))} className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-violet-400/15 hover:text-white">Ungroup</button>}
+      <button type="button" role="menuitem" onClick={() => runContextAction(() => contextMenu.item.type === 'group' ? dispatch({ type: 'remove-group', id: contextMenu.item.id, deleteLayers: true }) : dispatch({ type: 'remove-layers', ids: [contextMenu.item.id] }))} className="w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-red-300 hover:bg-red-400/10 hover:text-red-200">Delete {contextMenu.item.type}</button>
+    </div>}
     <aside aria-label="Utility panel stack" style={panelStyle} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={floating ? 'fixed z-[65] flex h-[min(72vh,680px)] w-[var(--panel-width)] shrink-0 flex-col overflow-hidden rounded-xl border border-white/[0.12] bg-[#111113] shadow-[0_24px_80px_rgba(0,0,0,0.7)]' : `relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-84px)] lg:border-t-0 ${panelCollapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
       {panelCollapsed ? <CollapsedPanelRail dockSide={dockSide} label={utilityTabs.find((tab) => tab.id === activePanel)?.label ?? 'Panels'} onClick={onToggleCollapsed} /> : <>
       <PanelResizeHandle dockSide={floating ? 'left' : dockSide} width={width} onChange={onWidthChange} label="Utility panel stack" />

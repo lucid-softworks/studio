@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { initialDocument } from './presets'
+import { createLayerGroup, createTextLayer, initialDocument } from './presets'
 import { estimateProjectAssetBytes, migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION, writeProjectStream } from './project'
 import type { AssetMap } from './runtime-assets'
 import type { BrowserWritable } from './file-save'
@@ -109,6 +109,31 @@ describe('Studio project migrations', () => {
 
     expect(serialized.version).toBe(STUDIO_PROJECT_VERSION)
     expect(serialized.document.schemaVersion).toBe(initialDocument.schemaVersion)
+  })
+
+  it('round-trips nested group structure, stack order, and active selection', async () => {
+    const parent = { ...createLayerGroup(0), id: 'parent', name: 'Artwork', parentId: null, stackOrder: 1, passThrough: true }
+    const child = { ...createLayerGroup(1), id: 'child', name: 'Labels', parentId: parent.id, stackOrder: 0, opacity: 72 }
+    const nested = { ...createTextLayer(1), id: 'nested', name: 'Heading', groupId: child.id, stackOrder: 0 }
+    const loose = { ...createTextLayer(2), id: 'loose', name: 'Caption', groupId: null, stackOrder: 0 }
+    const document = {
+      ...structuredClone(initialDocument),
+      groups: [parent, child],
+      layers: [loose, nested],
+      selectedLayerId: null,
+      selectedLayerIds: [nested.id],
+      selectedGroupId: child.id,
+    }
+
+    const file = new File([await serializeProject(document, {})], 'groups.studio', { type: 'application/x-studio+json' })
+    const loaded = await parseProjectFile(file)
+
+    expect(loaded.document.groups).toEqual([parent, child])
+    expect(loaded.document.layers.map((layer) => ({ id: layer.id, groupId: layer.groupId, stackOrder: layer.stackOrder }))).toEqual([
+      { id: loose.id, groupId: null, stackOrder: 0 },
+      { id: nested.id, groupId: child.id, stackOrder: 0 },
+    ])
+    expect(loaded.document).toMatchObject({ selectedLayerId: null, selectedLayerIds: [nested.id], selectedGroupId: child.id })
   })
 
   it('serializes high-precision raster samples with the local project', async () => {
