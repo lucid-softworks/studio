@@ -22,6 +22,7 @@ import { TransformOverlay } from './TransformOverlay'
 import type { BrushPreset } from '../editor/resources'
 import { BrushSettingsPopover } from './BrushSettingsPopover'
 import { CanvasRulers } from './CanvasRulers'
+import { QuickMaskOverlay } from './QuickMaskOverlay'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -155,6 +156,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const [toolStrength, setToolStrength] = useState(45)
   const [tolerance, setTolerance] = useState(32)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('replace')
+  const [quickMask, setQuickMask] = useState(false)
   const [cropSelection, setCropSelection] = useState<SelectionState | null>(null)
   const [measurement, setMeasurement] = useState<Measurement | null>(null)
   const [isPanning, setIsPanning] = useState(false)
@@ -183,6 +185,12 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target?.matches('input, textarea, select, [contenteditable="true"]') || event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key.toLowerCase() === 'q') {
+        event.preventDefault()
+        setQuickMask((current) => !current)
+        if (tool !== 'brush' && tool !== 'eraser') onToolChange('brush')
+        return
+      }
       const next = toolForShortcut(event.key.toLowerCase(), event.shiftKey)
       if (!next) return
       event.preventDefault()
@@ -190,7 +198,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onToolChange])
+  }, [onToolChange, tool])
 
   useEffect(() => {
     const clearSelectedPixels = () => {
@@ -362,6 +370,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
               {selection && <button type="button" aria-label="Clear selection" onClick={() => setSelection(null)} className="rounded px-1.5 py-1 text-[9px] text-zinc-600 hover:text-zinc-200">Clear</button>}
             </div>
           )}
+          {(selection || quickMask) && <button type="button" aria-pressed={quickMask} onClick={() => { setQuickMask((current) => !current); if (!quickMask && tool !== 'brush' && tool !== 'eraser') onToolChange('brush') }} className={`rounded-md border px-2 py-1.5 text-[9px] ${quickMask ? 'border-rose-300/30 bg-rose-400/15 text-rose-100' : 'border-white/[0.07] text-zinc-600 hover:text-zinc-200'}`}>Quick Mask · Q</button>}
           {tool === 'crop' && <div className="flex items-center gap-1"><button type="button" disabled={!cropSelection?.bounds} onClick={() => { if (cropSelection?.bounds) { onCrop(cropSelection.bounds); setCropSelection(null); onToolChange('move') } }} className="rounded-md bg-violet-500 px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">Apply crop</button><button type="button" onClick={() => { setCropSelection(null); onToolChange('move') }} className="rounded-md px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Cancel</button></div>}
           {tool === 'measure' && (
             <div className="flex items-center gap-2">
@@ -421,7 +430,8 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand' || tool === 'object-select'} object={tool === 'object-select'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
             <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
-            {paintTool && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            <QuickMaskOverlay canvasRef={canvasRef} enabled={quickMask && (tool === 'brush' || tool === 'eraser')} tool={tool === 'eraser' ? 'eraser' : 'brush'} size={brushSize} selection={selection} onChange={setSelection} />
+            {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
@@ -440,7 +450,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       </div>
 
       <div className="flex h-11 shrink-0 items-center justify-center border-t border-white/[0.06] px-4 text-[10px] text-zinc-700">
-        {toolHint}
+        {quickMask ? `Quick Mask · ${tool === 'eraser' ? 'erase to remove' : 'paint to add'} selection · press Q to exit` : toolHint}
       </div>
     </section>
   )

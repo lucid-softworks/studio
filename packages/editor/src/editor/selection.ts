@@ -65,6 +65,10 @@ function synchronizedSelection(mask: HTMLCanvasElement, revision: number): Selec
   return { mask, tiles, bounds: tiledSelectionBounds(tiles), revision }
 }
 
+export function selectionFromMask(mask: HTMLCanvasElement, revision = 0) {
+  return synchronizedSelection(mask, revision)
+}
+
 export function selectionAlphaAtPoint(selection: SelectionState | null, x: number, y: number) {
   if (!selection) return 0
   const pixelX = Math.round(x)

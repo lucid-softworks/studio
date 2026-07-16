@@ -105,7 +105,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add add/subtract/intersect selection modes to every selection tool
 - [x] Add color range, luminosity range, subject-free edge selection, grow, and similar
 - [x] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination
-- [ ] Add quick mask mode
+- [x] Add quick mask mode
 - [ ] Add vector masks and editable mask density/feather
 - [ ] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
 - [ ] Save, load, combine, and transform alpha-channel selections
