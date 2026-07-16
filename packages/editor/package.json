@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --pretty false"
   },
   "dependencies": {
+    "@kittl/little-cms": "1.0.3",
     "ag-psd": "^31.0.2",
     "typegpu": "0.11.9"
   },

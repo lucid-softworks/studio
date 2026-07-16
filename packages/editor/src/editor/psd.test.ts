@@ -3,6 +3,7 @@ import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { LayerCompCapturedInfo, readPsd, writePsd, type Layer, type Psd } from 'ag-psd'
 import { createLayerGroup, createShapeLayer, createTextLayer, initialDocument } from './presets'
 import { exportPsdDocument, importPsdBuffer, psdAdjustmentLayer, psdBlendIf, psdBlendMode, psdImportWarnings, psdLayerEffects, psdLayerNamesInEditorOrder, psdMaskSettings, psdShapeLayer, psdTextLayer, psdVectorMask } from './psd'
+import { iccLookupProfile } from './fixtures/icc-fixtures'
 
 Object.assign(globalThis, {
   ImageData,
@@ -359,6 +360,25 @@ describe('PSD layer ordering', () => {
     expect(decoded.map((layer) => layer.adjustment?.type).reverse()).toEqual(sources.map((source) => source.type))
     expect(decoded.find((layer) => layer.adjustment?.type === 'color lookup')?.adjustment).toMatchObject({ name: 'Local LUT', lut3DFileName: 'warm.cube' })
     expect(decoded.find((layer) => layer.adjustment?.type === 'gradient map')?.adjustment).toMatchObject({ name: 'Duo', colorStops: [{ location: 0 }, { location: 4096 }] })
+  })
+
+  it('previews embedded ICC lookups while re-exporting the original profile bytes', async () => {
+    const profile = iccLookupProfile('link')
+    const imageData = new ImageData(4, 4)
+    imageData.data.fill(255)
+    const source: Psd = {
+      width: 4, height: 4, imageData,
+      children: [{ name: 'ICC Lookup', adjustment: { type: 'color lookup', lookupType: 'deviceLinkProfile', name: 'Invert red', dither: false, profile } }],
+    }
+    const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'icc-lookup.psd')
+    const adjustment = imported.document.layers.find((layer) => layer.type === 'adjustment')
+    expect(adjustment?.type === 'adjustment' ? adjustment.adjustment : undefined).toMatchObject({ type: 'color lookup', iccPreview: { size: 17 } })
+    expect(imported.warnings).not.toContain(expect.stringContaining('cannot yet be previewed'))
+
+    const blob = await exportPsdDocument(imported.document, imported.assets)
+    const decoded = readPsd(await blob.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    const exported = decoded.children?.find((layer) => layer.adjustment?.type === 'color lookup')?.adjustment
+    expect(exported?.type === 'color lookup' ? [...(exported.profile ?? [])] : []).toEqual([...profile])
   })
 
   it('preserves simple single-style text and ignores default blending ranges', () => {

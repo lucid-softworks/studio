@@ -1046,6 +1046,15 @@ function parseLookLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color l
 }
 
 export function parseColorLookupLut(adjustment: Extract<AdjustmentDescriptor, { type: 'color lookup' }>) {
+  if (adjustment.iccPreview && adjustment.iccPreview.size >= 2 && adjustment.iccPreview.data.length >= adjustment.iccPreview.size ** 3 * 3) {
+    const values: Array<[number, number, number]> = []
+    for (let offset = 0; offset < adjustment.iccPreview.size ** 3 * 3; offset += 3) values.push([
+      adjustment.iccPreview.data[offset] / 255,
+      adjustment.iccPreview.data[offset + 1] / 255,
+      adjustment.iccPreview.data[offset + 2] / 255,
+    ])
+    return { size: adjustment.iccPreview.size, values, domainMin: [0, 0, 0], domainMax: [1, 1, 1], order: 'red-fastest' } satisfies CubeLut
+  }
   return parseCubeLut(adjustment) ?? parse3dlLut(adjustment) ?? parseLookLut(adjustment)
 }
 

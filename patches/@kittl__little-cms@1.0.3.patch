@@ -1,0 +1,37 @@
+diff --git a/dist/formats.js b/dist/formats.js
+index 73268db2270ddfc9af9ccb7c94db1b051b697ac4..f7be127a3c1674a486bcb3f4e0631de57b8710ef 100644
+--- a/dist/formats.js
++++ b/dist/formats.js
+@@ -1,5 +1,5 @@
+ /* biome-ignore-all format: manually formatted */
+-import { ColorSpaceCode, FORMATTER_IDENTITY, setBytesPerSample, setChannels, setColorSpace, setDoSwap, setEndian16, setExtraSample, setFlavor, setFloat, setPlanar, setPreMultipliedAlpha, setSwapFirst, } from "./formatter";
++import { ColorSpaceCode, FORMATTER_IDENTITY, setBytesPerSample, setChannels, setColorSpace, setDoSwap, setEndian16, setExtraSample, setFlavor, setFloat, setPlanar, setPreMultipliedAlpha, setSwapFirst, } from "./formatter.js";
+ const base = FORMATTER_IDENTITY;
+ const PT_GRAY = ColorSpaceCode.PT_GRAY;
+ const PT_RGB = ColorSpaceCode.PT_RGB;
+diff --git a/dist/littleCms.browser.js b/dist/littleCms.browser.js
+index d8eb08b78d0b951dcc600e324cb6068b46b8d14d..f92f743bc96bbaeb2280a40f00b064ad1312c657 100644
+--- a/dist/littleCms.browser.js
++++ b/dist/littleCms.browser.js
+@@ -1,6 +1,6 @@
+-import { getChannels, getExtraSample } from "./formatter";
++import { getChannels, getExtraSample } from "./formatter.js";
+ import createCMS from "./lcms.browser.js";
+-import { Err, Ok } from "./result";
++import { Err, Ok } from "./result.js";
+ let Module = null;
+ const textEncoder = new TextEncoder();
+ /**
+diff --git a/dist/littleCms.node.js b/dist/littleCms.node.js
+index 240a7388b2b4cb1166b672ec31687e0682cba335..e5917ed12e2f9e503a0a09cbd8e29d51c5d85c57 100644
+--- a/dist/littleCms.node.js
++++ b/dist/littleCms.node.js
+@@ -1,6 +1,6 @@
+-import { getChannels, getExtraSample } from "./formatter";
++import { getChannels, getExtraSample } from "./formatter.js";
+ import createCMS from "./lcms.node.js";
+-import { Err, Ok } from "./result";
++import { Err, Ok } from "./result.js";
+ let Module = null;
+ const textEncoder = new TextEncoder();
+ /**

@@ -69,7 +69,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Consume basic shape vector masks as editable rectangle and ellipse geometry
   - [x] Preserve and render independent/compound vector masks, mask density/feather, and non-default blend-if data
   - [x] Decode editable 8-bit extra-channel pixels and rewrite locally changed channel planes
-- [ ] Preserve adjustment layers and layer styles as editable Studio properties
+- [x] Preserve adjustment layers and layer styles as editable Studio properties
   - [x] Import drop shadows, outer glows, and color overlays as editable Studio effects
   - [x] Import brightness/contrast and global hue/saturation adjustment layers as editable adjustments
   - [x] Preserve and render primary inner shadow/glow, bevel, satin, gradient/pattern overlay, and stroke styles
@@ -79,7 +79,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Preserve and render multiple style instances while retaining custom contour descriptors
   - [x] Preview embedded `.3dl` Color Lookup LUTs, including input shaper tables
   - [x] Preview embedded Iridas `.look` Color Lookup LUTs
-  - [ ] Preview abstract and device-link ICC-profile Color Lookup encodings
+  - [x] Bake abstract and device-link ICC-profile Color Lookup previews through lazy client-side LittleCMS WASM
   - [x] Preview and round-trip gradient and pattern layer-effect strokes
 - [x] Preserve smart objects, linked assets, layer comps, guides, slices, and metadata
 - [x] Support 8-bit, 16-bit, and 32-bit PSD/PSB documents

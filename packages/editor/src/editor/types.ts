@@ -208,7 +208,7 @@ export type AdjustmentDescriptor =
   | { type: 'black & white'; reds: number; yellows: number; greens: number; cyans: number; blues: number; magentas: number; useTint: boolean; tintColor: string; presetKind?: number; presetFileName?: string }
   | { type: 'photo filter'; color: string; density: number; preserveLuminosity: boolean }
   | { type: 'channel mixer'; monochrome: boolean; red?: AdjustmentMixerChannel; green?: AdjustmentMixerChannel; blue?: AdjustmentMixerChannel; gray?: AdjustmentMixerChannel; presetKind?: number; presetFileName?: string }
-  | { type: 'color lookup'; lookupType?: '3dlut' | 'abstractProfile' | 'deviceLinkProfile'; name?: string; dither: boolean; profile?: number[]; lutFormat?: 'look' | 'cube' | '3dl'; dataOrder?: 'rgb' | 'bgr'; tableOrder?: 'rgb' | 'bgr'; lut3DFileData?: number[]; lut3DFileName?: string }
+  | { type: 'color lookup'; lookupType?: '3dlut' | 'abstractProfile' | 'deviceLinkProfile'; name?: string; dither: boolean; profile?: number[]; lutFormat?: 'look' | 'cube' | '3dl'; dataOrder?: 'rgb' | 'bgr'; tableOrder?: 'rgb' | 'bgr'; lut3DFileData?: number[]; lut3DFileName?: string; iccPreview?: { size: number; data: number[] } }
   | { type: 'invert' }
   | { type: 'posterize'; levels: number }
   | { type: 'threshold'; level: number }

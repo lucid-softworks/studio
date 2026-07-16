@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@kittl/little-cms@1.0.3': 1da4ba35f6d3e7c7d12cfd70e45e68d5fcdb3560b34fa0d39e5bee60e27f98fa
+
 importers:
 
   .:
@@ -72,6 +75,9 @@ importers:
 
   packages/editor:
     dependencies:
+      '@kittl/little-cms':
+        specifier: 1.0.3
+        version: 1.0.3(patch_hash=1da4ba35f6d3e7c7d12cfd70e45e68d5fcdb3560b34fa0d39e5bee60e27f98fa)
       ag-psd:
         specifier: ^31.0.2
         version: 31.0.2
@@ -189,6 +195,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@kittl/little-cms@1.0.3':
+    resolution: {integrity: sha512-5W+aECpsiMhp22EvxcSxue6DkXxFyJXS1FXrFJsH0TziyUhBA0N4Xw4z3q9fuIzq0OQSytdM+IE1Re4a4MpaZA==}
 
   '@napi-rs/canvas-android-arm64@1.0.2':
     resolution: {integrity: sha512-IMXKVQod0ol4vt3gmClUfXz4JAgHYESGPCUqmH3lQxBoL0K/2greJaQE1HVBVxWWFKfLc4OLZVdxg7kXVyXv+g==}
@@ -1367,6 +1376,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@kittl/little-cms@1.0.3(patch_hash=1da4ba35f6d3e7c7d12cfd70e45e68d5fcdb3560b34fa0d39e5bee60e27f98fa)': {}
 
   '@napi-rs/canvas-android-arm64@1.0.2':
     optional: true

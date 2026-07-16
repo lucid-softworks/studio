@@ -2,6 +2,9 @@ packages:
   - apps/*
   - packages/*
 
+patchedDependencies:
+  '@kittl/little-cms@1.0.3': patches/@kittl__little-cms@1.0.3.patch
+
 minimumReleaseAgeExclude:
   - electron@43.1.1
 

@@ -1,6 +1,7 @@
 import { initializeCanvas, readPsd, writePsd, type Color, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
+import { bakeIccColorLookup } from './icc'
 import { createAdjustmentLayer, createId, createRasterLayer, getDocumentSize, initialDocument } from './presets'
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
@@ -818,7 +819,7 @@ export function psdTextLayer(layer: Layer, documentWidth: number, documentHeight
   }
 }
 
-export function psdImportWarnings(psd: Psd) {
+export function psdImportWarnings(psd: Psd, previewedColorLookups = new Set<Layer>()) {
   const warnings = new Map<string, { message: string; paths: Set<string> }>()
   const add = (code: string, message: string, path?: string) => {
     const warning = warnings.get(code) ?? { message, paths: new Set<string>() }
@@ -835,7 +836,7 @@ export function psdImportWarnings(psd: Psd) {
       if ((layer.vectorFill || layer.vectorStroke || layer.vectorOrigination) && !editableShape) add('vector', 'Complex vector shapes were rasterized', path)
       if (!layer.adjustment && !importableRasterMask(layer) && (layer.mask || layer.realMask) && !layer.vectorMask) add('mask', 'Unsupported masks were not preserved as editable masks', path)
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
-      if (layer.adjustment?.type === 'color lookup' && !canPreviewColorLookup(layer.adjustment)) add('color-lookup-preview', 'Color Lookup data was preserved, but this LUT encoding cannot yet be previewed', path)
+      if (layer.adjustment?.type === 'color lookup' && !previewedColorLookups.has(layer) && !canPreviewColorLookup(layer.adjustment)) add('color-lookup-preview', 'Color Lookup data was preserved, but this LUT encoding cannot yet be previewed', path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
       if (hasUnsupportedAdvancedBlending(layer)) add('advanced-blending', 'Knockout blending was not preserved', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
@@ -932,6 +933,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   const assets: AssetMap = {}
   const layers: EditorLayer[] = []
   const groups: LayerGroup[] = []
+  const previewedColorLookups = new Set<Layer>()
   const sourceIsTopToBottom = detectSourceTopToBottom(psd)
 
   const importChildren = async (children: Layer[], parentId: string | null, parentPath = '') => {
@@ -958,6 +960,10 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       }
       const editableAdjustment = psdAdjustmentLayer(layer, stackOrder)
       if (editableAdjustment) {
+        if (editableAdjustment.adjustment?.type === 'color lookup') {
+          editableAdjustment.adjustment = await bakeIccColorLookup(editableAdjustment.adjustment)
+          if (editableAdjustment.adjustment.iccPreview) previewedColorLookups.add(layer)
+        }
         editableAdjustment.groupId = parentId
         editableAdjustment.stackOrder = stackOrder
         layers.push(editableAdjustment)
@@ -1060,7 +1066,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   const selectedLayerId = layers.at(-1)?.id ?? null
   return {
     assets,
-    warnings: psdImportWarnings(psd),
+    warnings: psdImportWarnings(psd, previewedColorLookups),
     document: {
       ...initialDocument,
       bitDepth: psd.bitsPerChannel === 16 || psd.bitsPerChannel === 32 ? psd.bitsPerChannel : 8,
@@ -1311,7 +1317,10 @@ function exportedAdjustment(layer: AdjustmentLayer): Layer['adjustment'] {
       case 'black & white': return { ...source, tintColor: psdColor(source.tintColor) }
       case 'photo filter': return { ...source, color: psdColor(source.color) }
       case 'channel mixer': return { ...source }
-      case 'color lookup': return { ...source, profile: source.profile ? Uint8Array.from(source.profile) : undefined, lut3DFileData: source.lut3DFileData ? Uint8Array.from(source.lut3DFileData) : undefined }
+      case 'color lookup': {
+        const { iccPreview: _iccPreview, ...preserved } = source
+        return { ...preserved, profile: source.profile ? Uint8Array.from(source.profile) : undefined, lut3DFileData: source.lut3DFileData ? Uint8Array.from(source.lut3DFileData) : undefined }
+      }
       case 'invert': return { ...source }
       case 'posterize': return { ...source }
       case 'threshold': return { ...source }
