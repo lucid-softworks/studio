@@ -4,7 +4,7 @@ import { commandForEvent, shortcutLabel, type ShortcutMap } from '../editor/shor
 import type { PluginExporterHook, PluginFilterHook } from '../editor/plugins'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
-type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view'
+type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view' | 'help'
 
 type MenuBarProps = {
   onNew: () => void
@@ -14,6 +14,9 @@ type MenuBarProps = {
   onEditShortcuts: () => void
   onOpenScripts: () => void
   onOpenPlugins: () => void
+  onOpenCommands: () => void
+  onOpenHelp: () => void
+  onExportDiagnostics: () => void
   pluginExporters: Array<PluginExporterHook & { pluginId: string }>
   onPluginExport: (hook: PluginExporterHook) => void
   pluginFilters: Array<PluginFilterHook & { pluginId: string }>
@@ -255,6 +258,14 @@ export function MenuBar(props: MenuBarProps) {
           : <SavedWorkspaceItem key={workspace.name} name={workspace.name} onSelect={() => select(() => props.onApplyWorkspace(workspace))} onDelete={() => select(() => props.onDeleteWorkspace(workspace.name))} />)}
         <Separator />
         <MenuItem onSelect={() => select(props.onSaveWorkspace)}>Save current workspace…</MenuItem>
+      </>, 'w-60')}
+
+      {menu('help', 'Help', <>
+        <MenuItem shortcut="⌘K" onSelect={() => select(props.onOpenCommands)}>Search commands…</MenuItem>
+        <MenuItem shortcut="F1" onSelect={() => select(props.onOpenHelp)}>Contextual help…</MenuItem>
+        <Separator />
+        <MenuItem onSelect={() => select(props.onExportDiagnostics)}>Export diagnostics…</MenuItem>
+        <p className="px-2.5 py-1.5 text-[8px] leading-relaxed text-zinc-700">Diagnostics exclude document content, names, paths, and local resource data.</p>
       </>, 'w-60')}
     </div>
   )

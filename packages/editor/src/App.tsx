@@ -39,6 +39,10 @@ import { actionConditionMatches, type ActionStep } from './editor/actions'
 import { ScriptSandboxDialog } from './components/ScriptSandboxDialog'
 import { PluginManagerDialog } from './components/PluginManagerDialog'
 import { applyColorMatrix, normalizePlugins, type PluginFilterHook, type StudioPlugin } from './editor/plugins'
+import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
+import { ContextualHelpDialog } from './components/ContextualHelpDialog'
+import { createDiagnosticReport, installDiagnosticListeners } from './editor/diagnostics'
+import { shortcutCommands, shortcutLabel } from './editor/shortcuts'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -69,6 +73,9 @@ function App({ onExit }: AppProps) {
   const [editingShortcuts, setEditingShortcuts] = useState(false)
   const [editingScripts, setEditingScripts] = useState(false)
   const [editingPlugins, setEditingPlugins] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [contextualHelpOpen, setContextualHelpOpen] = useState(false)
+  const [recoverySavedAt, setRecoverySavedAt] = useState<string>()
   const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
   const [lastGeometryTransform, setLastGeometryTransform] = useState<LayerGeometryTransform | null>(null)
   const [zoom, setZoom] = useState(100)
@@ -143,6 +150,21 @@ function App({ onExit }: AppProps) {
   const precisionBackupsRef = useRef(new Map<string, Map<16 | 32, NonNullable<SourceImage['precision']>>>())
   const document = history.present
   const rendererCapabilities = useRendererCapabilities(document)
+
+  useEffect(() => {
+    installDiagnosticListeners()
+    const keyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === 'k') {
+        event.preventDefault()
+        setCommandPaletteOpen(true)
+      } else if (event.key === 'F1') {
+        event.preventDefault()
+        setContextualHelpOpen(true)
+      }
+    }
+    window.addEventListener('keydown', keyDown)
+    return () => window.removeEventListener('keydown', keyDown)
+  }, [])
 
   assetsRef.current = assets
   documentTabsRef.current = documentTabs
@@ -370,7 +392,9 @@ function App({ onExit }: AppProps) {
         if (recovery) {
           setAssets(recovery.assets)
           historyDispatch({ type: 'replace', document: recovery.document })
-          setNotice('Recovered your locally autosaved project.', 'info')
+          setRecoverySavedAt(recovery.savedAt)
+          const saved = recovery.savedAt ? new Date(recovery.savedAt).toLocaleString() : 'the latest snapshot'
+          setNotice(`Recovered your locally autosaved project from ${saved}.`, 'info')
         }
       } catch {
         if (!cancelled) setNotice('Local recovery was unavailable, so a fresh document was opened.', 'warning')
@@ -390,7 +414,7 @@ function App({ onExit }: AppProps) {
     setSaveStatus('saving')
     const timer = window.setTimeout(() => {
       saveRecoveryProject(document, assets)
-        .then(() => setSaveStatus('saved'))
+        .then(() => { setSaveStatus('saved'); setRecoverySavedAt(new Date().toISOString()) })
         .catch(() => setSaveStatus('idle'))
     }, 700)
     return () => window.clearTimeout(timer)
@@ -1619,6 +1643,50 @@ function App({ onExit }: AppProps) {
     }
   }
 
+  const exportDiagnostics = useCallback(() => {
+    const report = createDiagnosticReport({
+      document,
+      renderer: rendererCapabilities.activeRenderer,
+      rendererState: rendererCapabilities.typegpu.state,
+      assetCount: Object.keys(assets).length,
+      pluginCount: plugins.length,
+      recovery: { state: saveStatus === 'saved' ? 'saved' : saveStatus, savedAt: recoverySavedAt },
+    })
+    downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }), `studio-diagnostics-${new Date().toISOString().slice(0, 10)}.json`)
+    setNotice('Exported a privacy-safe diagnostic report.', 'success')
+  }, [assets, document, plugins.length, recoverySavedAt, rendererCapabilities.activeRenderer, rendererCapabilities.typegpu.state, saveStatus, setNotice])
+
+  const paletteCommands: PaletteCommand[] = (() => {
+    const labelFor = (id: string) => shortcutLabel(shortcuts[id] ?? '')
+    const commands: PaletteCommand[] = [
+      { id: 'new', label: 'New document', category: 'File', shortcut: labelFor('file.new'), run: newDocument },
+      { id: 'open', label: 'Open file…', category: 'File', shortcut: labelFor('file.open'), run: () => projectInputRef.current?.click() },
+      { id: 'save', label: 'Save Studio project', category: 'File', shortcut: labelFor('file.save'), disabled: isProjectSaving, run: () => void saveProject() },
+      { id: 'export-png', label: 'Export PNG', category: 'Export', keywords: 'save image', run: () => void exportImage('png') },
+      { id: 'export-psd', label: 'Export layered PSD', category: 'Export', keywords: 'photoshop', run: () => void exportImage('psd') },
+      { id: 'undo', label: 'Undo', category: 'Edit', shortcut: labelFor('edit.undo'), disabled: history.past.length === 0 && rasterUndoRef.current.length === 0, run: performUndo },
+      { id: 'redo', label: 'Redo', category: 'Edit', shortcut: labelFor('edit.redo'), disabled: history.future.length === 0 && rasterRedoRef.current.length === 0, run: performRedo },
+      { id: 'new-layer', label: 'New empty layer', category: 'Layer', shortcut: labelFor('layer.new'), run: addEmptyLayer },
+      { id: 'new-group', label: 'New layer group', category: 'Layer', keywords: 'folder', run: addLayerGroup },
+      { id: 'duplicate', label: 'Duplicate selected layer or group', category: 'Layer', shortcut: labelFor('layer.duplicate'), disabled: !selectedGroup && selectedLayers.length === 0, run: duplicateSelection },
+      { id: 'select-all', label: 'Select all pixels', category: 'Select', shortcut: '⌘A', run: applySelectAll },
+      { id: 'deselect', label: 'Deselect pixels', category: 'Select', shortcut: '⌘D', disabled: !selection?.bounds, run: () => setSelection(null) },
+      { id: 'filter-blur', label: 'Gaussian blur', category: 'Filter', disabled: selectedLayers.length === 0, run: () => applyFilter({ blur: 8 }) },
+      { id: 'filter-sharpen', label: 'Sharpen', category: 'Filter', disabled: selectedLayers.length === 0, run: () => applyFilter({ contrast: 115, saturation: 108 }) },
+      { id: 'zoom-in', label: 'Zoom in', category: 'View', shortcut: labelFor('view.zoom-in'), run: () => setZoom((value) => Math.min(250, value + 25)) },
+      { id: 'zoom-out', label: 'Zoom out', category: 'View', shortcut: labelFor('view.zoom-out'), run: () => setZoom((value) => Math.max(25, value - 25)) },
+      { id: 'zoom-actual', label: '100% actual pixels', category: 'View', shortcut: labelFor('view.actual'), run: () => setZoom(100) },
+      { id: 'shortcuts', label: 'Edit keyboard shortcuts…', category: 'Edit', keywords: 'keys bindings', run: () => setEditingShortcuts(true) },
+      { id: 'help', label: 'Contextual help…', category: 'Help', shortcut: 'F1', run: () => setContextualHelpOpen(true) },
+      { id: 'diagnostics', label: 'Export diagnostics…', category: 'Help', run: exportDiagnostics },
+    ]
+    for (const command of shortcutCommands.filter((candidate) => candidate.category === 'Tools')) {
+      const editorTool = command.id.slice(5) as EditorTool
+      commands.push({ id: command.id, label: `${command.label} tool`, category: 'Tools', shortcut: labelFor(command.id), run: () => setTool(editorTool) })
+    }
+    return commands
+  })()
+
   return (
     <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
       <header className="flex h-12 items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-2.5 sm:px-3">
@@ -1647,6 +1715,9 @@ function App({ onExit }: AppProps) {
             onEditShortcuts={() => setEditingShortcuts(true)}
             onOpenScripts={() => setEditingScripts(true)}
             onOpenPlugins={() => setEditingPlugins(true)}
+            onOpenCommands={() => setCommandPaletteOpen(true)}
+            onOpenHelp={() => setContextualHelpOpen(true)}
+            onExportDiagnostics={exportDiagnostics}
             pluginExporters={plugins.flatMap((plugin) => plugin.hooks.exporters.map((hook) => ({ ...hook, pluginId: plugin.id })))}
             onPluginExport={(hook) => void exportImage(hook.format)}
             pluginFilters={plugins.flatMap((plugin) => plugin.hooks.filters.map((hook) => ({ ...hook, pluginId: plugin.id })))}
@@ -1768,6 +1839,8 @@ function App({ onExit }: AppProps) {
       {editingShortcuts && <ShortcutEditor value={shortcuts} onChange={setShortcuts} onClose={() => setEditingShortcuts(false)} />}
       {editingScripts && <ScriptSandboxDialog document={document} onClose={() => setEditingScripts(false)} />}
       {editingPlugins && <PluginManagerDialog plugins={plugins} onChange={setPlugins} onClose={() => setEditingPlugins(false)} />}
+      {commandPaletteOpen && <CommandPalette commands={paletteCommands} onClose={() => setCommandPaletteOpen(false)} />}
+      {contextualHelpOpen && <ContextualHelpDialog tool={tool} selectedLayerType={selectedLayers.length === 1 ? selectedLayers[0].type : undefined} onClose={() => setContextualHelpOpen(false)} />}
     </div>
   )
 }

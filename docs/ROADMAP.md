@@ -189,7 +189,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [x] Add a sandboxed local scripting API with explicit filesystem permissions
 - [x] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server
-- [ ] Add searchable commands, contextual help, crash recovery, and diagnostic export
+- [x] Add searchable commands, contextual help, crash recovery, and diagnostic export
 
 ## M10 — formats and output
 

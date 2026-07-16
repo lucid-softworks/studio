@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { StudioEditor } from '@studio/editor'
+import { EditorErrorBoundary, StudioEditor } from '@studio/editor'
 import { LandingPage } from './LandingPage'
 
 function editorRoute() {
@@ -32,6 +32,6 @@ export default function App() {
   }
 
   return isEditor
-    ? <StudioEditor onExit={() => navigate('home')} />
+    ? <EditorErrorBoundary onExit={() => navigate('home')}><StudioEditor onExit={() => navigate('home')} /></EditorErrorBoundary>
     : <LandingPage onOpenEditor={() => navigate('editor')} />
 }
