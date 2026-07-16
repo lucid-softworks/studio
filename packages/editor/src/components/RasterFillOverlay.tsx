@@ -55,9 +55,14 @@ export function RasterFillOverlay({ canvasRef, document, assets, tool, color, se
   }
 
   useEffect(() => {
-    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelWorker() }
-    window.addEventListener('keydown', keyDown)
-    return () => { window.removeEventListener('keydown', keyDown); workerRef.current?.terminate() }
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !workerRef.current) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      cancelWorker()
+    }
+    window.addEventListener('keydown', keyDown, true)
+    return () => { window.removeEventListener('keydown', keyDown, true); workerRef.current?.terminate() }
   }, [])
 
   const fill = (current: RasterTarget, point: Position) => {

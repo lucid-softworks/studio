@@ -257,4 +257,93 @@ test.describe('built-in tools', () => {
     expect(pixelsAfter.inside).not.toEqual(outsideBefore)
     expect(runtimeErrors).toEqual([])
   })
+
+  test('Escape discards pending raster worker results without changing pixels', async ({ page }) => {
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker
+      let terminations = 0
+      let deliveredFinals = 0
+      class DelayedRasterWorker extends EventTarget {
+        readonly inner: Worker
+        readonly delayed: boolean
+        readonly timers = new Set<number>()
+        onmessage: ((event: MessageEvent) => void) | null = null
+        onerror: ((event: ErrorEvent) => void) | null = null
+        onmessageerror: ((event: MessageEvent) => void) | null = null
+        active = true
+
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super()
+          this.delayed = String(url).includes('raster-ops.worker')
+          this.inner = new NativeWorker(url, options)
+          this.inner.addEventListener('message', (event) => {
+            const deliver = () => {
+              if (!this.active) return
+              if (this.delayed && !(event.data && typeof event.data === 'object' && 'progress' in event.data)) deliveredFinals += 1
+              this.onmessage?.(event)
+              this.dispatchEvent(new MessageEvent('message', { data: event.data }))
+            }
+            if (this.delayed && !(event.data && typeof event.data === 'object' && 'progress' in event.data)) {
+              const timer = window.setTimeout(() => { this.timers.delete(timer); deliver() }, 300)
+              this.timers.add(timer)
+            } else deliver()
+          })
+          this.inner.addEventListener('error', (event) => { this.onerror?.(event); this.dispatchEvent(event) })
+          this.inner.addEventListener('messageerror', (event) => { this.onmessageerror?.(event); this.dispatchEvent(event) })
+        }
+
+        postMessage(message: unknown, transfer?: Transferable[]) { this.inner.postMessage(message, transfer ?? []) }
+        terminate() {
+          if (!this.active) return
+          this.active = false
+          if (this.delayed) terminations += 1
+          for (const timer of this.timers) window.clearTimeout(timer)
+          this.timers.clear()
+          this.inner.terminate()
+        }
+      }
+      Object.defineProperty(window, 'Worker', { configurable: true, value: DelayedRasterWorker })
+      Object.defineProperty(window, '__studioRasterCancellationTest', {
+        configurable: true,
+        value: () => ({ terminations, deliveredFinals }),
+      })
+    })
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    const canvas = page.getByLabel('Composition canvas')
+    const pixel = () => canvas.evaluate((element: HTMLCanvasElement) => [...element.getContext('2d')!.getImageData(800, 500, 1, 1).data])
+    const before = await pixel()
+
+    await page.getByRole('button', { name: 'Paint Bucket tool', exact: true }).click()
+    const fill = page.getByLabel('Paint bucket surface')
+    const bounds = await fill.boundingBox()
+    expect(bounds).not.toBeNull()
+    await fill.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+    await expect(fill).toHaveAttribute('aria-busy', 'true')
+    await page.keyboard.press('Escape')
+    await expect(fill).toHaveAttribute('aria-busy', 'false')
+
+    for (const [tool, surface] of [['Magic Wand', 'Magic wand'], ['Object Select', 'Object']] as const) {
+      await page.getByRole('button', { name: `${tool} tool`, exact: true }).click()
+      const overlay = page.getByLabel(`${surface} selection surface`)
+      await overlay.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+      await expect(overlay).toHaveAttribute('aria-busy', 'true')
+      await page.keyboard.press('Escape')
+      await expect(overlay).toHaveAttribute('aria-busy', 'false')
+    }
+
+    await page.getByRole('button', { name: 'Gradient tool', exact: true }).click()
+    const gradient = page.getByLabel('Gradient surface')
+    await page.mouse.move(bounds!.x + bounds!.width * 0.25, bounds!.y + bounds!.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.75, bounds!.y + bounds!.height * 0.5)
+    await page.mouse.up()
+    await expect(gradient).toHaveAttribute('aria-busy', 'true')
+    await page.keyboard.press('Escape')
+    await expect(gradient).toHaveAttribute('aria-busy', 'false')
+    await page.waitForTimeout(350)
+
+    expect(await pixel()).toEqual(before)
+    expect(await page.evaluate(() => (window as unknown as { __studioRasterCancellationTest(): { terminations: number; deliveredFinals: number } }).__studioRasterCancellationTest())).toEqual({ terminations: 4, deliveredFinals: 0 })
+  })
 })

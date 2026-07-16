@@ -1,6 +1,18 @@
 import { expect, test } from '@playwright/test'
 
 test('records repeatable browser metrics against the 2K fixture', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: async () => ({
+        createWritable: async () => ({
+          write: async () => undefined,
+          close: async () => { Object.defineProperty(window, '__studioBenchmarkSaved', { configurable: true, value: true }) },
+          abort: async () => undefined,
+        }),
+      }),
+    })
+  })
   await page.goto('/app?benchmark=2k')
   const canvas = page.getByLabel('Composition canvas')
   await expect(canvas).toHaveAttribute('width', '2560')
@@ -14,9 +26,8 @@ test('records repeatable browser metrics against the 2K fixture', async ({ page 
     await page.mouse.move(box!.x + (index % 6) * 8 + 4, box!.y + Math.floor(index / 6) * 8 + 4)
   }
 
-  const download = page.waitForEvent('download')
   await page.keyboard.press('Control+s')
-  await download
+  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __studioBenchmarkSaved?: boolean }).__studioBenchmarkSaved))).toBe(true)
   await expect.poll(async () => page.evaluate(() => window.__studioPerformance?.snapshot().durations.save.samples ?? 0)).toBeGreaterThan(0)
 
   const snapshot = await page.evaluate(() => window.__studioPerformance?.snapshot())

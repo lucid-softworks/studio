@@ -25,9 +25,14 @@ export function MagicWandOverlay({ canvasRef, enabled, mode, tolerance, selectio
   }
 
   useEffect(() => {
-    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') cancel() }
-    window.addEventListener('keydown', keyDown)
-    return () => { window.removeEventListener('keydown', keyDown); workerRef.current?.terminate() }
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !workerRef.current) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      cancel()
+    }
+    window.addEventListener('keydown', keyDown, true)
+    return () => { window.removeEventListener('keydown', keyDown, true); workerRef.current?.terminate() }
   }, [])
 
   useEffect(() => { if (!enabled) cancel() }, [enabled])
