@@ -4,6 +4,7 @@ import { getCanvasPreset, initialDocument } from './presets'
 import type { AssetMap } from './runtime-assets'
 import type { RasterRegion } from './raster'
 import { loadOpfsRecovery, saveOpfsRecovery, type RecoveryStoredAsset, type RecoveryStoredProject } from './opfs-recovery'
+import type { BrowserWritable } from './file-save'
 import { flattenStackLayers, getStackChildren } from './stack'
 import { EDITOR_DOCUMENT_SCHEMA_VERSION, type EditorDocument } from './types'
 
@@ -225,15 +226,16 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument): P
   return Object.fromEntries(entries)
 }
 
-async function storedAssets(document: EditorDocument, assets: AssetMap): Promise<StoredAsset[]> {
+async function* storedAssetEntries(document: EditorDocument, assets: AssetMap): AsyncGenerator<StoredAsset> {
   const referencedIds = referencedAssetIds(document)
-  const entries = await Promise.all(Object.entries(assets).filter(([id]) => referencedIds.has(id)).map(async ([id, asset]): Promise<StoredAsset | null> => {
+  for (const [id, asset] of Object.entries(assets)) {
+    if (!referencedIds.has(id)) continue
     const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
     const precision = asset.precision
     const precisionBytes = precision ? new Uint8Array(precision.data.byteLength) : undefined
     if (precisionBytes && precision) precisionBytes.set(new Uint8Array(precision.data.buffer, precision.data.byteOffset, precision.data.byteLength))
     const precisionBlob = precisionBytes ? new Blob([precisionBytes]) : undefined
-    return blob ? {
+    if (blob) yield {
       id,
       name: asset.name,
       blob,
@@ -243,9 +245,14 @@ async function storedAssets(document: EditorDocument, assets: AssetMap): Promise
       precisionWidth: precision?.width,
       precisionHeight: precision?.height,
       precisionRevision: precision?.revision,
-    } : null
-  }))
-  return entries.filter((asset): asset is StoredAsset => asset !== null)
+    }
+  }
+}
+
+async function storedAssets(document: EditorDocument, assets: AssetMap): Promise<StoredAsset[]> {
+  const entries: StoredAsset[] = []
+  for await (const asset of storedAssetEntries(document, assets)) entries.push(asset)
+  return entries
 }
 
 export async function saveRecoveryProject(document: EditorDocument, assets: AssetMap) {
@@ -271,6 +278,59 @@ async function blobToDataUrl(blob: Blob) {
   let binary = ''
   for (let offset = 0; offset < bytes.length; offset += 32_768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768))
   return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`
+}
+
+async function writeBase64(writable: BrowserWritable, blob: Blob) {
+  const reader = blob.stream().getReader()
+  let remainder = new Uint8Array()
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      const bytes = new Uint8Array(remainder.length + chunk.value.length)
+      bytes.set(remainder)
+      bytes.set(chunk.value, remainder.length)
+      const completeLength = bytes.length - bytes.length % 3
+      for (let offset = 0; offset < completeLength; offset += 24_576) {
+        const end = Math.min(completeLength, offset + 24_576)
+        await writable.write(btoa(String.fromCharCode(...bytes.subarray(offset, end))))
+      }
+      remainder = bytes.slice(completeLength)
+    }
+    if (remainder.length) await writable.write(btoa(String.fromCharCode(...remainder)))
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+async function writePortableBlob(writable: BrowserWritable, blob: Blob) {
+  await writable.write(`data:${blob.type || 'application/octet-stream'};base64,`)
+  await writeBase64(writable, blob)
+}
+
+export async function writeProjectStream(writable: BrowserWritable, document: EditorDocument, assets: AssetMap) {
+  const savedAt = new Date().toISOString()
+  try {
+    await writable.write(`{"app":"studio","version":${STUDIO_PROJECT_VERSION},"savedAt":${JSON.stringify(savedAt)},"document":${JSON.stringify(document)},"assets":[`)
+    let index = 0
+    for await (const asset of storedAssetEntries(document, assets)) {
+      if (index > 0) await writable.write(',')
+      const { blob, precision, ...metadata } = asset
+      await writable.write(`${JSON.stringify(metadata).slice(0, -1)},"data":"`)
+      await writePortableBlob(writable, blob)
+      if (precision) {
+        await writable.write('","precision":"')
+        await writePortableBlob(writable, precision)
+      }
+      await writable.write('"}')
+      index += 1
+    }
+    await writable.write(']}')
+    await writable.close()
+  } catch (error) {
+    await writable.abort?.(error).catch(() => undefined)
+    throw error
+  }
 }
 
 export async function serializeProject(document: EditorDocument, assets: AssetMap) {

@@ -1,4 +1,4 @@
-import { initializeCanvas, readPsd, writePsd, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsdUint8Array, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { bakeIccColorLookup } from './icc'
@@ -1557,11 +1557,13 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     xmpMetadata: documentState.fileMetadata?.xmp ?? preservedResources.xmpMetadata,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
-  let buffer = writePsd({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
+  const buffer = writePsdUint8Array({ width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }, { psb, noBackground: true })
   const channelSources = (documentState.channels ?? []).flatMap((channel) => {
     const source = channel.assetId ? assets[channel.assetId] : undefined
     return source?.surface ? [source] : []
   })
-  buffer = replaceCompositeChannels(buffer, width, height, imageData, channelSources, bitDepth)
-  return new Blob([buffer], { type: 'image/vnd.adobe.photoshop' })
+  const output: BlobPart = bitDepth !== 8 || channelSources.length
+    ? replaceCompositeChannels(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer, width, height, imageData, channelSources, bitDepth)
+    : buffer as Uint8Array<ArrayBuffer>
+  return new Blob([output], { type: 'image/vnd.adobe.photoshop' })
 }

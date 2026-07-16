@@ -10,7 +10,8 @@ import { defaultLayerFilters, normalizeLayerFilters } from './editor/filters'
 import { hasEnabledLayerEffects } from './editor/effects'
 import { alphaBoundsInRegion, cloneRasterSource, createEmptyRasterSource, createLayerMaskSource, createRasterSurface, loadImageFile, mergeRasterBounds, surfaceToBlob } from './editor/image'
 import { createAdjustmentLayer, createId, createImageLayer, createLayerGroup, createRasterLayer, createShapeLayer, createSmartObjectLayer, createTextLayer, duplicateLayer, getDocumentSize, initialDocument } from './editor/presets'
-import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject } from './editor/project'
+import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializeProject, writeProjectStream } from './editor/project'
+import { openBrowserWritable, writeBlobIncrementally, type BrowserWritable } from './editor/file-save'
 import { calculateImageRect, getLayerBounds } from './editor/renderer'
 import { canvas2dCompositionRenderer } from './editor/rendering/composition-renderer'
 import { useRendererCapabilities } from './editor/rendering/use-renderer-capabilities'
@@ -1460,11 +1461,17 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       return
     }
     if (format === 'psd' || format === 'psb') {
+      let writable: BrowserWritable | null = null
       try {
+        const filename = `studio-composition.${format}`
+        writable = await openBrowserWritable(filename, format === 'psb' ? 'Photoshop large document' : 'Photoshop document', 'image/vnd.adobe.photoshop', [`.${format}`])
         const { exportPsdDocument } = await import('./editor/psd')
         const blob = await exportPsdDocument(document, assets, format === 'psb')
-        downloadBlob(blob, `studio-composition.${format}`)
+        if (writable) await writeBlobIncrementally(writable, blob)
+        else downloadBlob(blob, filename)
       } catch (error) {
+        await writable?.abort?.(error).catch(() => undefined)
+        if (error instanceof DOMException && error.name === 'AbortError') return
         setNotice(error instanceof Error ? error.message : 'The layered PSD could not be created.')
       } finally {
         setIsExporting(false)
@@ -1630,9 +1637,14 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     setIsProjectSaving(true)
     setNotice(null)
     try {
-      const json = await serializeProject(document, assets)
-      downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), 'untitled.studio')
+      const writable = await openBrowserWritable('untitled.studio', 'Studio project', 'application/x-studio+json', ['.studio'])
+      if (writable) await writeProjectStream(writable, document, assets)
+      else {
+        const json = await serializeProject(document, assets)
+        downloadBlob(new Blob([json], { type: 'application/x-studio+json' }), 'untitled.studio')
+      }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The project could not be saved.')
     } finally {
       setIsProjectSaving(false)

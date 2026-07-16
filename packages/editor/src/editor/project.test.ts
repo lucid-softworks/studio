@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { initialDocument } from './presets'
-import { estimateProjectAssetBytes, migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION } from './project'
+import { estimateProjectAssetBytes, migrateDocument, parseProjectFile, serializeProject, STUDIO_PROJECT_VERSION, writeProjectStream } from './project'
 import type { AssetMap } from './runtime-assets'
+import type { BrowserWritable } from './file-save'
+
+class MemoryWritable implements BrowserWritable {
+  chunks: string[] = []
+  closed = false
+
+  async write(data: Blob | BufferSource | string) {
+    if (typeof data === 'string') this.chunks.push(data)
+    else if (data instanceof Blob) this.chunks.push(await data.text())
+    else this.chunks.push(new TextDecoder().decode(data as ArrayBufferView))
+  }
+
+  async close() { this.closed = true }
+}
 
 function legacyDocument() {
   const document = structuredClone(initialDocument) as unknown as Record<string, unknown>
@@ -138,6 +152,29 @@ describe('Studio project migrations', () => {
     const serialized = JSON.parse(await serializeProject(document, assets)) as { assets: Array<{ id: string }> }
 
     expect(serialized.assets.map((asset) => asset.id).sort()).toEqual(['inside-asset', 'preview-asset'])
+  })
+
+  it('streams portable project assets without assembling a full data URL', async () => {
+    const bytes = Uint8Array.from({ length: 70_001 }, (_, index) => index % 251)
+    const document = {
+      ...initialDocument,
+      layers: [{
+        id: 'pixels', type: 'raster' as const, name: 'Pixels', visible: true, locked: false, opacity: 100,
+        position: { x: 0, y: 0 }, rotation: 0, assetId: 'pixels', width: 1, height: 1, scale: 100,
+      }],
+    }
+    const assets: AssetMap = {
+      pixels: { element: {} as HTMLImageElement, name: 'Pixels', blob: new Blob([bytes], { type: 'image/png' }) },
+    }
+    const writable = new MemoryWritable()
+
+    await writeProjectStream(writable, document, assets)
+    const parsed = JSON.parse(writable.chunks.join('')) as { assets: Array<{ data: string }> }
+    const decoded = new Uint8Array(await (await fetch(parsed.assets[0].data)).arrayBuffer())
+
+    expect(writable.closed).toBe(true)
+    expect(writable.chunks.length).toBeGreaterThan(5)
+    expect(decoded).toEqual(bytes)
   })
 
   it('rejects unknown future document schemas', () => {
