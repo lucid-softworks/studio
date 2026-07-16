@@ -4,7 +4,7 @@ import { canvas2dCompositionRenderer } from '../editor/rendering/composition-ren
 import { layerIsLocked, layerIsVisible } from '../editor/stack'
 import { calculateLayerResize, calculateRotation, normalizeGeometryTransform, type TransformResizeSnapshot } from '../editor/transform'
 import type { AssetMap } from '../editor/runtime-assets'
-import type { EditorDispatch, EditorDocument, Position } from '../editor/types'
+import type { EditorDispatch, EditorDocument, LayerPatch, Position } from '../editor/types'
 import { snapTranslation, type SnapBounds } from '../editor/snapping'
 
 type Props = {
@@ -18,8 +18,8 @@ type Props = {
 
 type Interaction =
   | { mode: 'move'; pointerId: number; start: Position; bounds: SnapBounds; layers: Array<{ id: string; position: Position }>; xTargets: number[]; yTargets: number[]; gridSpacing?: number; lastDx: number; lastDy: number }
-  | { mode: 'resize'; pointerId: number; snapshot: TransformResizeSnapshot }
-  | { mode: 'rotate'; pointerId: number; layerId: string; bounds: LayerBounds; pointerOffset: number }
+  | { mode: 'resize'; pointerId: number; snapshot: TransformResizeSnapshot; lastPatch: LayerPatch }
+  | { mode: 'rotate'; pointerId: number; layerId: string; layer: Exclude<EditorDocument['layers'][number], { type: 'adjustment' }>; bounds: LayerBounds; pointerOffset: number; lastRotation: number }
   | { mode: 'distort'; pointerId: number; layerId: string; bounds: LayerBounds; cornerIndex: number; source: ReturnType<typeof normalizeGeometryTransform>; perspective: boolean }
 
 const handles: Array<{ id: ResizeHandle; x: number; y: number; cursor: string }> = [
@@ -64,6 +64,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     observer.observe(svg)
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => () => previewCleanupRef.current?.(), [])
 
   const point = (event: ReactPointerEvent<SVGSVGElement | SVGRectElement | SVGCircleElement>): Position => {
     const svg = svgRef.current
@@ -116,6 +118,31 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     canvas2dCompositionRenderer.render(canvas, baseDocument, assets)
   }
 
+  const applyLiveTransform = (from: LayerBounds, to: LayerBounds, axisRotation: number, rotationDelta = 0) => {
+    if (!canvas) return
+    const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 }
+    const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 }
+    const dx = toCenter.x - fromCenter.x
+    const dy = toCenter.y - fromCenter.y
+    const scaleX = to.width / Math.max(0.0001, from.width)
+    const scaleY = to.height / Math.max(0.0001, from.height)
+    const transform = rotationDelta
+      ? `translate(${dx / canvas.width * 100}%, ${dy / canvas.height * 100}%) rotate(${rotationDelta}deg)`
+      : `translate(${dx / canvas.width * 100}%, ${dy / canvas.height * 100}%) rotate(${axisRotation}deg) scale(${scaleX}, ${scaleY}) rotate(${-axisRotation}deg)`
+    const preview = previewCanvasRef.current
+    if (preview) {
+      preview.style.transformOrigin = `${fromCenter.x / canvas.width * 100}% ${fromCenter.y / canvas.height * 100}%`
+      preview.style.transform = transform
+    }
+    const group = movingSelectionRef.current
+    if (group) {
+      const inner = rotationDelta
+        ? `rotate(${rotationDelta} ${fromCenter.x} ${fromCenter.y})`
+        : `translate(${fromCenter.x} ${fromCenter.y}) rotate(${axisRotation}) scale(${scaleX} ${scaleY}) rotate(${-axisRotation}) translate(${-fromCenter.x} ${-fromCenter.y})`
+      group.setAttribute('transform', `translate(${dx} ${dy}) ${inner}`)
+    }
+  }
+
   const schedulePreviewCleanup = () => {
     if (!canvas) return
     const preview = previewCanvasRef.current
@@ -144,7 +171,9 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     interactionRef.current = {
       mode: 'resize', pointerId: event.pointerId,
       snapshot: { layer: activeLayer, bounds: activeBounds, handle, canvasWidth: canvas.width, canvasHeight: canvas.height },
+      lastPatch: {},
     }
+    prepareMovePreview([activeLayer.id])
     capture(event)
   }
 
@@ -155,7 +184,9 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     const centerX = activeBounds.x + activeBounds.width / 2
     const centerY = activeBounds.y + activeBounds.height / 2
     const pointerAngle = Math.atan2(cursor.y - centerY, cursor.x - centerX) * 180 / Math.PI
-    interactionRef.current = { mode: 'rotate', pointerId: event.pointerId, layerId: activeLayer.id, bounds: activeBounds, pointerOffset: pointerAngle - activeLayer.rotation }
+    if (activeLayer.type === 'adjustment') return
+    interactionRef.current = { mode: 'rotate', pointerId: event.pointerId, layerId: activeLayer.id, layer: activeLayer, bounds: activeBounds, pointerOffset: pointerAngle - activeLayer.rotation, lastRotation: activeLayer.rotation }
+    prepareMovePreview([activeLayer.id])
     capture(event)
   }
 
@@ -228,9 +259,14 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       if (previewCanvasRef.current) previewCanvasRef.current.style.transform = transform
       movingSelectionRef.current?.setAttribute('transform', `translate(${pixelDx} ${pixelDy})`)
     } else if (interaction.mode === 'resize') {
-      dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: calculateLayerResize(interaction.snapshot, cursor, { fromCenter: event.altKey, preserveAspect: event.shiftKey }) }, { groupKey: `resize-${interaction.snapshot.layer.id}` })
+      const patch = calculateLayerResize(interaction.snapshot, cursor, { fromCenter: event.altKey, preserveAspect: event.shiftKey })
+      interaction.lastPatch = patch
+      const previewLayer = { ...interaction.snapshot.layer, ...patch } as EditorDocument['layers'][number]
+      const bounds = context ? getLayerBounds(context, canvas, previewLayer, assets) : null
+      if (bounds) applyLiveTransform(interaction.snapshot.bounds, bounds, interaction.snapshot.bounds.rotation)
     } else if (interaction.mode === 'rotate') {
-      dispatch({ type: 'update-layer', id: interaction.layerId, patch: { rotation: calculateRotation(interaction.bounds, cursor, interaction.pointerOffset) } }, { groupKey: `rotate-${interaction.layerId}` })
+      interaction.lastRotation = calculateRotation(interaction.bounds, cursor, interaction.pointerOffset)
+      applyLiveTransform(interaction.bounds, interaction.bounds, 0, interaction.lastRotation - interaction.layer.rotation)
     } else {
       const bounds = interaction.bounds
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
@@ -262,6 +298,22 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
         previewCleanupRef.current?.()
       } else {
         dispatch({ type: 'update-layers', changes: interaction.layers.map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + dx, y: layer.position.y + dy } } })) })
+        schedulePreviewCleanup()
+      }
+    } else if (interaction.mode === 'resize') {
+      if (Object.keys(interaction.lastPatch).length === 0) {
+        if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        previewCleanupRef.current?.()
+      } else {
+        dispatch({ type: 'update-layer', id: interaction.snapshot.layer.id, patch: interaction.lastPatch })
+        schedulePreviewCleanup()
+      }
+    } else if (interaction.mode === 'rotate') {
+      if (interaction.lastRotation === interaction.layer.rotation) {
+        if (canvas) canvas2dCompositionRenderer.render(canvas, document, assets)
+        previewCleanupRef.current?.()
+      } else {
+        dispatch({ type: 'update-layer', id: interaction.layerId, patch: { rotation: interaction.lastRotation } })
         schedulePreviewCleanup()
       }
     }
