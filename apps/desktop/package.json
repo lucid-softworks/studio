@@ -1,12 +1,17 @@
 {
   "name": "@studio/desktop",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Private, local-first image editing for the desktop.",
+  "author": "imlunahey",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsc -p tsconfig.json && wait-on http://127.0.0.1:5173 && STUDIO_WEB_URL=http://127.0.0.1:5173/app electron .",
     "build": "tsc -p tsconfig.json",
+    "package": "pnpm --filter @studio/web build && pnpm build && electron-builder",
+    "package:dir": "pnpm --filter @studio/web build && pnpm build && electron-builder --dir",
+    "package:publish": "pnpm --filter @studio/web build && pnpm build && electron-builder --publish always",
     "lint": "oxlint src",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
@@ -14,6 +19,27 @@
   "devDependencies": {
     "@types/node": "^24.13.2",
     "electron": "^43.1.1",
+    "electron-builder": "26.15.3",
     "wait-on": "^9.0.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "build": {
+    "appId": "studio.imlunahey.app",
+    "productName": "Studio",
+    "asar": true,
+    "directories": { "output": "release" },
+    "files": ["dist/**", "package.json"],
+    "extraResources": [{ "from": "../web/dist", "to": "web/dist" }],
+    "mac": { "icon": "build/icon.png", "category": "public.app-category.graphics-design", "target": ["dmg", "zip"], "hardenedRuntime": true },
+    "win": { "icon": "build/icon.png", "target": ["nsis"] },
+    "linux": { "icon": "build/icon.png", "target": ["AppImage", "deb"], "category": "Graphics" },
+    "fileAssociations": [
+      { "ext": "studio", "name": "Studio Project", "role": "Editor" },
+      { "ext": ["psd", "psb"], "name": "Photoshop Document", "role": "Editor" },
+      { "ext": ["png", "jpg", "jpeg", "webp", "avif", "svg", "tif", "tiff", "exr", "hdr", "heic", "heif", "ico", "pdf"], "name": "Image Document", "role": "Editor" }
+    ],
+    "publish": { "provider": "github", "owner": "imlunahey", "repo": "studio" }
   }
 }

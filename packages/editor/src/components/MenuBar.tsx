@@ -30,6 +30,8 @@ type MenuBarProps = {
   onExportArtboards: () => void
   onOpenExportWorkspace: () => void
   onOpenPrint: () => void
+  desktopAvailable: boolean
+  onManageScratch: () => void
   onUndo: () => void
   onRedo: () => void
   onTransformAgain: () => void
@@ -166,6 +168,7 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem onSelect={() => select(props.onLoadFont)}>Load font…</MenuItem>
         <MenuItem onSelect={() => select(props.onLoadBrush)}>Load brush tip…</MenuItem>
         <MenuItem onSelect={() => select(props.onOpenPlugins)}>Manage plugins…</MenuItem>
+        {props.desktopAvailable && <MenuItem onSelect={() => select(props.onManageScratch)}>Desktop scratch storage…</MenuItem>}
         <Separator />
         <MenuItem shortcut={shortcutLabel(props.shortcuts['file.save'])} disabled={props.saving} onSelect={() => select(props.onSave)}>{props.saving ? 'Saving project…' : 'Save Studio project'}</MenuItem>
         <Separator />

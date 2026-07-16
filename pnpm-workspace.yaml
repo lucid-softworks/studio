@@ -11,3 +11,6 @@ minimumReleaseAgeExclude:
 onlyBuiltDependencies:
   - electron
   - esbuild
+
+allowBuilds:
+  electron-winstaller: false

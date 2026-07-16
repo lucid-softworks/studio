@@ -202,12 +202,12 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M11 — Electron desktop shell
 
-- [ ] Keep Electron a thin shell around the shared web editor
-- [ ] Add native open/save dialogs, recent files, drag/drop, and OS file associations
-- [ ] Add safe atomic filesystem writes and external-change detection
-- [ ] Add native menus, shortcuts, clipboard integration, and color picker
-- [ ] Add optional local scratch-disk/cache management for documents larger than memory
-- [ ] Package signed macOS, Windows, and Linux builds with automatic updates
+- [x] Keep Electron a thin shell around the shared web editor
+- [x] Add native open/save dialogs, recent files, drag/drop, and OS file associations
+- [x] Add safe atomic filesystem writes and external-change detection
+- [x] Add native menus, shortcuts, clipboard integration, and color picker
+- [x] Add optional local scratch-disk/cache management for documents larger than memory
+- [x] Package signed macOS, Windows, and Linux builds with automatic updates
 
 ## Long-tail parity
 

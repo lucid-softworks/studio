@@ -47,6 +47,7 @@ import { animationDocumentAt } from './editor/animation'
 import { AnimationTimeline } from './components/AnimationTimeline'
 import { ExportWorkspace, type AssetExportSettings } from './components/ExportWorkspace'
 import { PrintDialog } from './components/PrintDialog'
+import { desktopBridge, nativeFile, type DesktopNativeFile } from './editor/desktop'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -156,6 +157,10 @@ function App({ onExit }: AppProps) {
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const assetsRef = useRef(assets)
   const precisionBackupsRef = useRef(new Map<string, Map<16 | 32, NonNullable<SourceImage['precision']>>>())
+  const desktopOpenRef = useRef<(file: DesktopNativeFile) => void>(() => {})
+  const desktopCommandRef = useRef<(command: string) => void>(() => {})
+  const desktopDropRef = useRef<(file: File) => void>(() => {})
+  const scratchRevisionRef = useRef('')
   const document = history.present
   const rendererCapabilities = useRendererCapabilities(document)
   const renderDocument = animationDocumentAt(document, animationPreview)
@@ -174,6 +179,25 @@ function App({ onExit }: AppProps) {
     window.addEventListener('keydown', keyDown)
     return () => window.removeEventListener('keydown', keyDown)
   }, [])
+
+  useEffect(() => {
+    const desktop = desktopBridge()
+    if (!desktop) return
+    const unsubscribeOpen = desktop.onOpenFile((file) => desktopOpenRef.current(file))
+    const unsubscribeCommand = desktop.onCommand((command) => desktopCommandRef.current(command))
+    const unsubscribeChange = desktop.onExternalChange((change) => setNotice(`The source file changed outside Studio at ${new Date(change.at).toLocaleTimeString()}. Reopen it to load the external version.`, 'warning'))
+    const desktopError = (event: Event) => setNotice((event as CustomEvent<string>).detail, 'error')
+    const dragOver = (event: DragEvent) => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault() }
+    const drop = (event: DragEvent) => {
+      if (event.defaultPrevented) return
+      const file = event.dataTransfer?.files[0]
+      if (file) { event.preventDefault(); desktopDropRef.current(file) }
+    }
+    window.addEventListener('studio:desktop-error', desktopError)
+    window.addEventListener('dragover', dragOver)
+    window.addEventListener('drop', drop)
+    return () => { unsubscribeOpen(); unsubscribeCommand(); unsubscribeChange(); window.removeEventListener('studio:desktop-error', desktopError); window.removeEventListener('dragover', dragOver); window.removeEventListener('drop', drop) }
+  }, [setNotice])
 
   assetsRef.current = assets
   documentTabsRef.current = documentTabs
@@ -428,6 +452,18 @@ function App({ onExit }: AppProps) {
     }, 700)
     return () => window.clearTimeout(timer)
   }, [assets, document, isLoading])
+
+  useEffect(() => {
+    const desktop = desktopBridge()
+    const bytes = Object.values(assets).reduce((total, asset) => total + (asset.blob?.size ?? (asset.surface ? asset.surface.width * asset.surface.height * 4 : 0)) + (asset.precision?.data.byteLength ?? 0), 0)
+    if (!desktop || bytes < 128 * 1024 ** 2 || isLoading) return
+    const revision = `${activeTabId}:${document.layers.length}:${Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)}`
+    if (scratchRevisionRef.current === revision) return
+    const timer = window.setTimeout(() => {
+      void serializeProject(document, assets).then((project) => desktop.writeScratch(activeTabId, new TextEncoder().encode(project).buffer)).then(() => { scratchRevisionRef.current = revision }).catch((error) => setNotice(error instanceof Error ? error.message : 'Desktop scratch storage could not be updated.', 'warning'))
+    }, 5_000)
+    return () => window.clearTimeout(timer)
+  }, [activeTabId, assets, document, isLoading, setNotice])
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -1664,6 +1700,38 @@ function App({ onExit }: AppProps) {
     }
   }
 
+  const requestOpen = async () => {
+    const desktop = desktopBridge()
+    if (!desktop) { projectInputRef.current?.click(); return }
+    try { const file = await desktop.openFile(); if (file) await openFile(nativeFile(file)) } catch (error) { setNotice(error instanceof Error ? error.message : 'The native open dialog failed.') }
+  }
+
+  desktopOpenRef.current = (file) => { void openFile(nativeFile(file)) }
+  desktopDropRef.current = (file) => { void openFile(file) }
+  desktopCommandRef.current = (command) => {
+    if (command === 'new') newDocument()
+    else if (command === 'open') void requestOpen()
+    else if (command === 'save') void saveProject()
+    else if (command === 'undo') performUndo()
+    else if (command === 'redo') performRedo()
+    else if (command === 'copy-merged') {
+      const canvas = canvasRef.current
+      if (canvas) void desktopBridge()?.writeClipboardImage(canvas.toDataURL('image/png')).then(() => setNotice('Copied the merged composition to the system clipboard.', 'success')).catch((error) => setNotice(error instanceof Error ? error.message : 'The image could not be copied.'))
+    } else if (command === 'pick-color') void desktopBridge()?.pickColor().then((color) => { if (color) { setForegroundColor(color); setTool('eyedropper'); setNotice(`Picked ${color} from the screen.`, 'success') } }).catch((error) => setNotice(error instanceof Error ? error.message : 'The screen colour could not be sampled.'))
+  }
+
+  const manageDesktopScratch = async () => {
+    const desktop = desktopBridge()
+    if (!desktop) return
+    const requested = window.prompt('Maximum scratch storage in GB (0.25–64)', '2')
+    if (requested === null) return
+    const gigabytes = Number(requested)
+    if (!Number.isFinite(gigabytes) || gigabytes < 0.25 || gigabytes > 64) { setNotice('Enter a scratch limit between 0.25 and 64 GB.', 'warning'); return }
+    await desktop.setScratchLimit(gigabytes * 1024 ** 3)
+    if (window.confirm('Clear existing Studio scratch files now? Your open document is unaffected.')) await desktop.clearScratch()
+    setNotice(`Desktop scratch storage is limited to ${gigabytes} GB.`, 'success')
+  }
+
   const newDocument = () => {
     openDocumentTab(`Untitled ${documentTabs.length + 1}`, structuredClone(initialDocument), {})
     setTool('move')
@@ -1846,7 +1914,7 @@ function App({ onExit }: AppProps) {
   })()
 
   return (
-    <div className="min-h-screen bg-[#0b0b0c] text-zinc-100">
+    <div className="studio-editor min-h-screen bg-[#0b0b0c] text-zinc-100">
       <header className="flex h-12 items-center justify-between border-b border-white/[0.07] bg-[#0e0e10] px-2.5 sm:px-3">
         <div className="flex h-full items-center gap-2.5">
           <button type="button" aria-label={onExit ? 'Back to Studio home' : 'Studio'} title={onExit ? 'Back to Studio home' : undefined} onClick={onExit} className={`flex items-center rounded-lg text-left ${onExit ? 'focus-visible:outline-2 focus-visible:outline-violet-400' : 'cursor-default'}`}>
@@ -1858,7 +1926,7 @@ function App({ onExit }: AppProps) {
           </button>
           <MenuBar
             onNew={newDocument}
-            onOpen={() => projectInputRef.current?.click()}
+            onOpen={() => void requestOpen()}
             onSave={() => void saveProject()}
             onAddImage={() => imageInputRef.current?.click()}
             onPlaceLinkedSmartObject={() => linkedSmartObjectInputRef.current?.click()}
@@ -1868,6 +1936,8 @@ function App({ onExit }: AppProps) {
             onExportArtboards={() => void exportArtboards()}
             onOpenExportWorkspace={() => setExportWorkspaceOpen(true)}
             onOpenPrint={() => setPrintDialogOpen(true)}
+            desktopAvailable={Boolean(desktopBridge())}
+            onManageScratch={() => void manageDesktopScratch()}
             onUndo={performUndo}
             onRedo={performRedo}
             onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
@@ -1954,7 +2024,7 @@ function App({ onExit }: AppProps) {
       </header>
 
       <nav aria-label="Open documents" className="flex h-9 items-stretch border-b border-white/[0.07] bg-[#101012]">
-        <div className="flex min-w-0 flex-1 overflow-x-auto">
+        <div className="studio-tab-strip flex min-w-0 flex-1 overflow-x-auto">
           {documentTabs.map((tab) => (
             <div key={tab.id} className={`group flex min-w-36 max-w-56 items-center border-r border-white/[0.07] ${tab.id === activeTabId ? 'bg-[#1b1b1f] text-zinc-100' : 'bg-[#121214] text-zinc-500 hover:bg-[#171719] hover:text-zinc-300'}`}>
               <button type="button" onClick={() => switchDocumentTab(tab.id)} className="min-w-0 flex-1 truncate px-3 text-left text-[11px]" title={tab.name}>{tab.name}</button>
