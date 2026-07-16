@@ -1,4 +1,16 @@
 export type PatchMatchInput = { data: Uint8ClampedArray; mask: Uint8Array; width: number; height: number; iterations?: number }
+export type PatchMatchRegion = { x: number; y: number; width: number; height: number }
+
+export function extractRgbaRegion(data: Uint8ClampedArray, sourceWidth: number, sourceHeight: number, region: PatchMatchRegion) {
+  if (data.length !== sourceWidth * sourceHeight * 4) throw new Error('RGBA source dimensions do not match.')
+  if (region.x < 0 || region.y < 0 || region.width < 1 || region.height < 1 || region.x + region.width > sourceWidth || region.y + region.height > sourceHeight) throw new Error('RGBA result region is outside the source.')
+  const result = new Uint8ClampedArray(region.width * region.height * 4)
+  for (let row = 0; row < region.height; row += 1) {
+    const sourceStart = ((region.y + row) * sourceWidth + region.x) * 4
+    result.set(data.subarray(sourceStart, sourceStart + region.width * 4), row * region.width * 4)
+  }
+  return result
+}
 
 function patchScore(data: Uint8ClampedArray, mask: Uint8Array, width: number, height: number, target: number, source: number) {
   const tx = target % width

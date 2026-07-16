@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { patchMatchFill } from './patch-match'
+import { extractRgbaRegion, patchMatchFill } from './patch-match'
 
 describe('local PatchMatch fill', () => {
   it('fills selected pixels from matching known texture', () => {
@@ -17,5 +17,15 @@ describe('local PatchMatch fill', () => {
 
   it('rejects a selection covering every pixel', () => {
     expect(() => patchMatchFill({ data: new Uint8ClampedArray(16), mask: new Uint8Array([1, 1, 1, 1]), width: 2, height: 2 })).toThrow(/outside/)
+  })
+
+  it('returns only the requested dirty result region', () => {
+    const data = new Uint8ClampedArray(4 * 3 * 4)
+    for (let pixel = 0; pixel < 12; pixel += 1) data.set([pixel, pixel + 1, pixel + 2, 255], pixel * 4)
+    expect([...extractRgbaRegion(data, 4, 3, { x: 1, y: 1, width: 2, height: 2 })]).toEqual([
+      5, 6, 7, 255, 6, 7, 8, 255,
+      9, 10, 11, 255, 10, 11, 12, 255,
+    ])
+    expect(() => extractRgbaRegion(data, 4, 3, { x: 3, y: 2, width: 2, height: 1 })).toThrow(/outside/)
   })
 })

@@ -406,7 +406,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       } else if ((event.key === 'Backspace' || event.key === 'Delete') && selection?.bounds && clearSelectedPixels()) {
         event.preventDefault()
         event.stopImmediatePropagation()
-      } else if (event.key === 'Escape' && selection?.bounds) {
+      } else if (event.key === 'Escape' && selection?.bounds && !isLoading) {
         event.preventDefault()
         event.stopImmediatePropagation()
         setSelection(null)
@@ -414,7 +414,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [assets, canvasRef, editingMaskLayer, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLocked, selection, setSelection])
+  }, [assets, canvasRef, editingMaskLayer, isLoading, onRasterChange, onRasterCommit, preset.height, preset.width, selected, selectedLocked, selection, setSelection])
 
   const changeZoom = (direction: 'in' | 'out') => {
     setZoom((value) => Math.max(25, Math.min(400, value + (direction === 'in' ? 25 : -25))))

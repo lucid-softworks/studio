@@ -19,6 +19,7 @@ import type { AssetMap, SourceImage } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import { extractImageData, type RasterEdit, type RasterRegion } from './editor/raster'
+import { documentRegionToSourceRegion } from './editor/raster-target'
 import type { DocumentChannel, DocumentPath, EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerGeometryTransform, LayerPatch, Position, ShapeKind } from './editor/types'
 import { applySelectionAlphaMask, colorRangeMask, componentChannelMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, selectionAlphaAt, similarSelectionMask, type ComponentChannel, type SelectionBounds, type SelectionMode, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
@@ -56,6 +57,7 @@ type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
 
 type AppProps = { onExit?: () => void; initialState?: HistoryState['present']; performanceMetrics?: EditorPerformanceMetrics }
 type DocumentTab = { id: string; name: string; history: HistoryState; assets: AssetMap }
+type ActiveWorkerJob = { label: string; cancel: () => void }
 
 function App({ onExit, initialState, performanceMetrics }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialState, (document) => document ? { ...structuredClone(initialHistoryState), present: structuredClone(document) } : structuredClone(initialHistoryState))
@@ -163,6 +165,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
   const desktopCommandRef = useRef<(command: string) => void>(() => {})
   const desktopDropRef = useRef<(file: File) => void>(() => {})
   const scratchRevisionRef = useRef('')
+  const activeWorkerJobRef = useRef<ActiveWorkerJob | null>(null)
   const document = history.present
   const rendererCapabilities = useRendererCapabilities(document)
   const renderDocument = animationDocumentAt(document, animationPreview)
@@ -176,11 +179,41 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       } else if (event.key === 'F1') {
         event.preventDefault()
         setContextualHelpOpen(true)
+      } else if (event.key === 'Escape' && activeWorkerJobRef.current) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        const job = activeWorkerJobRef.current
+        job.cancel()
+        setNotice(`${job.label} cancelled. The document was not changed.`, 'info')
       }
     }
     window.addEventListener('keydown', keyDown)
     return () => window.removeEventListener('keydown', keyDown)
-  }, [])
+  }, [setNotice])
+
+  const runWorkerJob = <T,>(label: string, worker: Worker, message: unknown, transfer: Transferable[]) => new Promise<T>((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      if (activeWorkerJobRef.current === job) activeWorkerJobRef.current = null
+      worker.terminate()
+      callback()
+    }
+    const job: ActiveWorkerJob = {
+      label,
+      cancel: () => finish(() => reject(new DOMException(`${label} was cancelled.`, 'AbortError'))),
+    }
+    activeWorkerJobRef.current?.cancel()
+    activeWorkerJobRef.current = job
+    worker.onmessage = (event) => finish(() => resolve(event.data as T))
+    worker.onerror = () => finish(() => reject(new Error(`The ${label.toLocaleLowerCase()} worker stopped unexpectedly.`)))
+    try {
+      worker.postMessage(message, transfer)
+    } catch (error) {
+      finish(() => reject(error))
+    }
+  })
 
   useEffect(() => {
     const desktop = desktopBridge()
@@ -864,11 +897,12 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     try {
       const input = context.getImageData(0, 0, surface.width, surface.height)
       const worker = new Worker(new URL('./editor/workers/seam-carving.worker.ts', import.meta.url), { type: 'module' })
-      const output = await new Promise<{ data: ArrayBuffer; width: number; height: number }>((resolve, reject) => {
-        worker.onmessage = (event) => resolve(event.data as { data: ArrayBuffer; width: number; height: number })
-        worker.onerror = () => reject(new Error('The local seam-carving worker stopped unexpectedly.'))
-        worker.postMessage({ data: input.data.buffer, width: input.width, height: input.height, targetWidth, targetHeight }, [input.data.buffer])
-      }).finally(() => worker.terminate())
+      const output = await runWorkerJob<{ data: ArrayBuffer; width: number; height: number }>(
+        'Content-aware scale',
+        worker,
+        { data: input.data.buffer, width: input.width, height: input.height, targetWidth, targetHeight },
+        [input.data.buffer],
+      )
       const assetId = createId()
       const source = createEmptyRasterSource(output.width, output.height, `${layer.name} content-aware pixels`)
       source.surface?.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(output.data), output.width, output.height), 0, 0)
@@ -877,6 +911,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       dispatch({ type: 'update-layer', id: layer.id, patch: { assetId, width: output.width, height: output.height, scale: 100 } })
       setNotice(`Content-aware scaled ${layer.name} to ${output.width} × ${output.height}px.`, 'success')
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'Content-aware scale could not finish.')
     } finally {
       setIsLoading(false)
@@ -893,9 +928,11 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     if (!layer || !surface || !surfaceContext || !canvas || !canvasContext || !selection?.bounds || !selectionContext || layerIsLocked(document, layer)) return
     const bounds = getLayerBounds(canvasContext, canvas, layer, assets)
     if (!bounds) return
+    const sourceRegion = documentRegionToSourceRegion(selection.bounds, bounds, surface.width, surface.height)
+    if (!sourceRegion) { setNotice('The selection does not overlap the selected raster layer.'); return }
     const selectionData = selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height)
     const input = surfaceContext.getImageData(0, 0, surface.width, surface.height)
-    const beforeFull = new ImageData(new Uint8ClampedArray(input.data), input.width, input.height)
+    const beforeRegion = extractImageData(input, sourceRegion.x, sourceRegion.y, sourceRegion.width, sourceRegion.height)
     const mask = new Uint8Array(surface.width * surface.height)
     const angle = bounds.rotation * Math.PI / 180
     const centerX = bounds.x + bounds.width / 2
@@ -904,11 +941,13 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     let top = surface.height
     let right = -1
     let bottom = -1
-    for (let y = 0; y < surface.height; y += 1) for (let x = 0; x < surface.width; x += 1) {
-      const localX = (x / surface.width - 0.5) * bounds.width
-      const localY = (y / surface.height - 0.5) * bounds.height
-      const documentX = centerX + localX * Math.cos(angle) - localY * Math.sin(angle)
-      const documentY = centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
+    for (let row = 0; row < sourceRegion.height; row += 1) for (let column = 0; column < sourceRegion.width; column += 1) {
+      const x = sourceRegion.x + column
+      const y = sourceRegion.y + row
+      const layerX = (x / surface.width - 0.5) * bounds.width
+      const layerY = (y / surface.height - 0.5) * bounds.height
+      const documentX = centerX + layerX * Math.cos(angle) - layerY * Math.sin(angle)
+      const documentY = centerY + layerX * Math.sin(angle) + layerY * Math.cos(angle)
       if (selectionAlphaAt(selectionData, documentX, documentY) < 0.5) continue
       mask[y * surface.width + x] = 1
       left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y)
@@ -918,20 +957,22 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     setNotice('Content-aware fill is matching local texture patches…', 'info')
     try {
       const worker = new Worker(new URL('./editor/workers/patch-match.worker.ts', import.meta.url), { type: 'module' })
-      const response = await new Promise<{ data?: ArrayBuffer; error?: string }>((resolve, reject) => {
-        worker.onmessage = (event) => resolve(event.data as { data?: ArrayBuffer; error?: string })
-        worker.onerror = () => reject(new Error('The local PatchMatch worker stopped unexpectedly.'))
-        worker.postMessage({ data: input.data.buffer, mask: mask.buffer, width: input.width, height: input.height }, [input.data.buffer, mask.buffer])
-      }).finally(() => worker.terminate())
-      if (response.error || !response.data) throw new Error(response.error || 'The local PatchMatch worker returned no pixels.')
-      const afterFull = new ImageData(new Uint8ClampedArray(response.data), surface.width, surface.height)
-      surfaceContext.putImageData(afterFull, 0, 0)
       const width = right - left + 1
       const height = bottom - top + 1
+      const response = await runWorkerJob<{ data?: ArrayBuffer; error?: string }>(
+        'Content-aware fill',
+        worker,
+        { data: input.data.buffer, mask: mask.buffer, width: input.width, height: input.height, resultRegion: { x: left, y: top, width, height } },
+        [input.data.buffer, mask.buffer],
+      )
+      if (response.error || !response.data) throw new Error(response.error || 'The local PatchMatch worker returned no pixels.')
+      const after = new ImageData(new Uint8ClampedArray(response.data), width, height)
+      surfaceContext.putImageData(after, left, top)
       refreshRasterAsset(layer.assetId, { x: left, y: top, width, height })
-      commitRasterEdit({ assetId: layer.assetId, x: left, y: top, before: extractImageData(beforeFull, left, top, width, height), after: extractImageData(afterFull, left, top, width, height) })
+      commitRasterEdit({ assetId: layer.assetId, x: left, y: top, before: extractImageData(beforeRegion, left - sourceRegion.x, top - sourceRegion.y, width, height), after })
       setNotice(`Filled ${width} × ${height}px using local PatchMatch.`, 'success')
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'Content-aware fill could not finish.')
     } finally {
       setIsLoading(false)

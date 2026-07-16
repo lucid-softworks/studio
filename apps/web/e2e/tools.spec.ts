@@ -402,4 +402,81 @@ test.describe('built-in tools', () => {
     expect(await pixel()).toEqual(before)
     expect(await page.evaluate(() => (window as unknown as { __studioRasterCancellationTest(): { terminations: number; deliveredFinals: number } }).__studioRasterCancellationTest())).toEqual({ terminations: 4, deliveredFinals: 0 })
   })
+
+  test('Escape cancels content-aware jobs before they can mutate the document', async ({ page }) => {
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker
+      let terminations = 0
+      class DelayedContentAwareWorker extends EventTarget {
+        readonly inner: Worker | null
+        readonly delayed: boolean
+        readonly timers = new Set<number>()
+        onmessage: ((event: MessageEvent) => void) | null = null
+        onerror: ((event: ErrorEvent) => void) | null = null
+        onmessageerror: ((event: MessageEvent) => void) | null = null
+
+        constructor(url: string | URL, options?: WorkerOptions) {
+          super()
+          this.delayed = /patch-match|seam-carving/.test(String(url))
+          this.inner = this.delayed ? null : new NativeWorker(url, options)
+          this.inner?.addEventListener('message', (event) => { this.onmessage?.(event); this.dispatchEvent(new MessageEvent('message', { data: event.data })) })
+          this.inner?.addEventListener('error', (event) => { this.onerror?.(event); this.dispatchEvent(event) })
+          this.inner?.addEventListener('messageerror', (event) => { this.onmessageerror?.(event); this.dispatchEvent(event) })
+        }
+
+        postMessage(message: unknown, transfer?: Transferable[]) {
+          if (this.inner) this.inner.postMessage(message, transfer ?? [])
+          else {
+            const timer = window.setTimeout(() => {
+              this.timers.delete(timer)
+              const event = new MessageEvent('message', { data: { data: new ArrayBuffer(4), width: 1, height: 1 } })
+              this.onmessage?.(event)
+              this.dispatchEvent(event)
+            }, 500)
+            this.timers.add(timer)
+          }
+        }
+
+        terminate() {
+          if (this.delayed) terminations += 1
+          for (const timer of this.timers) window.clearTimeout(timer)
+          this.timers.clear()
+          this.inner?.terminate()
+        }
+      }
+      Object.defineProperty(window, 'Worker', { configurable: true, value: DelayedContentAwareWorker })
+      Object.defineProperty(window, '__studioContentAwareCancellationTest', { configurable: true, value: () => terminations })
+    })
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    await page.getByRole('button', { name: 'Paint Bucket tool', exact: true }).click()
+    const fill = page.getByLabel('Paint bucket surface')
+    const bounds = await fill.boundingBox()
+    expect(bounds).not.toBeNull()
+    await fill.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } })
+    await expect(fill).toHaveAttribute('aria-busy', 'false')
+
+    const canvas = page.getByLabel('Composition canvas')
+    const before = await canvas.evaluate((element: HTMLCanvasElement) => [...element.getContext('2d')!.getImageData(800, 500, 1, 1).data])
+    await page.getByRole('button', { name: 'Rectangular Marquee tool', exact: true }).click()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.45, bounds!.y + bounds!.height * 0.45)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.55, bounds!.y + bounds!.height * 0.55)
+    await page.mouse.up()
+
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Content-Aware Fill…', exact: true }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'matching local texture patches' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('status').filter({ hasText: 'Content-aware fill cancelled' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Apply local seam carving', exact: true }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Content-aware scale is running' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('status').filter({ hasText: 'Content-aware scale cancelled' })).toBeVisible()
+    await page.waitForTimeout(550)
+
+    expect(await canvas.evaluate((element: HTMLCanvasElement) => [...element.getContext('2d')!.getImageData(800, 500, 1, 1).data])).toEqual(before)
+    expect(await page.evaluate(() => (window as unknown as { __studioContentAwareCancellationTest(): number }).__studioContentAwareCancellationTest())).toBe(2)
+  })
 })
