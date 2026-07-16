@@ -8,9 +8,9 @@ const serverCommand = process.env.CI
 export default defineConfig({
   testDir: './apps/web/e2e',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI
     ? [['github'], ['json', { outputFile: 'test-results/results.json' }]]

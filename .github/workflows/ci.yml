@@ -22,6 +22,23 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+
+  e2e:
+    name: Browser tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Resolve Playwright version
         id: playwright
         run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -66,7 +83,7 @@ jobs:
           pattern: studio-browser-results-*
           merge-multiple: true
           path: .performance-baseline
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
       - name: Compare browser performance with main
         if: always()
         run: node scripts/compare-performance.mjs test-results/performance .performance-baseline >> "$GITHUB_STEP_SUMMARY"
@@ -74,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: studio-browser-results-${{ github.run_attempt }}
+          name: studio-browser-results-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           path: test-results/**
           if-no-files-found: warn
           retention-days: 30

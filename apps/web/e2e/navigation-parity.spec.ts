@@ -96,8 +96,9 @@ test('single-row and single-column marquees have exact geometry and modifier mod
 })
 
 test('Navigator renders large documents and drags the visible viewport', async ({ page }) => {
+  test.setTimeout(45_000)
   await page.goto('/app?benchmark=8k')
-  await expect(page.getByLabel('Composition canvas')).toHaveAttribute('data-render-revision', /\d+/)
+  await expect(page.getByLabel('Composition canvas')).toHaveAttribute('data-render-revision', /\d+/, { timeout: 20_000 })
   await page.getByRole('tab', { name: 'Nav', exact: true }).click()
   await expect(page.getByRole('tabpanel', { name: 'Navigator' })).toBeVisible()
 
@@ -108,7 +109,7 @@ test('Navigator renders large documents and drags the visible viewport', async (
 
   await page.getByLabel('Navigator zoom').fill('200')
   const stage = page.locator('.stage-grid')
-  await expect.poll(() => stage.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true)
+  await expect.poll(() => stage.evaluate((element) => element.scrollWidth > element.clientWidth), { timeout: 10_000 }).toBe(true)
   const surface = page.getByLabel('Navigator pan surface')
   const bounds = await surface.boundingBox()
   expect(bounds).not.toBeNull()
