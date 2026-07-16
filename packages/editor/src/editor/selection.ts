@@ -209,6 +209,77 @@ export function contiguousAlphaMask(image: ImageData, startX: number, startY: nu
   return mask
 }
 
+export function colorRangeMask(image: ImageData, color: [number, number, number], tolerance: number) {
+  const mask = new Uint8ClampedArray(image.width * image.height)
+  const limit = Math.max(0, Math.min(255, tolerance))
+  for (let pixel = 0; pixel < mask.length; pixel += 1) {
+    const offset = pixel * 4
+    const distance = Math.max(Math.abs(image.data[offset] - color[0]), Math.abs(image.data[offset + 1] - color[1]), Math.abs(image.data[offset + 2] - color[2]))
+    mask[pixel] = distance <= limit ? Math.round((1 - distance / Math.max(1, limit + 1)) * image.data[offset + 3]) : 0
+  }
+  return mask
+}
+
+export function luminosityRangeMask(image: ImageData, minimum: number, maximum: number, feather = 16) {
+  const mask = new Uint8ClampedArray(image.width * image.height)
+  const low = Math.max(0, Math.min(255, minimum))
+  const high = Math.max(low, Math.min(255, maximum))
+  for (let pixel = 0; pixel < mask.length; pixel += 1) {
+    const offset = pixel * 4
+    const luminance = image.data[offset] * 0.2126 + image.data[offset + 1] * 0.7152 + image.data[offset + 2] * 0.0722
+    const coverage = luminance < low ? 1 - (low - luminance) / Math.max(1, feather) : luminance > high ? 1 - (luminance - high) / Math.max(1, feather) : 1
+    mask[pixel] = Math.round(Math.max(0, Math.min(1, coverage)) * image.data[offset + 3])
+  }
+  return mask
+}
+
+export function edgeSelectionMask(image: ImageData, threshold = 32) {
+  const mask = new Uint8ClampedArray(image.width * image.height)
+  const luminance = (x: number, y: number) => {
+    const offset = (Math.max(0, Math.min(image.height - 1, y)) * image.width + Math.max(0, Math.min(image.width - 1, x))) * 4
+    return image.data[offset] * 0.2126 + image.data[offset + 1] * 0.7152 + image.data[offset + 2] * 0.0722
+  }
+  for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
+    const gradient = Math.hypot(luminance(x + 1, y) - luminance(x - 1, y), luminance(x, y + 1) - luminance(x, y - 1))
+    mask[y * image.width + x] = gradient >= threshold ? Math.min(255, Math.round(gradient * 2)) : 0
+  }
+  return mask
+}
+
+export function growSelectionMask(selection: SelectionState, image: ImageData, tolerance: number) {
+  const context = selection.mask.getContext('2d', { willReadFrequently: true })
+  if (!context || image.width !== selection.mask.width || image.height !== selection.mask.height) return new Uint8ClampedArray(image.width * image.height)
+  const selected = context.getImageData(0, 0, image.width, image.height).data
+  const output = new Uint8ClampedArray(image.width * image.height)
+  for (let pixel = 0; pixel < output.length; pixel += 1) output[pixel] = selected[pixel * 4 + 3]
+  for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
+    const pixel = y * image.width + x
+    if (output[pixel]) continue
+    for (const neighbour of [x > 0 ? pixel - 1 : -1, x + 1 < image.width ? pixel + 1 : -1, y > 0 ? pixel - image.width : -1, y + 1 < image.height ? pixel + image.width : -1]) {
+      if (neighbour < 0 || !selected[neighbour * 4 + 3]) continue
+      const offset = pixel * 4
+      const other = neighbour * 4
+      if (Math.max(Math.abs(image.data[offset] - image.data[other]), Math.abs(image.data[offset + 1] - image.data[other + 1]), Math.abs(image.data[offset + 2] - image.data[other + 2])) <= tolerance) output[pixel] = image.data[offset + 3]
+    }
+  }
+  return output
+}
+
+export function similarSelectionMask(selection: SelectionState, image: ImageData, tolerance: number) {
+  const context = selection.mask.getContext('2d', { willReadFrequently: true })
+  if (!context) return new Uint8ClampedArray(image.width * image.height)
+  const selected = context.getImageData(0, 0, image.width, image.height).data
+  const totals = [0, 0, 0]
+  let count = 0
+  for (let pixel = 0; pixel < image.width * image.height; pixel += 1) if (selected[pixel * 4 + 3]) {
+    totals[0] += image.data[pixel * 4]
+    totals[1] += image.data[pixel * 4 + 1]
+    totals[2] += image.data[pixel * 4 + 2]
+    count += 1
+  }
+  return count ? colorRangeMask(image, totals.map((value) => Math.round(value / count)) as [number, number, number], tolerance) : new Uint8ClampedArray(image.width * image.height)
+}
+
 export function applySelectionAlphaMask(current: SelectionState | null, alpha: Uint8ClampedArray, mode: SelectionMode, width: number, height: number): SelectionState {
   const selection = current?.mask.width === width && current.mask.height === height ? current : createSelection(width, height)
   if (alpha.length !== width * height) return selection

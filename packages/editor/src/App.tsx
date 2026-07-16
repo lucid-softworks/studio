@@ -19,7 +19,7 @@ import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/st
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import type { RasterEdit, RasterRegion } from './editor/raster'
 import type { EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
-import { featherSelection, invertSelection, morphSelection, selectAll, type SelectionBounds, type SelectionState } from './editor/selection'
+import { applySelectionAlphaMask, colorRangeMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, similarSelectionMask, type SelectionBounds, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
@@ -913,6 +913,39 @@ function App({ onExit }: AppProps) {
     })
   }
 
+  const canvasSelectionImage = () => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d', { willReadFrequently: true })
+    return canvas && context ? { canvas, image: context.getImageData(0, 0, canvas.width, canvas.height) } : null
+  }
+
+  const selectColorRange = () => {
+    const source = canvasSelectionImage()
+    if (!source) return
+    const color = foregroundColor.replace('#', '')
+    const rgb: [number, number, number] = [Number.parseInt(color.slice(0, 2), 16), Number.parseInt(color.slice(2, 4), 16), Number.parseInt(color.slice(4, 6), 16)]
+    setSelection(applySelectionAlphaMask(null, colorRangeMask(source.image, rgb, 32), 'replace', source.canvas.width, source.canvas.height))
+  }
+
+  const selectLuminosityRange = (range: 'shadows' | 'midtones' | 'highlights') => {
+    const source = canvasSelectionImage()
+    if (!source) return
+    const limits = range === 'shadows' ? [0, 85] : range === 'highlights' ? [170, 255] : [64, 191]
+    setSelection(applySelectionAlphaMask(null, luminosityRangeMask(source.image, limits[0], limits[1], 24), 'replace', source.canvas.width, source.canvas.height))
+  }
+
+  const selectEdges = () => {
+    const source = canvasSelectionImage()
+    if (source) setSelection(applySelectionAlphaMask(null, edgeSelectionMask(source.image), 'replace', source.canvas.width, source.canvas.height))
+  }
+
+  const growOrSelectSimilar = (kind: 'grow' | 'similar') => {
+    const source = canvasSelectionImage()
+    if (!source || !selection) return
+    const alpha = kind === 'grow' ? growSelectionMask(selection, source.image, 32) : similarSelectionMask(selection, source.image, 32)
+    setSelection(applySelectionAlphaMask(null, alpha, 'replace', source.canvas.width, source.canvas.height))
+  }
+
   const exportImage = async (format: ExportFormat) => {
     setIsExporting(true)
     if (format === 'psd') {
@@ -1105,6 +1138,11 @@ function App({ onExit }: AppProps) {
             onFeatherSelection={() => applySelectionOperation('feather')}
             onExpandSelection={() => applySelectionOperation('expand')}
             onContractSelection={() => applySelectionOperation('contract')}
+            onColorRange={selectColorRange}
+            onLuminosityRange={selectLuminosityRange}
+            onEdgeSelection={selectEdges}
+            onGrowSelection={() => growOrSelectSimilar('grow')}
+            onSimilarSelection={() => growOrSelectSimilar('similar')}
             onFilter={(preset) => {
               if (preset === 'blur') applyFilter({ blur: 8 })
               else if (preset === 'sharpen') applyFilter({ contrast: 115, saturation: 108 })

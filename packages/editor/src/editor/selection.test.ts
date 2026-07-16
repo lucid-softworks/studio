@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { applySelectionShape, contiguousAlphaMask, contiguousColorMask, selectionAlphaAt, selectionAlphaAtPoint } from './selection'
+import { applySelectionShape, colorRangeMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -56,5 +56,21 @@ describe('selection coverage', () => {
     expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([1, 1, 0, 0, 1, 1, 1, 1])
     selection = applySelectionShape(selection, { kind: 'rectangle', x: 1, y: 0, width: 5, height: 1 }, 'intersect', 8, 1)
     expect(Array.from({ length: 8 }, (_, x) => selectionAlphaAtPoint(selection, x, 0))).toEqual([0, 1, 0, 0, 1, 1, 0, 0])
+  })
+
+  it('builds global color, luminosity, and local edge masks', () => {
+    const image = selectionData([255, 255, 255], 3, 1)
+    ;[10, 80, 220].forEach((value, pixel) => { image.data[pixel * 4] = image.data[pixel * 4 + 1] = image.data[pixel * 4 + 2] = value })
+    expect([...colorRangeMask(image, [10, 10, 10], 20)]).toEqual([255, 0, 0])
+    expect([...luminosityRangeMask(image, 70, 100, 0)]).toEqual([0, 255, 0])
+    expect(edgeSelectionMask(image, 20).some((value) => value > 0)).toBe(true)
+  })
+
+  it('grows adjacent matching pixels and finds similar pixels globally', () => {
+    const image = selectionData([255, 255, 255, 255], 4, 1)
+    ;[20, 22, 200, 21].forEach((value, pixel) => { image.data[pixel * 4] = value })
+    const selection = applySelectionShape(null, { kind: 'rectangle', x: 0, y: 0, width: 1, height: 1 }, 'replace', 4, 1)
+    expect([...growSelectionMask(selection, image, 5)]).toEqual([255, 255, 0, 0])
+    expect([...similarSelectionMask(selection, image, 5)]).toEqual([255, 170, 0, 213])
   })
 })

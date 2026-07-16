@@ -33,6 +33,11 @@ type MenuBarProps = {
   onFeatherSelection: () => void
   onExpandSelection: () => void
   onContractSelection: () => void
+  onColorRange: () => void
+  onLuminosityRange: (range: 'shadows' | 'midtones' | 'highlights') => void
+  onEdgeSelection: () => void
+  onGrowSelection: () => void
+  onSimilarSelection: () => void
   onFilter: (preset: 'blur' | 'sharpen' | 'grayscale' | 'sepia' | 'invert' | 'reset') => void
   onZoom: (command: 'in' | 'out' | 'actual') => void
   onTogglePanel: (panel: 'properties' | 'layers') => void
@@ -181,6 +186,14 @@ export function MenuBar(props: MenuBarProps) {
         <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onFeatherSelection)}>Feather 4 px</MenuItem>
         <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onExpandSelection)}>Expand 4 px</MenuItem>
         <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onContractSelection)}>Contract 4 px</MenuItem>
+        <Separator />
+        <MenuItem onSelect={() => select(props.onColorRange)}>Color range from foreground</MenuItem>
+        <MenuItem onSelect={() => select(() => props.onLuminosityRange('shadows'))}>Luminosity range: Shadows</MenuItem>
+        <MenuItem onSelect={() => select(() => props.onLuminosityRange('midtones'))}>Luminosity range: Midtones</MenuItem>
+        <MenuItem onSelect={() => select(() => props.onLuminosityRange('highlights'))}>Luminosity range: Highlights</MenuItem>
+        <MenuItem onSelect={() => select(props.onEdgeSelection)}>Find subject edges</MenuItem>
+        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onGrowSelection)}>Grow</MenuItem>
+        <MenuItem disabled={!props.hasPixelSelection} onSelect={() => select(props.onSimilarSelection)}>Similar</MenuItem>
       </>)}
 
       {menu('filter', 'Filter', <>
