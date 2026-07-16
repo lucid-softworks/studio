@@ -372,6 +372,7 @@ export type DocumentAction =
   | { type: 'set-canvas-size'; width: number; height: number }
   | { type: 'set-background'; patch: Partial<BackgroundSettings> }
   | { type: 'set-pattern'; patch: Partial<PatternSettings> }
+  | { type: 'set-channels'; channels: DocumentChannel[] }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }
   | { type: 'add-group'; group: LayerGroup; layerIds: string[] }

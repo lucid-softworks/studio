@@ -5,13 +5,13 @@ import type { PatternPreset } from '../editor/patterns'
 import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import { clampFloatingPanelPosition, type FloatingPanelPosition, type UtilityPanelId } from '../editor/panel-layout'
 import type { AssetMap } from '../editor/runtime-assets'
-import type { SelectionState } from '../editor/selection'
+import type { ComponentChannel, SelectionMode, SelectionState } from '../editor/selection'
 import { getDescendantLayers, getStackChildren, groupIsLocked, layerIsLocked } from '../editor/stack'
-import type { DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLayer, LayerGroup, PatternSettings } from '../editor/types'
+import type { DocumentChannel, DocumentHistoryCommand, EditorDispatch, EditorDocument, EditorLayer, LayerGroup, PatternSettings } from '../editor/types'
 import { CircleIcon, EyeIcon, ImageIcon, LockIcon, RectangleIcon, TextIcon, TrashIcon } from './Icons'
 import { CollapsedPanelRail, PanelCollapseButton } from './PanelCollapseControls'
 import { PanelResizeHandle } from './PanelResizeHandle'
-import { GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, LibrariesPanel, NavigatorPanel, PatternsPanel, SwatchesPanel } from './UtilityPanels'
+import { ChannelsPanel, GradientsPanel, HistogramPanel, HistoryPanel, InfoPanel, LibrariesPanel, NavigatorPanel, PatternsPanel, SwatchesPanel, type AlphaChannelTransform } from './UtilityPanels'
 
 type LayersPanelProps = {
   document: EditorDocument
@@ -34,6 +34,12 @@ type LayersPanelProps = {
   assets: AssetMap
   canvasRef: RefObject<HTMLCanvasElement | null>
   selection: SelectionState | null
+  onLoadComponentChannel: (channel: ComponentChannel, mode: SelectionMode) => void
+  onSaveAlphaChannel: (name: string) => void
+  onLoadAlphaChannel: (channel: DocumentChannel, mode: SelectionMode) => void
+  onDuplicateAlphaChannel: (channel: DocumentChannel) => void
+  onDeleteAlphaChannel: (channel: DocumentChannel) => void
+  onTransformAlphaChannel: (channel: DocumentChannel, operation: AlphaChannelTransform) => void
   zoom: number
   onZoomChange: (zoom: number) => void
   renderer: 'canvas2d' | 'webgpu'
@@ -74,7 +80,7 @@ type LayersPanelProps = {
 
 type DraggedItem = { type: 'layer' | 'group'; id: string }
 type DropTarget = { key: string; parentId: string | null; beforeId?: string | null }
-const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'patterns', label: 'Patt', title: 'Patterns' }, { id: 'libraries', label: 'Lib', title: 'Libraries' }, { id: 'info', label: 'Info' }]
+const utilityTabs: Array<{ id: UtilityPanelId; label: string; title?: string }> = [{ id: 'layers', label: 'Layers' }, { id: 'channels', label: 'Chan', title: 'Channels' }, { id: 'history', label: 'History' }, { id: 'navigator', label: 'Nav', title: 'Navigator' }, { id: 'histogram', label: 'Hist', title: 'Histogram' }, { id: 'swatches', label: 'Swat', title: 'Swatches' }, { id: 'gradients', label: 'Grad', title: 'Gradients' }, { id: 'patterns', label: 'Patt', title: 'Patterns' }, { id: 'libraries', label: 'Lib', title: 'Libraries' }, { id: 'info', label: 'Info' }]
 
 function FolderIcon({ open = false }: { open?: boolean }) {
   return <svg viewBox="0 0 20 20" aria-hidden="true" className="size-3.5"><path d={open ? 'M2.5 6.5h5l1.5 2h8.5l-1.5 7H4z' : 'M2.5 5h5l1.5 2h7.5v8.5h-14z'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
@@ -88,7 +94,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onLoadFont }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onLoadFont }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
@@ -258,6 +264,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {!activeGroup && document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <div className="flex items-center border-t border-white/[0.05] px-3 pt-2"><button type="button" onClick={() => toggleVectorMask(activeLayer)} className={`rounded-md border px-2 py-1 text-[9px] ${activeLayer.vectorMask ? 'border-violet-300/20 bg-violet-300/10 text-violet-100' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.vectorMask ? 'Remove vector mask' : selection?.bounds ? '+ Vector from selection' : '+ Vector mask'}</button></div>}
       {!activeGroup && document.selectedLayerIds.length > 0 && <div className="flex items-center justify-between border-t border-white/[0.07] p-3"><div className="flex items-center gap-1">{document.selectedLayerIds.length === 1 && activeLayer && activeLayer.type !== 'adjustment' && <><button type="button" onClick={() => activeLayer.maskAssetId ? onEditMask(activeLayer.id) : onAddMask(activeLayer.id)} className={`rounded-md border px-2 py-1 text-[9px] ${editingMaskLayerId === activeLayer.id ? 'border-cyan-300/20 bg-cyan-400/10 text-cyan-200' : 'border-white/[0.07] text-zinc-600'}`}>{activeLayer.maskAssetId ? editingMaskLayerId === activeLayer.id ? 'Pixels' : 'Mask' : '+ Mask'}</button>{activeLayer.maskAssetId && <button type="button" aria-label="Remove layer mask" onClick={() => onRemoveMask(activeLayer.id)} className="flex size-6 items-center justify-center rounded text-zinc-700 hover:text-red-300">×</button>}</>}{document.selectedLayerIds.length > 1 && <p className="text-[10px] text-zinc-700">{document.selectedLayerIds.length} selected</p>}</div><button type="button" aria-label="Delete selected layer" onClick={() => dispatch({ type: 'remove-layers', ids: document.selectedLayerIds })} className="flex size-7 items-center justify-center rounded-md text-zinc-600 hover:bg-red-400/10 hover:text-red-300"><TrashIcon className="size-3.5" /></button></div>}
       </>}
+      {activePanel === 'channels' && <ChannelsPanel channels={document.channels ?? []} hasSelection={Boolean(selection?.bounds)} onLoadComponent={onLoadComponentChannel} onSaveSelection={onSaveAlphaChannel} onLoadAlpha={onLoadAlphaChannel} onDuplicateAlpha={onDuplicateAlphaChannel} onDeleteAlpha={onDeleteAlphaChannel} onTransformAlpha={onTransformAlphaChannel} />}
       {activePanel === 'history' && <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />}
       {activePanel === 'navigator' && <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />}
       {activePanel === 'histogram' && <HistogramPanel sourceCanvasRef={canvasRef} document={document} renderRevision={renderRevision} />}

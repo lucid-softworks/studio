@@ -18,8 +18,8 @@ import type { AssetMap } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import type { RasterEdit, RasterRegion } from './editor/raster'
-import type { EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
-import { applySelectionAlphaMask, colorRangeMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, similarSelectionMask, type SelectionBounds, type SelectionState } from './editor/selection'
+import type { DocumentChannel, EditorDispatch, EditorLayer, HistoryState, LayerFilters, LayerPatch, Position, ShapeKind } from './editor/types'
+import { applySelectionAlphaMask, colorRangeMask, componentChannelMask, edgeSelectionMask, featherSelection, growSelectionMask, invertSelection, luminosityRangeMask, morphSelection, selectAll, similarSelectionMask, type ComponentChannel, type SelectionBounds, type SelectionMode, type SelectionState } from './editor/selection'
 import { useCanvasRenderer } from './editor/use-canvas-renderer'
 import { importBrush, importFont, loadBrushLibrary, loadFontLibrary, removeBrush, roundBrush, type BrushPreset, type CustomFontResource } from './editor/resources'
 import { Toast, type ToastMessage, type ToastTone } from './components/Toast'
@@ -29,6 +29,7 @@ import { builtInWorkspacePresets, defaultWorkspaceLayout, normalizeWorkspaceLayo
 import { normalizeCustomSwatches, normalizeHexColor } from './editor/swatches'
 import { normalizeCustomGradients, type GradientPreset } from './editor/gradients'
 import { normalizeCustomPatterns, type PatternPreset } from './editor/patterns'
+import type { AlphaChannelTransform } from './components/UtilityPanels'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -949,6 +950,126 @@ function App({ onExit }: AppProps) {
     setSelection(applySelectionAlphaMask(null, alpha, 'replace', source.canvas.width, source.canvas.height))
   }
 
+  const loadComponentChannel = (channel: ComponentChannel, mode: SelectionMode) => {
+    const source = canvasSelectionImage()
+    if (!source) return
+    setSelection((current) => applySelectionAlphaMask(current, componentChannelMask(source.image, channel), mode, source.canvas.width, source.canvas.height))
+    setNotice(`Loaded the ${channel} channel into the selection.`, 'success')
+  }
+
+  const alphaChannelIndex = (channel: DocumentChannel) => {
+    const channels = document.channels ?? []
+    const byReference = channels.indexOf(channel)
+    return byReference >= 0 ? byReference : channels.findIndex((candidate) => candidate.id === channel.id && candidate.name === channel.name)
+  }
+
+  const channelPixels = (channel: DocumentChannel) => {
+    const source = channel.assetId ? assets[channel.assetId] : undefined
+    const input = source?.surface ?? source?.element
+    const size = getDocumentSize(document)
+    if (!input) return null
+    const canvas = window.document.createElement('canvas')
+    canvas.width = size.width
+    canvas.height = size.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return null
+    context.drawImage(input, 0, 0, size.width, size.height)
+    const image = context.getImageData(0, 0, size.width, size.height)
+    const alpha = new Uint8ClampedArray(size.width * size.height)
+    for (let pixel = 0; pixel < alpha.length; pixel += 1) alpha[pixel] = image.data[pixel * 4]
+    return { alpha, image, size }
+  }
+
+  const saveAlphaChannel = (name: string) => {
+    if (!selection) return
+    const size = getDocumentSize(document)
+    const source = createEmptyRasterSource(size.width, size.height, `${name} channel`)
+    const context = source.surface?.getContext('2d', { willReadFrequently: true })
+    const maskContext = selection.mask.getContext('2d', { willReadFrequently: true })
+    if (!context || !maskContext) return
+    const mask = maskContext.getImageData(0, 0, size.width, size.height)
+    const pixels = context.createImageData(size.width, size.height)
+    for (let pixel = 0; pixel < size.width * size.height; pixel += 1) {
+      const value = mask.data[pixel * 4 + 3]
+      const offset = pixel * 4
+      pixels.data[offset] = value
+      pixels.data[offset + 1] = value
+      pixels.data[offset + 2] = value
+      pixels.data[offset + 3] = 255
+    }
+    context.putImageData(pixels, 0, 0)
+    const assetId = createId()
+    const id = Math.max(1, ...((document.channels ?? []).map((channel) => channel.id ?? 0))) + 1
+    setAssets((current) => ({ ...current, [assetId]: source }))
+    dispatch({ type: 'set-channels', channels: [...(document.channels ?? []), { id, name, assetId }] })
+    setNotice(`Saved the selection as ${name}.`, 'success')
+  }
+
+  const loadAlphaChannel = (channel: DocumentChannel, mode: SelectionMode) => {
+    const pixels = channelPixels(channel)
+    if (!pixels) {
+      setNotice(`${channel.name} has no editable pixel data.`)
+      return
+    }
+    setSelection((current) => applySelectionAlphaMask(current, pixels.alpha, mode, pixels.size.width, pixels.size.height))
+    setNotice(`Loaded ${channel.name} into the selection.`, 'success')
+  }
+
+  const duplicateAlphaChannel = (channel: DocumentChannel) => {
+    const source = channel.assetId ? assets[channel.assetId] : undefined
+    if (!source) return
+    const assetId = createId()
+    const name = `${channel.name} copy`
+    const copy = cloneRasterSource(source, `${name} channel`)
+    const id = Math.max(1, ...((document.channels ?? []).map((candidate) => candidate.id ?? 0))) + 1
+    setAssets((current) => ({ ...current, [assetId]: copy }))
+    dispatch({ type: 'set-channels', channels: [...(document.channels ?? []), { id, name, assetId }] })
+    setNotice(`Duplicated ${channel.name}.`, 'success')
+  }
+
+  const deleteAlphaChannel = (channel: DocumentChannel) => {
+    const index = alphaChannelIndex(channel)
+    if (index < 0) return
+    dispatch({ type: 'set-channels', channels: (document.channels ?? []).filter((_, candidate) => candidate !== index) })
+    setNotice(`Deleted ${channel.name}.`, 'success')
+  }
+
+  const transformAlphaChannel = (channel: DocumentChannel, operation: AlphaChannelTransform) => {
+    const source = channel.assetId ? assets[channel.assetId] : undefined
+    const input = source?.surface ?? source?.element
+    const index = alphaChannelIndex(channel)
+    const size = getDocumentSize(document)
+    if (!input || index < 0) return
+    const transformed = createEmptyRasterSource(size.width, size.height, `${channel.name} channel`)
+    const context = transformed.surface?.getContext('2d', { willReadFrequently: true })
+    if (!context) return
+    if (operation === 'invert') {
+      context.drawImage(input, 0, 0, size.width, size.height)
+      const pixels = context.getImageData(0, 0, size.width, size.height)
+      for (let pixel = 0; pixel < size.width * size.height; pixel += 1) {
+        const offset = pixel * 4
+        const value = 255 - pixels.data[offset]
+        pixels.data[offset] = value
+        pixels.data[offset + 1] = value
+        pixels.data[offset + 2] = value
+        pixels.data[offset + 3] = 255
+      }
+      context.putImageData(pixels, 0, 0)
+    } else {
+      context.save()
+      context.translate(size.width / 2, size.height / 2)
+      if (operation === 'flip-horizontal') context.scale(-1, 1)
+      else if (operation === 'flip-vertical') context.scale(1, -1)
+      else context.rotate(Math.PI / 2)
+      context.drawImage(input, -size.width / 2, -size.height / 2, size.width, size.height)
+      context.restore()
+    }
+    const assetId = createId()
+    setAssets((current) => ({ ...current, [assetId]: transformed }))
+    dispatch({ type: 'set-channels', channels: (document.channels ?? []).map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, assetId } : candidate) })
+    setNotice(`Updated ${channel.name}.`, 'success')
+  }
+
   const exportImage = async (format: ExportFormat) => {
     setIsExporting(true)
     if (format === 'psd') {
@@ -1194,7 +1315,7 @@ function App({ onExit }: AppProps) {
         <ToolRail tool={tool} onChange={setTool} />
         <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
-        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
+        <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>
 
       <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />

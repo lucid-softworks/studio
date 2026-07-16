@@ -307,6 +307,26 @@ export function applySelectionAlphaMask(current: SelectionState | null, alpha: U
   return applyTemporaryMask(selection, temporary, mode, width, height)
 }
 
+export type ComponentChannel = 'red' | 'green' | 'blue' | 'cyan' | 'magenta' | 'yellow' | 'black'
+
+export function componentChannelMask(image: ImageData, channel: ComponentChannel) {
+  const alpha = new Uint8ClampedArray(image.width * image.height)
+  for (let pixel = 0; pixel < alpha.length; pixel += 1) {
+    const offset = pixel * 4
+    const red = image.data[offset]
+    const green = image.data[offset + 1]
+    const blue = image.data[offset + 2]
+    alpha[pixel] = channel === 'red' ? red
+      : channel === 'green' ? green
+        : channel === 'blue' ? blue
+          : channel === 'cyan' ? 255 - red
+            : channel === 'magenta' ? 255 - green
+              : channel === 'yellow' ? 255 - blue
+                : 255 - Math.max(red, green, blue)
+  }
+  return alpha
+}
+
 export function selectAll(width: number, height: number) {
   return applySelectionShape(null, { kind: 'rectangle', x: 0, y: 0, width, height }, 'replace', width, height)
 }

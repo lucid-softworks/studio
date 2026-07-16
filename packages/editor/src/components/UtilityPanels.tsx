@@ -7,9 +7,61 @@ import { defaultPatterns, type PatternPreset } from '../editor/patterns'
 import { getLayerBounds } from '../editor/renderer'
 import type { BrushPreset, CustomFontResource } from '../editor/resources'
 import type { AssetMap } from '../editor/runtime-assets'
-import type { SelectionState } from '../editor/selection'
+import type { ComponentChannel, SelectionMode, SelectionState } from '../editor/selection'
 import { defaultSwatches } from '../editor/swatches'
-import type { DocumentHistoryCommand, EditorDocument, PatternSettings } from '../editor/types'
+import type { DocumentChannel, DocumentHistoryCommand, EditorDocument, PatternSettings } from '../editor/types'
+
+export type AlphaChannelTransform = 'invert' | 'flip-horizontal' | 'flip-vertical' | 'rotate-clockwise'
+
+export function ChannelsPanel({ channels, hasSelection, onLoadComponent, onSaveSelection, onLoadAlpha, onDuplicateAlpha, onDeleteAlpha, onTransformAlpha }: {
+  channels: DocumentChannel[]
+  hasSelection: boolean
+  onLoadComponent: (channel: ComponentChannel, mode: SelectionMode) => void
+  onSaveSelection: (name: string) => void
+  onLoadAlpha: (channel: DocumentChannel, mode: SelectionMode) => void
+  onDuplicateAlpha: (channel: DocumentChannel) => void
+  onDeleteAlpha: (channel: DocumentChannel) => void
+  onTransformAlpha: (channel: DocumentChannel, operation: AlphaChannelTransform) => void
+}) {
+  const [model, setModel] = useState<'rgb' | 'cmyk'>('rgb')
+  const [combineMode, setCombineMode] = useState<SelectionMode>('replace')
+  const [selectedAlphaIndex, setSelectedAlphaIndex] = useState<number | null>(channels.length ? 0 : null)
+  const [name, setName] = useState('')
+  const components: Array<{ id: ComponentChannel; name: string; color: string }> = model === 'rgb'
+    ? [{ id: 'red', name: 'Red', color: '#ef4444' }, { id: 'green', name: 'Green', color: '#22c55e' }, { id: 'blue', name: 'Blue', color: '#3b82f6' }]
+    : [{ id: 'cyan', name: 'Cyan', color: '#06b6d4' }, { id: 'magenta', name: 'Magenta', color: '#ec4899' }, { id: 'yellow', name: 'Yellow', color: '#eab308' }, { id: 'black', name: 'Black', color: '#3f3f46' }]
+  const selectedAlpha = selectedAlphaIndex === null ? undefined : channels[selectedAlphaIndex]
+  const save = () => {
+    if (!hasSelection) return
+    onSaveSelection(name.trim() || `Alpha ${channels.length + 1}`)
+    setName('')
+    setSelectedAlphaIndex(channels.length)
+  }
+
+  return (
+    <div role="tabpanel" aria-label="Channels" className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/25 p-1">{(['rgb', 'cmyk'] as const).map((value) => <button key={value} type="button" aria-pressed={model === value} onClick={() => { setModel(value); setSelectedAlphaIndex(null) }} className={`rounded-md py-2 text-[9px] font-semibold uppercase transition ${model === value ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{value}</button>)}</div>
+      <section className="mt-3">
+        <h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">{model} components</h3>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 rounded-md border border-white/[0.06] bg-black/15 px-2.5 py-2"><span className="size-5 rounded bg-[linear-gradient(135deg,#ef4444,#22c55e_50%,#3b82f6)]" /><span className="flex-1 text-[10px] text-zinc-400">{model.toUpperCase()} composite</span></div>
+          {components.map((component) => <button key={component.id} type="button" onClick={() => { setSelectedAlphaIndex(null); onLoadComponent(component.id, combineMode) }} className="flex w-full items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left transition hover:border-white/[0.06] hover:bg-white/[0.03]"><span style={{ backgroundColor: component.color }} className="size-5 rounded" /><span className="flex-1 text-[10px] text-zinc-400">{component.name}</span><span className="text-[8px] text-zinc-700">Select</span></button>)}
+        </div>
+      </section>
+      <section className="mt-4">
+        <div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Alpha channels</h3><span className="font-mono text-[8px] text-zinc-700">{channels.length}</span></div>
+        {channels.length ? <div className="space-y-1">{channels.map((channel, index) => <button key={`${channel.id ?? 'alpha'}:${index}`} type="button" aria-pressed={selectedAlphaIndex === index} onClick={() => setSelectedAlphaIndex(index)} onDoubleClick={() => onLoadAlpha(channel, combineMode)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition ${selectedAlphaIndex === index ? 'border-violet-300/30 bg-violet-400/[0.08]' : 'border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]'}`}><span className="size-5 rounded border border-white/10 bg-[linear-gradient(135deg,#fff,#111)]" /><span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">{channel.name}</span><span className="text-[8px] text-zinc-700">α</span></button>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Save a pixel selection to keep it as an editable alpha channel.</div>}
+      </section>
+      <section className="mt-4">
+        <label className="block text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Selection combine</label>
+        <select aria-label="Channel selection combine mode" value={combineMode} onChange={(event) => setCombineMode(event.target.value as SelectionMode)} className="mt-2 w-full rounded-md border border-white/[0.08] bg-zinc-950 px-2.5 py-2 text-[9px] text-zinc-400 outline-none"><option value="replace">Replace selection</option><option value="add">Add to selection</option><option value="subtract">Subtract from selection</option><option value="intersect">Intersect selection</option></select>
+        <div className="mt-2 flex gap-2"><input aria-label="New alpha channel name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save() }} placeholder={`Alpha ${channels.length + 1}`} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[9px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!hasSelection} onClick={save} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div>
+      </section>
+      {selectedAlpha && <section className="mt-3 rounded-lg border border-white/[0.07] bg-black/15 p-2.5"><div className="grid grid-cols-3 gap-1"><button type="button" onClick={() => onLoadAlpha(selectedAlpha, combineMode)} className="rounded-md bg-white/[0.04] py-2 text-[8px] text-zinc-500 hover:text-zinc-200">Load</button><button type="button" onClick={() => onDuplicateAlpha(selectedAlpha)} className="rounded-md bg-white/[0.04] py-2 text-[8px] text-zinc-500 hover:text-zinc-200">Duplicate</button><button type="button" onClick={() => { onDeleteAlpha(selectedAlpha); setSelectedAlphaIndex(null) }} className="rounded-md bg-red-400/[0.05] py-2 text-[8px] text-zinc-500 hover:text-red-300">Delete</button></div><div className="mt-1 grid grid-cols-4 gap-1"><button type="button" title="Invert channel" onClick={() => onTransformAlpha(selectedAlpha, 'invert')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">±</button><button type="button" title="Flip channel horizontally" onClick={() => onTransformAlpha(selectedAlpha, 'flip-horizontal')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↔</button><button type="button" title="Flip channel vertically" onClick={() => onTransformAlpha(selectedAlpha, 'flip-vertical')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↕</button><button type="button" title="Rotate channel clockwise" onClick={() => onTransformAlpha(selectedAlpha, 'rotate-clockwise')} className="rounded-md bg-white/[0.03] py-2 text-[9px] text-zinc-600 hover:text-zinc-200">↻</button></div></section>}
+      <p className="mt-4 text-center text-[9px] leading-relaxed text-zinc-700">Click a colour component or double-click an alpha channel to load it as a selection.</p>
+    </div>
+  )
+}
 
 export function HistoryPanel({ past, future, rasterUndoDepth, onJump }: {
   past: DocumentHistoryCommand[]

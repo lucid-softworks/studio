@@ -68,6 +68,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, background: { ...state.background, ...action.patch } }
     case 'set-pattern':
       return { ...state, pattern: { ...state.pattern, ...action.patch } }
+    case 'set-channels':
+      return { ...state, channels: action.channels }
     case 'add-layer': {
       const parentId = action.layer.groupId !== undefined ? action.layer.groupId : state.selectedGroupId ?? null
       const layer = { ...action.layer, groupId: parentId, stackOrder: siblingRefs(state, parentId).length } as EditorLayer

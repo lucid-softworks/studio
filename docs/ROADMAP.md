@@ -107,8 +107,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add a Select and Mask workspace with radius, feather, contrast, shift edge, and decontamination
 - [x] Add quick mask mode
 - [x] Add vector masks and editable raster/vector mask density, feather, and linking
-- [ ] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
-- [ ] Save, load, combine, and transform alpha-channel selections
+- [x] Add a Channels panel with RGB/CMYK/alpha channels and channel operations
+- [x] Save, load, combine, and transform alpha-channel selections
 
 ## M4 — paths, vectors, and shapes
 
@@ -183,7 +183,8 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
   - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
-  - [ ] Add Actions, Channels, and Paths panels
+  - [ ] Add Actions and Paths panels
+  - [x] Add Channels panel
 - [ ] Add actions recording, playback, conditional steps, and batch processing in a Worker
 - [ ] Add a sandboxed local scripting API with explicit filesystem permissions
 - [ ] Add plugin hooks for importers, exporters, filters, panels, and tools without requiring a server

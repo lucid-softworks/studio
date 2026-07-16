@@ -1,6 +1,6 @@
 import { createCanvas } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { applySelectionShape, colorRangeMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
+import { applySelectionShape, colorRangeMask, componentChannelMask, contiguousAlphaMask, contiguousColorMask, edgeSelectionMask, growSelectionMask, luminosityRangeMask, refineSelection, selectionAlphaAt, selectionAlphaAtPoint, similarSelectionMask } from './selection'
 
 Object.assign(globalThis, { document: { createElement: () => createCanvas(1, 1) } })
 
@@ -64,6 +64,18 @@ describe('selection coverage', () => {
     expect([...colorRangeMask(image, [10, 10, 10], 20)]).toEqual([255, 0, 0])
     expect([...luminosityRangeMask(image, 70, 100, 0)]).toEqual([0, 255, 0])
     expect(edgeSelectionMask(image, 20).some((value) => value > 0)).toBe(true)
+  })
+
+  it('extracts additive and subtractive component channels', () => {
+    const image = selectionData([255], 1, 1)
+    image.data.set([40, 100, 220, 255])
+    expect([...componentChannelMask(image, 'red')]).toEqual([40])
+    expect([...componentChannelMask(image, 'green')]).toEqual([100])
+    expect([...componentChannelMask(image, 'blue')]).toEqual([220])
+    expect([...componentChannelMask(image, 'cyan')]).toEqual([215])
+    expect([...componentChannelMask(image, 'magenta')]).toEqual([155])
+    expect([...componentChannelMask(image, 'yellow')]).toEqual([35])
+    expect([...componentChannelMask(image, 'black')]).toEqual([35])
   })
 
   it('grows adjacent matching pixels and finds similar pixels globally', () => {
