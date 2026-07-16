@@ -502,12 +502,45 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
   const [name, setName] = useState('My action')
   const [selectedId, setSelectedId] = useState<string | null>(() => actions[0]?.id ?? null)
   const [batching, setBatching] = useState(false)
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
   const batchInputRef = useRef<HTMLInputElement>(null)
+  const batchJobRef = useRef<{ cancelled: boolean; worker: Worker | null; reject: ((reason: DOMException) => void) | null } | null>(null)
   const selected = actions.find((action) => action.id === selectedId) ?? null
 
   useEffect(() => {
     try { localStorage.setItem('studio.actions', JSON.stringify(actions)) } catch { /* Local action storage is optional. */ }
   }, [actions])
+
+  const cancelBatch = () => {
+    const job = batchJobRef.current
+    if (!job || job.cancelled) return
+    job.cancelled = true
+    job.worker?.terminate()
+    job.reject?.(new DOMException('Action batch was cancelled.', 'AbortError'))
+    batchJobRef.current = null
+    setBatching(false)
+  }
+
+  useEffect(() => {
+    if (!batching) return
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      cancelBatch()
+    }
+    window.addEventListener('keydown', keyDown, true)
+    return () => window.removeEventListener('keydown', keyDown, true)
+  })
+
+  useEffect(() => () => {
+    const job = batchJobRef.current
+    if (!job) return
+    job.cancelled = true
+    job.worker?.terminate()
+    job.reject?.(new DOMException('Action batch was cancelled.', 'AbortError'))
+    batchJobRef.current = null
+  }, [])
 
   const addStep = (command: ActionCommand) => {
     const step: ActionStep = { id: crypto.randomUUID(), command, enabled: true, condition: 'always' }
@@ -533,20 +566,39 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
     if (!files?.length || !selected) return
     const commands = selected.steps.filter((step) => step.enabled).map((step) => step.command).filter((command) => ['invert', 'grayscale', 'sharpen', 'rotate-cw', 'flip-x'].includes(command))
     if (!commands.length) return
+    const batchName = selected.name
+    const job = { cancelled: false, worker: null as Worker | null, reject: null as ((reason: DOMException) => void) | null }
+    batchJobRef.current = job
     setBatching(true)
+    setBatchProgress({ current: 0, total: files.length })
     try {
-      for (const file of Array.from(files)) {
+      for (const [index, file] of Array.from(files).entries()) {
+        if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
+        setBatchProgress({ current: index + 1, total: files.length })
         const worker = new Worker(new URL('../editor/workers/action-batch.worker.ts', import.meta.url), { type: 'module' })
+        job.worker = worker
         const buffer = await file.arrayBuffer()
+        if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
         const response = await new Promise<{ blob?: Blob; error?: string }>((resolve, reject) => {
+          job.reject = reject
           worker.onmessage = (event) => resolve(event.data as { blob?: Blob; error?: string })
           worker.onerror = () => reject(new Error('The batch worker stopped unexpectedly.'))
           worker.postMessage({ data: buffer, type: file.type, commands }, [buffer])
-        }).finally(() => worker.terminate())
+        }).finally(() => {
+          worker.terminate()
+          if (job.worker === worker) job.worker = null
+          job.reject = null
+        })
+        if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
         if (response.error || !response.blob) throw new Error(response.error || 'The batch worker returned no file.')
-        downloadBlob(response.blob, `${file.name.replace(/\.[^.]+$/, '')}-${selected.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`)
+        downloadBlob(response.blob, `${file.name.replace(/\.[^.]+$/, '')}-${batchName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`)
       }
-    } finally { setBatching(false) }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
+    } finally {
+      if (batchJobRef.current === job) batchJobRef.current = null
+      setBatching(false)
+    }
   }
 
   return (
@@ -558,7 +610,7 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
       </section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Saved actions</h3>{actions.length ? <div className="space-y-1">{actions.map((action) => <button key={action.id} type="button" aria-pressed={selected?.id === action.id} onClick={() => setSelectedId(action.id)} className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-[9px] ${selected?.id === action.id ? 'bg-violet-400/12 text-violet-100' : 'bg-white/[0.03] text-zinc-500 hover:text-zinc-200'}`}><span className="truncate">{action.name}</span><span className="font-mono text-[8px] text-zinc-700">{action.steps.length}</span></button>)}</div> : <p className="rounded-lg border border-dashed border-white/[0.07] p-4 text-center text-[9px] text-zinc-700">Record an action to add it here.</p>}</section>
       {selected && <section className="mt-3 rounded-lg border border-white/[0.06] bg-black/10 p-2">
-        <div className="flex gap-1"><button type="button" onClick={() => onRun(selected.steps)} className="flex-1 rounded-md bg-violet-500 px-2 py-2 text-[9px] font-semibold text-white">▶ Play</button><button type="button" disabled={batching} onClick={() => batchInputRef.current?.click()} className="rounded-md border border-white/[0.08] px-2 text-[9px] text-zinc-500 disabled:opacity-40">{batching ? 'Batching…' : 'Batch files…'}</button><button type="button" aria-label="Delete selected action" onClick={() => { setActions((current) => current.filter((action) => action.id !== selected.id)); setSelectedId(null) }} className="rounded-md px-2 text-zinc-700 hover:text-red-300">×</button></div>
+        <div className="flex gap-1"><button type="button" onClick={() => onRun(selected.steps)} className="flex-1 rounded-md bg-violet-500 px-2 py-2 text-[9px] font-semibold text-white">▶ Play</button><button type="button" onClick={() => batching ? cancelBatch() : batchInputRef.current?.click()} className={`rounded-md border px-2 text-[9px] ${batching ? 'border-red-300/20 bg-red-400/[0.08] text-red-200' : 'border-white/[0.08] text-zinc-500'}`}>{batching ? `Cancel ${batchProgress.current}/${batchProgress.total}` : 'Batch files…'}</button><button type="button" aria-label="Delete selected action" onClick={() => { setActions((current) => current.filter((action) => action.id !== selected.id)); setSelectedId(null) }} className="rounded-md px-2 text-zinc-700 hover:text-red-300">×</button></div>
         <div className="mt-2 space-y-1">{selected.steps.map((step, index) => <div key={step.id} className="grid grid-cols-[20px_1fr_90px] items-center gap-1 rounded bg-white/[0.025] p-1"><input aria-label={`Enable step ${index + 1}`} type="checkbox" checked={step.enabled} onChange={(event) => updateStep(step.id, { enabled: event.target.checked })} /><span className="truncate text-[8px] text-zinc-500">{index + 1}. {actionCommandLabels[step.command]}</span><select aria-label={`Condition for step ${index + 1}`} value={step.condition} onChange={(event) => updateStep(step.id, { condition: event.target.value as ActionCondition })} className="rounded border border-white/[0.06] bg-black/20 px-1 py-1 text-[7px] text-zinc-600"><option value="always">Always</option><option value="has-selection">If selected</option><option value="raster-layer">If raster</option><option value="multiple-layers">If multi-layer</option></select></div>)}</div>
       </section>}
       <input ref={batchInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void batchFiles(event.target.files); event.target.value = '' }} />
