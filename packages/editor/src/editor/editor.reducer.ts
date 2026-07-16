@@ -58,6 +58,8 @@ function moveWithinParent(state: EditorDocument, item: StackRef, direction: 'up'
 
 export function documentReducer(state: EditorDocument, action: DocumentAction): EditorDocument {
   switch (action.type) {
+    case 'set-bit-depth':
+      return { ...state, bitDepth: action.bitDepth }
     case 'set-canvas-preset': {
       const preset = getCanvasPreset(action.value)
       return { ...state, canvasPreset: action.value, canvasSize: { width: preset.width, height: preset.height } }
@@ -220,6 +222,7 @@ export const initialHistoryState: HistoryState = {
 
 const documentFields = [
   'schemaVersion',
+  'bitDepth',
   'canvasPreset',
   'canvasSize',
   'background',

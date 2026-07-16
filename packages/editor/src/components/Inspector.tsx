@@ -30,6 +30,7 @@ type InspectorProps = {
   onContentAwareScale: (layerId: string, width: number, height: number) => void
   canvasRef: RefObject<HTMLCanvasElement | null>
   renderer: 'webgpu' | 'canvas2d'
+  onBitDepthChange: (bitDepth: 8 | 16 | 32) => void
   dockSide: 'left' | 'right'
   onSwapPanels: () => void
   width: number
@@ -68,7 +69,7 @@ const blendModes: Array<{ value: BlendMode; label: string }> = [
   { value: 'luminosity', label: 'Luminosity' },
 ]
 
-export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, renderer, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
+export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundImage, backgroundImageName, customFonts, onLoadFont, onOpenSmartObject, onReplaceSmartObject, onRelinkSmartObject, onExportSmartObject, onContentAwareScale, canvasRef, renderer, onBitDepthChange, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed }: InspectorProps) {
   const [contentAwarePercent, setContentAwarePercent] = useState({ width: 100, height: 100 })
   const [guideLayout, setGuideLayout] = useState({ columns: 3, rows: 3, margin: 80, gutter: 24 })
   const selected = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
@@ -198,6 +199,7 @@ export function Inspector({ document, dispatch, endHistoryGroup, onBackgroundIma
                 >{preset.shortLabel}</button>
               ))}
             </div>
+            <label className="mt-3 block text-[9px] text-zinc-600">Document precision<select aria-label="Document bit depth" value={document.bitDepth} onChange={(event) => onBitDepthChange(Number(event.target.value) as 8 | 16 | 32)} className={`${fieldClass} mt-1`}><option value="8">8 bits/channel</option><option value="16">16 bits/channel</option><option value="32">32 bits/channel (linear float)</option></select></label>
           </ControlSection>
 
           <ControlSection title="Background">

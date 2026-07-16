@@ -405,6 +405,7 @@ export type LayerPatch = Partial<{
 export type GroupPatch = Partial<Omit<LayerGroup, 'id'>>
 
 export type DocumentAction =
+  | { type: 'set-bit-depth'; bitDepth: 8 | 16 | 32 }
   | { type: 'set-canvas-preset'; value: string }
   | { type: 'set-canvas-size'; width: number; height: number }
   | { type: 'set-background'; patch: Partial<BackgroundSettings> }

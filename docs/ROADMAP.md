@@ -139,7 +139,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add Camera Raw-style local controls implemented entirely on-device
 - [x] Build a TypeGPU filter graph for blur, sharpen, noise, distort, stylize, render, and pixelate families
 - [x] Add filter masks, live previews, cancelable jobs, and reusable presets
-- [ ] Add editable 8/16/32-bit document precision
+- [x] Add editable 8/16/32-bit document precision
 - [ ] Add ICC profile parsing, conversion, assign/convert profile, proof colors, and gamut warnings
 - [ ] Add RGB, grayscale, indexed, and CMYK document modes where browser color APIs permit accurate output
 - [ ] Add histogram, info, and scopes panels backed by worker/GPU reductions

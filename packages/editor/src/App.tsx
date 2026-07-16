@@ -14,7 +14,7 @@ import { loadRecoveryProject, parseProjectFile, saveRecoveryProject, serializePr
 import { calculateImageRect, getLayerBounds } from './editor/renderer'
 import { canvas2dCompositionRenderer } from './editor/rendering/composition-renderer'
 import { useRendererCapabilities } from './editor/rendering/use-renderer-capabilities'
-import type { AssetMap } from './editor/runtime-assets'
+import type { AssetMap, SourceImage } from './editor/runtime-assets'
 import { getDescendantGroupIds, groupIsLocked, layerIsLocked } from './editor/stack'
 import { smartObjectBytesHash, smartObjectDocumentHash } from './editor/smart-objects'
 import type { RasterEdit, RasterRegion } from './editor/raster'
@@ -32,6 +32,7 @@ import { normalizeCustomPatterns, type PatternPreset } from './editor/patterns'
 import type { AlphaChannelTransform } from './components/UtilityPanels'
 import { normalizeCustomShapes, parseCustomShapeFile, serializeCustomShape, type CustomShapePreset } from './editor/shape-library'
 import { perspectiveCropPixels } from './editor/transform'
+import { precisionFromImageData } from './editor/precision'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -124,12 +125,37 @@ function App({ onExit }: AppProps) {
   const rasterUndoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const rasterRedoRef = useRef<Array<RasterEdit & { depth: number }>>([])
   const assetsRef = useRef(assets)
+  const precisionBackupsRef = useRef(new Map<string, Map<16 | 32, NonNullable<SourceImage['precision']>>>())
   const document = history.present
   const rendererCapabilities = useRendererCapabilities(document)
 
   assetsRef.current = assets
   documentTabsRef.current = documentTabs
   useCanvasRenderer(canvasRef, document, assets, resourceRevision, rendererCapabilities.activeRenderer)
+
+  useEffect(() => {
+    if (document.bitDepth === 8) return
+    const bitDepth = document.bitDepth
+    setAssets((current) => {
+      let changed = false
+      const next = Object.fromEntries(Object.entries(current).map(([id, asset]) => {
+        const backups = precisionBackupsRef.current.get(id) ?? new Map<16 | 32, NonNullable<SourceImage['precision']>>()
+        precisionBackupsRef.current.set(id, backups)
+        if (asset.precision) backups.set(asset.precision.bitDepth, asset.precision)
+        if (asset.precision?.bitDepth === bitDepth && asset.precision.revision === (asset.revision ?? 0)) return [id, asset]
+        const restored = backups.get(bitDepth)
+        if (restored?.revision === (asset.revision ?? 0)) { changed = true; return [id, { ...asset, precision: restored }] }
+        const surface = asset.surface
+        const context = surface?.getContext('2d', { willReadFrequently: true })
+        if (!surface || !context) return [id, asset]
+        const precision = precisionFromImageData(context.getImageData(0, 0, surface.width, surface.height), bitDepth, asset.revision ?? 0)
+        backups.set(bitDepth, precision)
+        changed = true
+        return [id, { ...asset, precision }]
+      }))
+      return changed ? next : current
+    })
+  }, [document.bitDepth])
 
   useEffect(() => {
     setDocumentTabs((current) => current.map((tab) => tab.id === activeTabId ? { ...tab, history, assets } : tab))
@@ -1384,6 +1410,12 @@ function App({ onExit }: AppProps) {
 
   const backgroundName = document.background.imageAssetId ? assets[document.background.imageAssetId]?.name : undefined
 
+  const changeDocumentBitDepth = (bitDepth: 8 | 16 | 32) => {
+    if (bitDepth === document.bitDepth) return
+    dispatch({ type: 'set-bit-depth', bitDepth })
+    setNotice(`Converted the document working precision to ${bitDepth} bits/channel.`, 'success')
+  }
+
   const applyWorkspace = (workspace: WorkspacePreset) => {
     setWorkspaceLayout(normalizeWorkspaceLayout(workspace.layout))
     setNotice(`Applied the ${workspace.name} workspace.`, 'success')
@@ -1524,7 +1556,7 @@ function App({ onExit }: AppProps) {
 
       <main className="flex flex-col lg:flex-row">
         <ToolRail tool={tool} onChange={setTool} />
-        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} onContentAwareScale={(layerId, width, height) => void contentAwareScaleLayer(layerId, width, height)} canvasRef={canvasRef} renderer={rendererCapabilities.activeRenderer} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
+        <Inspector document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} onBackgroundImage={() => backgroundInputRef.current?.click()} backgroundImageName={backgroundName} customFonts={customFonts} onLoadFont={() => fontInputRef.current?.click()} onOpenSmartObject={openSmartObjectContents} onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()} onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()} onExportSmartObject={() => void exportSmartObjectContents()} onContentAwareScale={(layerId, width, height) => void contentAwareScaleLayer(layerId, width, height)} canvasRef={canvasRef} renderer={rendererCapabilities.activeRenderer} onBitDepthChange={changeDocumentBitDepth} dockSide={workspaceLayout.propertiesOnLeft ? 'left' : 'right'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.properties} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, properties: width } }))} collapsed={workspaceLayout.collapsedPanels.properties} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, properties: !current.collapsedPanels.properties } }))} />
         <CanvasStage canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} isLoading={isLoading} onFile={(file) => void addImageFile(file)} canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0} canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0} onUndo={performUndo} onRedo={performRedo} onAlign={alignSelection} onRasterChange={refreshRasterAsset} onRasterCommit={commitRasterEdit} editingMaskLayerId={editingMaskLayerId} selection={selection} onSelectionChange={setSelection} zoom={zoom} onZoomChange={setZoom} tool={tool} onToolChange={setTool} onAddText={addTextAt} onAddShape={addShapeAt} onCrop={cropDocument} onPerspectiveCrop={perspectiveCropDocument} brushes={[roundBrush, ...customBrushes]} brushId={brushId} onBrushChange={setBrushId} onLoadBrush={() => brushInputRef.current?.click()} foregroundColor={foregroundColor} backgroundColor={backgroundColor} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} />
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} customShapes={customShapes} onSaveCustomShape={saveCustomShape} onApplyCustomShape={applyCustomShape} onRemoveCustomShape={(id) => setCustomShapes((current) => current.filter((shape) => shape.id !== id))} onImportCustomShape={() => shapeInputRef.current?.click()} onExportPath={exportDocumentPath} zoom={zoom} onZoomChange={setZoom} renderer={rendererCapabilities.activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, start, end) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, start, end }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onLoadFont={() => fontInputRef.current?.click()} />
       </main>

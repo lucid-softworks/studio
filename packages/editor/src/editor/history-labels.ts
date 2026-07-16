@@ -1,6 +1,7 @@
 import type { DocumentHistoryCommand } from './types'
 
 const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
+  'set-bit-depth': 'Change document precision',
   'set-canvas-preset': 'Change canvas preset',
   'set-canvas-size': 'Resize canvas',
   'set-background': 'Change background',
