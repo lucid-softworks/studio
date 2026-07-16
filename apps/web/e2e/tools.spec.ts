@@ -329,6 +329,47 @@ test.describe('built-in tools', () => {
     expect(runtimeErrors).toEqual([])
   })
 
+  test('clone and heal sample Current & Below through raster masks and warp geometry', async ({ page }) => {
+    const runtimeErrors: string[] = []
+    page.on('pageerror', (error) => runtimeErrors.push(error.message))
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'New layer', exact: true }).click()
+    await page.getByRole('button', { name: 'Brush tool', exact: true }).click()
+    const brush = page.getByLabel('Brush surface')
+    const bounds = await brush.boundingBox()
+    expect(bounds).not.toBeNull()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.25, bounds!.y + bounds!.height * 0.38)
+    await page.mouse.down()
+    await page.mouse.move(bounds!.x + bounds!.width * 0.48, bounds!.y + bounds!.height * 0.52, { steps: 16 })
+    await page.mouse.up()
+
+    await page.getByRole('button', { name: '+ Mask', exact: true }).click()
+    await page.getByRole('button', { name: 'Pixels', exact: true }).click()
+    await page.getByRole('button', { name: 'Warp tool', exact: true }).click()
+    const warp = page.getByLabel('warp editing surface')
+    const center = warp.locator('circle').nth(4)
+    const centerBounds = await center.boundingBox()
+    expect(centerBounds).not.toBeNull()
+    await page.mouse.move(centerBounds!.x + centerBounds!.width / 2, centerBounds!.y + centerBounds!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(centerBounds!.x + 38, centerBounds!.y + 24, { steps: 6 })
+    await page.mouse.up()
+
+    const canvas = page.getByLabel('Composition canvas')
+    for (const [label, surfaceLabel] of [['Clone Stamp', 'Clone stamp'], ['Healing Brush', 'Healing brush']] as const) {
+      await page.getByRole('button', { name: `${label} tool`, exact: true }).click()
+      const overlay = page.getByLabel(`${surfaceLabel} surface`)
+      await overlay.click({ position: { x: bounds!.width * 0.36, y: bounds!.height * 0.46 }, modifiers: ['Alt'] })
+      const revisionBefore = await canvas.getAttribute('data-render-revision')
+      await page.mouse.move(bounds!.x + bounds!.width * 0.58, bounds!.y + bounds!.height * 0.56)
+      await page.mouse.down()
+      await page.mouse.move(bounds!.x + bounds!.width * 0.7, bounds!.y + bounds!.height * 0.62, { steps: 8 })
+      await expect.poll(() => canvas.getAttribute('data-render-revision')).not.toBe(revisionBefore)
+      await page.mouse.up()
+    }
+    expect(runtimeErrors).toEqual([])
+  })
+
   test('paint bucket and contiguous selections complete through cancellable workers', async ({ page }) => {
     const runtimeErrors: string[] = []
     page.on('pageerror', (error) => runtimeErrors.push(error.message))

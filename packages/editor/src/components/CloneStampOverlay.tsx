@@ -6,7 +6,7 @@ import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position } from '../editor/types'
 import { renderComposition } from '../editor/renderer'
-import { geometryTransformIsIdentity } from '../editor/transform'
+import { geometryMesh, geometryTransformIsIdentity } from '../editor/transform'
 import { useRasterStrokePreview } from './useRasterStrokePreview'
 
 type Props = {
@@ -86,16 +86,20 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const y = tileY * 256
     const width = Math.min(256, stroke.target.surface.width - x)
     const height = Math.min(256, stroke.target.surface.height - y)
-    const corners = [
+    const samplePoints = [
       sourceToCanvas({ x, y }, stroke.target),
       sourceToCanvas({ x: x + width, y }, stroke.target),
       sourceToCanvas({ x: x + width, y: y + height }, stroke.target),
       sourceToCanvas({ x, y: y + height }, stroke.target),
+      ...geometryMesh(stroke.target.layer.geometryTransform).source
+        .map((point) => ({ x: point.x * stroke.target.surface.width, y: point.y * stroke.target.surface.height }))
+        .filter((point) => point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height)
+        .map((point) => sourceToCanvas(point, stroke.target)),
     ]
-    const left = Math.floor(Math.min(...corners.map((point) => point.x))) - 2
-    const top = Math.floor(Math.min(...corners.map((point) => point.y))) - 2
-    const right = Math.ceil(Math.max(...corners.map((point) => point.x))) + 2
-    const bottom = Math.ceil(Math.max(...corners.map((point) => point.y))) + 2
+    const left = Math.floor(Math.min(...samplePoints.map((point) => point.x))) - 2
+    const top = Math.floor(Math.min(...samplePoints.map((point) => point.y))) - 2
+    const right = Math.ceil(Math.max(...samplePoints.map((point) => point.x))) + 2
+    const bottom = Math.ceil(Math.max(...samplePoints.map((point) => point.y))) + 2
     const viewport = { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
     const rendered = window.document.createElement('canvas')
     renderComposition(rendered, stroke.mergedDocument!, assets, { viewport })
@@ -103,15 +107,29 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     output.width = width
     output.height = height
     const context = output.getContext('2d')
-    if (context) {
-      const centerX = stroke.target.bounds.x + stroke.target.bounds.width / 2
-      const centerY = stroke.target.bounds.y + stroke.target.bounds.height / 2
-      context.translate(-x, -y)
-      context.translate(stroke.target.surface.width / 2, stroke.target.surface.height / 2)
-      context.scale(stroke.target.surface.width / stroke.target.bounds.width, stroke.target.surface.height / stroke.target.bounds.height)
-      context.rotate(-stroke.target.bounds.rotation * Math.PI / 180)
-      context.translate(-centerX, -centerY)
-      context.drawImage(rendered, viewport.x, viewport.y)
+    const renderedContext = rendered.getContext('2d', { willReadFrequently: true })
+    if (context && renderedContext) {
+      const source = renderedContext.getImageData(0, 0, rendered.width, rendered.height)
+      const result = context.createImageData(width, height)
+      const sample = (sampleX: number, sampleY: number, channel: number) => {
+        const left = Math.max(0, Math.min(source.width - 1, Math.floor(sampleX)))
+        const top = Math.max(0, Math.min(source.height - 1, Math.floor(sampleY)))
+        const right = Math.min(source.width - 1, left + 1)
+        const bottom = Math.min(source.height - 1, top + 1)
+        const fractionX = Math.max(0, Math.min(1, sampleX - left))
+        const fractionY = Math.max(0, Math.min(1, sampleY - top))
+        const at = (column: number, row: number) => source.data[(row * source.width + column) * 4 + channel]
+        return Math.round((at(left, top) * (1 - fractionX) + at(right, top) * fractionX) * (1 - fractionY) + (at(left, bottom) * (1 - fractionX) + at(right, bottom) * fractionX) * fractionY)
+      }
+      for (let row = 0; row < height; row += 1) for (let column = 0; column < width; column += 1) {
+        const documentPoint = sourceToCanvas({ x: x + column + 0.5, y: y + row + 0.5 }, stroke.target)
+        const sampleX = documentPoint.x - viewport.x - 0.5
+        const sampleY = documentPoint.y - viewport.y - 0.5
+        if (sampleX < 0 || sampleY < 0 || sampleX >= source.width || sampleY >= source.height) continue
+        const offset = (row * width + column) * 4
+        for (let channel = 0; channel < 4; channel += 1) result.data[offset + channel] = sample(sampleX, sampleY, channel)
+      }
+      context.putImageData(result, 0, 0)
     }
     const tile = { canvas: output, x, y }
     stroke.mergedTiles.set(key, tile)
