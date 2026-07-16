@@ -8,6 +8,19 @@ function writeAscii(target: Uint8Array, offset: number, value: string) {
   target[offset + value.length] = 0
 }
 
+async function pixelsToPng(pixels: ImageData, errorMessage: string) {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const surface = new OffscreenCanvas(pixels.width, pixels.height)
+    surface.getContext('2d')?.putImageData(pixels, 0, 0)
+    return surface.convertToBlob({ type: 'image/png' })
+  }
+  const surface = document.createElement('canvas')
+  surface.width = pixels.width
+  surface.height = pixels.height
+  surface.getContext('2d')?.putImageData(pixels, 0, 0)
+  return new Promise<Blob>((resolve, reject) => surface.toBlob((blob) => blob ? resolve(blob) : reject(new Error(errorMessage)), 'image/png'))
+}
+
 export function encodeLayeredTiff(frames: RasterExportFrame[], dpi = 72) {
   if (!frames.length) throw new Error('A TIFF needs at least one image layer.')
   const descriptions = frames.map((frame) => `${frame.name}\0`)
@@ -98,11 +111,7 @@ export async function encodeGif(frames: RasterExportFrame[]) {
 
 export async function encodePdf(frame: RasterExportFrame, dpi = 300, metadata: { author?: string; description?: string; title?: string } = {}) {
   const { PDFDocument } = await import('pdf-lib')
-  const surface = document.createElement('canvas')
-  surface.width = frame.pixels.width
-  surface.height = frame.pixels.height
-  surface.getContext('2d')?.putImageData(frame.pixels, 0, 0)
-  const png = await new Promise<Blob>((resolve, reject) => surface.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not render the PDF image.')), 'image/png'))
+  const png = await pixelsToPng(frame.pixels, 'Could not render the PDF image.')
   const pdf = await PDFDocument.create()
   if (metadata.title) pdf.setTitle(metadata.title)
   if (metadata.author) pdf.setAuthor(metadata.author)
@@ -118,11 +127,7 @@ export async function encodePdf(frame: RasterExportFrame, dpi = 300, metadata: {
 
 export async function encodePrintPdf(frame: RasterExportFrame, settings: { widthInches: number; heightInches: number; bleedInches: number; cropMarks: boolean }, metadata: { author?: string; description?: string; title?: string } = {}) {
   const { PDFDocument, grayscale } = await import('pdf-lib')
-  const surface = document.createElement('canvas')
-  surface.width = frame.pixels.width
-  surface.height = frame.pixels.height
-  surface.getContext('2d')?.putImageData(frame.pixels, 0, 0)
-  const png = await new Promise<Blob>((resolve, reject) => surface.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not render print pixels.')), 'image/png'))
+  const png = await pixelsToPng(frame.pixels, 'Could not render print pixels.')
   const pdf = await PDFDocument.create()
   if (metadata.title) pdf.setTitle(metadata.title)
   if (metadata.author) pdf.setAuthor(metadata.author)

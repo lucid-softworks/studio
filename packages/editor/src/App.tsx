@@ -191,23 +191,19 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     return () => window.removeEventListener('keydown', keyDown)
   }, [setNotice])
 
-  const runWorkerJob = <T,>(label: string, worker: Worker, message: unknown, transfer: Transferable[]) => new Promise<T>((resolve, reject) => {
+  const runWorkerTask = <T,>(label: string, worker: Worker, message: unknown, transfer: Transferable[], signal?: AbortSignal) => new Promise<T>((resolve, reject) => {
     let settled = false
     const finish = (callback: () => void) => {
       if (settled) return
       settled = true
-      if (activeWorkerJobRef.current === job) activeWorkerJobRef.current = null
+      signal?.removeEventListener('abort', cancel)
       worker.terminate()
       callback()
     }
-    const job: ActiveWorkerJob = {
-      label,
-      cancel: () => finish(() => reject(new DOMException(`${label} was cancelled.`, 'AbortError'))),
-    }
-    activeWorkerJobRef.current?.cancel()
-    activeWorkerJobRef.current = job
+    const cancel = () => finish(() => reject(signal?.reason instanceof Error ? signal.reason : new DOMException(`${label} was cancelled.`, 'AbortError')))
     worker.onmessage = (event) => finish(() => resolve(event.data as T))
     worker.onerror = () => finish(() => reject(new Error(`The ${label.toLocaleLowerCase()} worker stopped unexpectedly.`)))
+    signal?.addEventListener('abort', cancel, { once: true })
     try {
       worker.postMessage(message, transfer)
     } catch (error) {
@@ -226,6 +222,8 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       if (activeWorkerJobRef.current === job) activeWorkerJobRef.current = null
     }
   }
+
+  const runWorkerJob = <T,>(label: string, worker: Worker, message: unknown, transfer: Transferable[]) => runCancelableJob(label, (signal) => runWorkerTask<T>(label, worker, message, transfer, signal))
 
   useEffect(() => {
     const desktop = desktopBridge()
@@ -1556,7 +1554,6 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
     canvas2dCompositionRenderer.render(exportCanvas, { ...document, selectedLayerId: null }, assets)
     if (['tiff', 'pdf', 'gif', 'apng', 'avif'].includes(format)) {
       try {
-        const output = await import('./editor/output-formats')
         const pixelsFor = (canvas: HTMLCanvasElement) => {
           const context = canvas.getContext('2d', { willReadFrequently: true })
           if (!context) throw new Error('The exported canvas pixels are unavailable.')
@@ -1580,15 +1577,24 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
             animationFrames.push({ name: preview.name, pixels: pixelsFor(canvas), delayMs: preview.delayMs })
           }
         }
-        let blob: Blob
-        if (format === 'tiff') blob = output.encodeLayeredTiff([composite, ...layerFrames], document.fileMetadata?.resolutionDpi ?? 72)
-        else if (format === 'pdf') blob = await output.encodePdf(composite, document.fileMetadata?.resolutionDpi ?? 300, { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description })
-        else if (format === 'avif') blob = await output.encodeAvif(composite)
-        else if (format === 'gif') blob = await output.encodeGif(animationFrames.length ? animationFrames : layerFrames.length ? layerFrames : [composite])
-        else blob = await output.encodeApng(animationFrames.length ? animationFrames : layerFrames.length ? layerFrames : [composite])
+        const frames = format === 'tiff'
+          ? [composite, ...layerFrames]
+          : format === 'gif' || format === 'apng'
+            ? animationFrames.length ? animationFrames : layerFrames.length ? layerFrames : [composite]
+            : [composite]
+        const worker = new Worker(new URL('./editor/workers/raster-export.worker.ts', import.meta.url), { type: 'module' })
+        const response = await runWorkerJob<{ blob?: Blob; error?: string }>(`${format.toUpperCase()} export`, worker, {
+          format,
+          frames,
+          dpi: document.fileMetadata?.resolutionDpi ?? (format === 'pdf' ? 300 : 72),
+          metadata: { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description },
+        }, frames.map((frame) => frame.pixels.data.buffer))
+        if (response.error || !response.blob) throw new Error(response.error || `The ${format.toUpperCase()} encoder returned no file.`)
+        const blob = response.blob
         downloadBlob(blob, `studio-composition.${format === 'tiff' ? 'tif' : format === 'apng' ? 'png' : format}`)
         setNotice(format === 'tiff' ? `Exported a multipage TIFF with a composite and ${layerFrames.length} layer page${layerFrames.length === 1 ? '' : 's'}.` : `Exported ${format.toUpperCase()} locally.`, 'success')
       } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return
         setNotice(error instanceof Error ? error.message : `The ${format.toUpperCase()} could not be created.`)
       } finally {
         setIsExporting(false)
@@ -1664,8 +1670,11 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
         context.drawImage(target.source, target.x, target.y, target.width, target.height, 0, 0, outputCanvas.width, outputCanvas.height)
         let blob: Blob
         if (settings.format === 'avif') {
-          const { encodeAvif } = await import('./editor/output-formats')
-          blob = await encodeAvif({ name: target.name, pixels: context.getImageData(0, 0, outputCanvas.width, outputCanvas.height) })
+          const frame = { name: target.name, pixels: context.getImageData(0, 0, outputCanvas.width, outputCanvas.height) }
+          const worker = new Worker(new URL('./editor/workers/raster-export.worker.ts', import.meta.url), { type: 'module' })
+          const response = await runWorkerJob<{ blob?: Blob; error?: string }>('AVIF asset export', worker, { format: 'avif', frames: [frame] }, [frame.pixels.data.buffer])
+          if (response.error || !response.blob) throw new Error(response.error || `Could not encode ${target.name}.`)
+          blob = response.blob
         } else {
           const mime = settings.format === 'jpeg' ? 'image/jpeg' : `image/${settings.format}`
           blob = await new Promise<Blob>((resolve, reject) => outputCanvas.toBlob((value) => value ? resolve(value) : reject(new Error(`Could not encode ${target.name}.`)), mime, settings.format === 'png' ? undefined : settings.quality / 100))
@@ -1677,6 +1686,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       setNotice(`Generated ${targets.length} ${settings.format.toUpperCase()} asset${targets.length === 1 ? '' : 's'} locally.`, 'success')
       setExportWorkspaceOpen(false)
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The assets could not be generated.')
     } finally { setIsExporting(false) }
   }
@@ -1690,8 +1700,11 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       if (!context) throw new Error('The print canvas pixels are unavailable.')
       const dpi = document.fileMetadata?.resolutionDpi ?? 300
       const settings = document.printSettings ?? { widthInches: canvas.width / dpi, heightInches: canvas.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true }
-      const { encodePrintPdf } = await import('./editor/output-formats')
-      const blob = await encodePrintPdf({ name: 'Studio composition', pixels: context.getImageData(0, 0, canvas.width, canvas.height) }, settings, { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description })
+      const frame = { name: 'Studio composition', pixels: context.getImageData(0, 0, canvas.width, canvas.height) }
+      const worker = new Worker(new URL('./editor/workers/raster-export.worker.ts', import.meta.url), { type: 'module' })
+      const response = await runWorkerJob<{ blob?: Blob; error?: string }>('Print PDF export', worker, { format: 'print-pdf', frames: [frame], settings, metadata: { title: document.canvasPreset, author: document.fileMetadata?.author, description: document.fileMetadata?.description } }, [frame.pixels.data.buffer])
+      if (response.error || !response.blob) throw new Error(response.error || 'The print PDF encoder returned no file.')
+      const blob = response.blob
       if (printImmediately) {
         const url = URL.createObjectURL(blob)
         const frame = window.document.createElement('iframe')
@@ -1703,6 +1716,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
       } else downloadBlob(blob, 'studio-print.pdf')
       setNotice(printImmediately ? 'Opened the browser print workflow with a locally generated PDF.' : 'Exported the print-ready PDF.', 'success')
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'The print PDF could not be created.')
     } finally { setIsExporting(false) }
   }
