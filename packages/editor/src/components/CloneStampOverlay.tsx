@@ -4,6 +4,7 @@ import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCan
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position } from '../editor/types'
+import { renderComposition } from '../editor/renderer'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -12,6 +13,10 @@ type Props = {
   tool: 'clone-stamp' | 'healing'
   size: number
   strength: number
+  aligned: boolean
+  sampleMode: 'current' | 'current-and-below'
+  sourceRotation: number
+  sourceScale: number
   selection: SelectionState | null
   locked?: boolean
   onChange: (assetId: string, region?: RasterRegion) => void
@@ -34,8 +39,9 @@ type Stroke = {
   selectionData: ImageData | null
 }
 
-export function CloneStampOverlay({ canvasRef, document, assets, tool, size, strength, selection, locked, onChange, onCommit }: Props) {
+export function CloneStampOverlay({ canvasRef, document, assets, tool, size, strength, aligned, sampleMode, sourceRotation, sourceScale, selection, locked, onChange, onCommit }: Props) {
   const strokeRef = useRef<Stroke | null>(null)
+  const alignedOffsetRef = useRef<Position | null>(null)
   const [source, setSource] = useState<Source | null>(null)
   const canvas = canvasRef.current
   const target = canvas ? resolveRasterTarget(canvas, document, assets, undefined, undefined, locked) : null
@@ -62,7 +68,10 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       context.arc(x, y, stroke.radius, 0, Math.PI * 2)
       context.clip()
       context.globalAlpha = tool === 'healing' ? Math.min(0.72, strength / 100) : strength / 100
-      context.drawImage(stroke.snapshot, sourceX - stroke.radius, sourceY - stroke.radius, stroke.radius * 2, stroke.radius * 2, x - stroke.radius, y - stroke.radius, stroke.radius * 2, stroke.radius * 2)
+      context.translate(x, y)
+      context.rotate(sourceRotation * Math.PI / 180)
+      context.scale(sourceScale / 100, sourceScale / 100)
+      context.drawImage(stroke.snapshot, sourceX - stroke.radius, sourceY - stroke.radius, stroke.radius * 2, stroke.radius * 2, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
       context.restore()
       stroke.minX = Math.min(stroke.minX, x - stroke.radius)
       stroke.minY = Math.min(stroke.minY, y - stroke.radius)
@@ -83,6 +92,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const point = canvasToSource(canvasPoint(event), target)
     if (event.altKey || !source || source.assetId !== target.layer.assetId) {
       setSource({ assetId: target.layer.assetId, point })
+      alignedOffsetRef.current = null
       return
     }
     const context = target.surface.getContext('2d', { willReadFrequently: true })
@@ -91,16 +101,28 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const snapshot = window.document.createElement('canvas')
     snapshot.width = target.surface.width
     snapshot.height = target.surface.height
-    snapshot.getContext('2d')?.putImageData(before, 0, 0)
+    const snapshotContext = snapshot.getContext('2d')
+    if (sampleMode === 'current') snapshotContext?.putImageData(before, 0, 0)
+    else if (snapshotContext && canvas) {
+      const selectedIndex = document.layers.findIndex((layer) => layer.id === target.layer.id)
+      const merged = window.document.createElement('canvas')
+      renderComposition(merged, { ...document, layers: selectedIndex < 0 ? document.layers : document.layers.slice(0, selectedIndex + 1) }, assets)
+      snapshotContext.translate(target.surface.width / 2, target.surface.height / 2)
+      snapshotContext.scale(target.surface.width / target.bounds.width, target.surface.height / target.bounds.height)
+      snapshotContext.rotate(-target.bounds.rotation * Math.PI / 180)
+      snapshotContext.drawImage(merged, -target.bounds.x - target.bounds.width / 2, -target.bounds.y - target.bounds.height / 2)
+    }
     const radius = Math.max(0.5, size / (target.bounds.width / target.surface.width) / 2)
     const selectionContext = selection?.bounds ? selection.mask.getContext('2d', { willReadFrequently: true }) : null
+    const strokeOffset = aligned && alignedOffsetRef.current ? alignedOffsetRef.current : { x: source.point.x - point.x, y: source.point.y - point.y }
+    if (aligned) alignedOffsetRef.current = strokeOffset
     const stroke: Stroke = {
       pointerId: event.pointerId,
       target,
       before,
       snapshot,
       last: point,
-      offset: { x: source.point.x - point.x, y: source.point.y - point.y },
+      offset: strokeOffset,
       radius,
       minX: point.x - radius,
       minY: point.y - radius,

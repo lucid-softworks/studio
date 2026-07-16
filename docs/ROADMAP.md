@@ -163,7 +163,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 - [x] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
 - [x] Support ABR brush import and preserve compatible dynamics (legacy v1/v2 computed and sampled brushes plus modern v6 sampled-tip packs)
 - [x] Add pencil, color replacement, mixer brush, and history brush tools
-- [ ] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
+- [x] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
 - [x] Add pattern stamp, dodge, burn, sponge, blur, sharpen, and smudge parity
 - [ ] Add non-AI healing and content-aware fill using local patch-match/image-processing algorithms
 - [ ] Add local pattern, gradient, swatch, tool preset, and brush preset libraries
