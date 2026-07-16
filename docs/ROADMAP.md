@@ -175,12 +175,12 @@ This is the working TODO for turning Studio into a serious local-first image edi
 ## M9 — workflow and extensibility
 
 - [x] Add editable keyboard shortcuts and menus
-- [ ] Add dockable/resizable panels and saved workspaces
+- [x] Add dockable/resizable panels and saved workspaces
   - [x] Swap the Properties and Layers docks, resize both side panels, and persist the layout and widths locally
   - [x] Add collapsible docks and built-in or user-named workspace presets
   - [x] Add a persisted tabbed utility-panel stack
   - [x] Add persisted tab reordering and a draggable, resizable, detachable utility-panel stack
-  - [ ] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
+  - [x] Add multiple simultaneous stacks, independent floating panels, and vertical resizing
 - [ ] Add History, Actions, Properties, Navigator, Histogram, Info, Channels, Paths, Swatches, Gradients, Patterns, and Libraries panels
   - [x] Add functional Properties, Layers, History, Navigator, Histogram, Info, Swatches, Gradients, Patterns, and Libraries panels
   - [ ] Add Actions panel

@@ -63,6 +63,14 @@ type LayersPanelProps = {
   floatingPosition: FloatingPanelPosition
   onFloatingPositionChange: (position: FloatingPanelPosition) => void
   onToggleFloating: () => void
+  secondaryPanel: UtilityPanelId | null
+  onSecondaryPanelChange: (panel: UtilityPanelId | null) => void
+  secondaryHeight: number
+  onSecondaryHeightChange: (height: number) => void
+  secondaryFloating: boolean
+  onToggleSecondaryFloating: () => void
+  secondaryFloatingPosition: FloatingPanelPosition
+  onSecondaryFloatingPositionChange: (position: FloatingPanelPosition) => void
   foregroundColor: string
   backgroundColor: string
   customSwatches: string[]
@@ -107,7 +115,7 @@ function LayerTypeIcon({ layer }: { layer: EditorLayer }) {
   return layer.shape === 'ellipse' ? <CircleIcon className="size-3.5" /> : <RectangleIcon className="size-3.5" />
 }
 
-export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
+export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, onAddGroup, editingMaskLayerId, onAddMask, onEditMask, onRemoveMask, dockSide, onSwapPanels, width, onWidthChange, collapsed, onToggleCollapsed, activePanel, onActivePanelChange, assets, canvasRef, selection, onLoadComponentChannel, onSaveAlphaChannel, onLoadAlphaChannel, onDuplicateAlphaChannel, onDeleteAlphaChannel, onTransformAlphaChannel, onFillPath, onStrokePath, customShapes, onSaveCustomShape, onApplyCustomShape, onRemoveCustomShape, onImportCustomShape, onExportPath, zoom, onZoomChange, renderer, historyPast, historyFuture, rasterUndoDepth, onJumpHistory, renderRevision, panelOrder, onPanelOrderChange, floating, floatingPosition, onFloatingPositionChange, onToggleFloating, secondaryPanel, onSecondaryPanelChange, secondaryHeight, onSecondaryHeightChange, secondaryFloating, onToggleSecondaryFloating, secondaryFloatingPosition, onSecondaryFloatingPositionChange, foregroundColor, backgroundColor, customSwatches, onForegroundColorChange, onBackgroundColorChange, onAddSwatch, onRemoveSwatch, customGradients, onApplyGradient, onAddGradient, onRemoveGradient, customPatterns, onApplyPattern, onAddPattern, onRemovePattern, onImportPattern, onExportPattern, brushes, brushId, customFonts, onBrushChange, onLoadBrush, onRemoveBrush, onExportBrush, onLoadFont, onRemoveFont }: LayersPanelProps) {
   const [dragging, setDragging] = useState<DraggedItem | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const activeTabRef = useRef<HTMLButtonElement>(null)
@@ -129,6 +137,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
     dispatch({ type: 'update-layer', id: layer.id, patch: { vectorMask: { density: 100, feather: 0, linked: true, inverted: false, disabled: false, fillStartsWithAllPixels: false, paths: [{ closed: true, operation: 'combine', fillRule: 'non-zero', knots: [knot(left, top), knot(right, top), knot(right, bottom), knot(left, bottom)] }] } } })
   }
   const visibleFloatingPosition = typeof window === 'undefined' ? floatingPosition : clampFloatingPanelPosition(floatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
+  const visibleSecondaryFloatingPosition = typeof window === 'undefined' ? secondaryFloatingPosition : clampFloatingPanelPosition(secondaryFloatingPosition, width, { width: window.innerWidth, height: window.innerHeight })
 
   useEffect(() => activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), [activePanel])
 
@@ -149,6 +158,26 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
     handle.addEventListener('pointermove', move)
     handle.addEventListener('pointerup', finish)
     handle.addEventListener('pointercancel', finish)
+  }
+
+  const startSecondaryFloatingDrag = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault(); event.stopPropagation()
+    const handle = event.currentTarget
+    const startX = event.clientX; const startY = event.clientY; const startPosition = visibleSecondaryFloatingPosition
+    handle.setPointerCapture(event.pointerId)
+    const move = (moveEvent: globalThis.PointerEvent) => onSecondaryFloatingPositionChange(clampFloatingPanelPosition({ x: startPosition.x + moveEvent.clientX - startX, y: startPosition.y + moveEvent.clientY - startY }, width, { width: window.innerWidth, height: window.innerHeight }))
+    const finish = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', finish); handle.removeEventListener('pointercancel', finish) }
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', finish); handle.addEventListener('pointercancel', finish)
+  }
+
+  const startVerticalResize = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault(); event.stopPropagation()
+    const handle = event.currentTarget
+    const startY = event.clientY; const startHeight = secondaryHeight
+    handle.setPointerCapture(event.pointerId)
+    const move = (moveEvent: globalThis.PointerEvent) => onSecondaryHeightChange(Math.max(160, Math.min(600, startHeight + startY - moveEvent.clientY)))
+    const finish = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', finish); handle.removeEventListener('pointercancel', finish) }
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', finish); handle.addEventListener('pointercancel', finish)
   }
 
   const startDrag = (event: DragEvent, item: DraggedItem) => {
@@ -243,6 +272,19 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   }
 
   const rootItems = getStackChildren(document, null)
+  const utilityPanelContent = (panel: UtilityPanelId) => {
+    if (panel === 'layers') return <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{[...rootItems].reverse().map((item) => item.type === 'group' ? groupRow(item.group, 0) : layerRow(item.layer, 0))}{!rootItems.length && <p className="p-5 text-center text-[9px] text-zinc-700">No layers</p>}</div>
+    if (panel === 'channels') return <ChannelsPanel channels={document.channels ?? []} hasSelection={Boolean(selection?.bounds)} onLoadComponent={onLoadComponentChannel} onSaveSelection={onSaveAlphaChannel} onLoadAlpha={onLoadAlphaChannel} onDuplicateAlpha={onDuplicateAlphaChannel} onDeleteAlpha={onDeleteAlphaChannel} onTransformAlpha={onTransformAlphaChannel} />
+    if (panel === 'paths') return <PathsPanel paths={document.paths ?? []} selectedPathId={document.selectedPathId ?? null} customShapes={customShapes} onChange={(paths, selectedPathId) => dispatch({ type: 'set-paths', paths, selectedPathId })} onFill={onFillPath} onStroke={onStrokePath} onSaveCustomShape={onSaveCustomShape} onApplyCustomShape={onApplyCustomShape} onRemoveCustomShape={onRemoveCustomShape} onImportCustomShape={onImportCustomShape} onExportPath={onExportPath} />
+    if (panel === 'history') return <HistoryPanel past={historyPast} future={historyFuture} rasterUndoDepth={rasterUndoDepth} onJump={onJumpHistory} />
+    if (panel === 'navigator') return <NavigatorPanel sourceCanvasRef={canvasRef} document={document} zoom={zoom} onZoomChange={onZoomChange} renderRevision={renderRevision} />
+    if (panel === 'histogram') return <HistogramPanel sourceCanvasRef={canvasRef} document={document} assets={assets} renderRevision={renderRevision} />
+    if (panel === 'swatches') return <SwatchesPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={onForegroundColorChange} onBackgroundColorChange={onBackgroundColorChange} onAddSwatch={onAddSwatch} onRemoveSwatch={onRemoveSwatch} />
+    if (panel === 'gradients') return <GradientsPanel foregroundColor={foregroundColor} backgroundColor={backgroundColor} customGradients={customGradients} onApplyGradient={onApplyGradient} onAddGradient={onAddGradient} onRemoveGradient={onRemoveGradient} />
+    if (panel === 'patterns') return <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} onImportPattern={onImportPattern} onExportPattern={onExportPattern} />
+    if (panel === 'libraries') return <LibrariesPanel brushes={brushes} activeBrushId={brushId} fonts={customFonts} activeFontFamily={activeLayer?.type === 'text' ? activeLayer.fontFamily : undefined} canApplyFont={activeLayer?.type === 'text'} onBrushChange={onBrushChange} onLoadBrush={onLoadBrush} onRemoveBrush={onRemoveBrush} onExportBrush={onExportBrush} onApplyFont={(fontFamily) => { if (activeLayer?.type === 'text') dispatch({ type: 'update-layer', id: activeLayer.id, patch: { fontFamily, missingFonts: [] } }) }} onLoadFont={onLoadFont} onRemoveFont={onRemoveFont} />
+    return <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} renderRevision={renderRevision} />
+  }
   const panelCollapsed = collapsed && !floating
   const panelStyle = {
     '--panel-width': `${width}px`,
@@ -250,6 +292,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
   } as CSSProperties
 
   return (
+    <>
     <aside aria-label="Utility panel stack" style={panelStyle} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-panel')) event.preventDefault() }} onDrop={(event) => { if (event.dataTransfer.getData('application/x-studio-panel') === 'properties') onSwapPanels() }} className={floating ? 'fixed z-[65] flex h-[min(72vh,680px)] w-[var(--panel-width)] shrink-0 flex-col overflow-hidden rounded-xl border border-white/[0.12] bg-[#111113] shadow-[0_24px_80px_rgba(0,0,0,0.7)]' : `relative order-3 flex w-full shrink-0 flex-col border-t border-white/[0.07] bg-[#111113] lg:h-[calc(100vh-84px)] lg:border-t-0 ${panelCollapsed ? 'lg:w-10' : 'lg:w-[var(--panel-width)]'} ${dockSide === 'left' ? 'lg:order-1 lg:border-r' : 'lg:order-3 lg:border-l'}`}>
       {panelCollapsed ? <CollapsedPanelRail dockSide={dockSide} label={utilityTabs.find((tab) => tab.id === activePanel)?.label ?? 'Panels'} onClick={onToggleCollapsed} /> : <>
       <PanelResizeHandle dockSide={floating ? 'left' : dockSide} width={width} onChange={onWidthChange} label="Utility panel stack" />
@@ -258,6 +301,7 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
         <div role="tablist" aria-label="Utility panels" className="flex min-w-0 flex-1 items-center overflow-x-auto">
           {panelOrder.map((panelId) => utilityTabs.find((tab) => tab.id === panelId)).filter((tab) => tab !== undefined).map((tab) => <button ref={activePanel === tab.id ? activeTabRef : undefined} key={tab.id} type="button" role="tab" title={tab.title} draggable aria-selected={activePanel === tab.id} onClick={() => onActivePanelChange(tab.id)} onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-studio-utility-tab', tab.id) }} onDragOver={(event) => { if (event.dataTransfer.types.includes('application/x-studio-utility-tab')) { event.preventDefault(); event.stopPropagation() } }} onDrop={(event) => { const moved = event.dataTransfer.getData('application/x-studio-utility-tab') as UtilityPanelId; if (moved) onPanelOrderChange(moved, tab.id); event.preventDefault(); event.stopPropagation() }} className={`min-w-10 flex-1 cursor-grab rounded-md px-1 py-2 text-[9px] font-semibold transition focus-visible:outline-2 focus-visible:outline-violet-400 active:cursor-grabbing ${activePanel === tab.id ? 'bg-white/[0.07] text-zinc-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{tab.label}</button>)}
         </div>
+        <button type="button" aria-label="Add utility panel stack" title="Show a second panel stack" onClick={() => onSecondaryPanelChange(secondaryPanel ?? (activePanel === 'histogram' ? 'history' : 'histogram'))} className="flex size-7 shrink-0 items-center justify-center rounded-md text-[13px] text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">+</button>
         <button type="button" aria-label={floating ? 'Dock utility panels' : 'Float utility panels'} title={floating ? 'Dock panels' : 'Float panels'} onClick={onToggleFloating} className="flex size-7 shrink-0 items-center justify-center rounded-md text-[11px] text-zinc-600 transition hover:bg-white/[0.06] hover:text-zinc-200">{floating ? '⊣' : '↗'}</button>
         {!floating && <PanelCollapseButton dockSide={dockSide} label="Panels" onClick={onToggleCollapsed} />}
       </div>
@@ -287,7 +331,10 @@ export function LayersPanel({ document, dispatch, onAddLayer, onAddAdjustment, o
       {activePanel === 'patterns' && <PatternsPanel pattern={document.pattern} customPatterns={customPatterns} onApplyPattern={onApplyPattern} onAddPattern={onAddPattern} onRemovePattern={onRemovePattern} onImportPattern={onImportPattern} onExportPattern={onExportPattern} />}
       {activePanel === 'libraries' && <LibrariesPanel brushes={brushes} activeBrushId={brushId} fonts={customFonts} activeFontFamily={activeLayer?.type === 'text' ? activeLayer.fontFamily : undefined} canApplyFont={activeLayer?.type === 'text'} onBrushChange={onBrushChange} onLoadBrush={onLoadBrush} onRemoveBrush={onRemoveBrush} onExportBrush={onExportBrush} onApplyFont={(fontFamily) => { if (activeLayer?.type === 'text') dispatch({ type: 'update-layer', id: activeLayer.id, patch: { fontFamily, missingFonts: [] } }) }} onLoadFont={onLoadFont} onRemoveFont={onRemoveFont} />}
       {activePanel === 'info' && <InfoPanel sourceCanvasRef={canvasRef} document={document} assets={assets} selection={selection} zoom={zoom} renderer={renderer} renderRevision={renderRevision} />}
+      {secondaryPanel && !secondaryFloating && <section style={{ height: secondaryHeight }} aria-label="Secondary utility panel stack" className="relative flex min-h-40 shrink-0 flex-col overflow-hidden border-t border-white/[0.1] bg-[#131316]"><button type="button" aria-label="Resize secondary panel stack vertically" onPointerDown={startVerticalResize} className="absolute top-0 left-0 z-10 h-1.5 w-full cursor-ns-resize bg-transparent hover:bg-violet-400/30" /><header className="flex h-9 shrink-0 items-center gap-1 border-b border-white/[0.07] px-2"><select aria-label="Secondary utility panel" value={secondaryPanel} onChange={(event) => onSecondaryPanelChange(event.target.value as UtilityPanelId)} className="min-w-0 flex-1 rounded border border-white/[0.07] bg-black/20 px-2 py-1 text-[9px] text-zinc-400">{panelOrder.map((panelId) => <option key={panelId} value={panelId}>{utilityTabs.find((tab) => tab.id === panelId)?.title ?? utilityTabs.find((tab) => tab.id === panelId)?.label}</option>)}</select><button type="button" aria-label="Float secondary panels" onClick={onToggleSecondaryFloating} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:bg-white/[0.06] hover:text-zinc-200">↗</button><button type="button" aria-label="Close secondary panels" onClick={() => onSecondaryPanelChange(null)} className="flex size-6 items-center justify-center rounded text-zinc-600 hover:text-red-300">×</button></header>{utilityPanelContent(secondaryPanel)}</section>}
       </>}
     </aside>
+    {secondaryPanel && secondaryFloating && <aside aria-label="Floating secondary utility panel stack" style={{ left: visibleSecondaryFloatingPosition.x, top: visibleSecondaryFloatingPosition.y, width, height: secondaryHeight }} className="fixed z-[66] flex min-h-40 flex-col overflow-hidden rounded-xl border border-white/[0.12] bg-[#131316] shadow-[0_24px_80px_rgba(0,0,0,0.7)]"><header className="flex h-10 shrink-0 items-center gap-1 border-b border-white/[0.08] px-2"><button type="button" aria-label="Move secondary panels" onPointerDown={startSecondaryFloatingDrag} className="flex size-7 touch-none items-center justify-center rounded text-zinc-700 hover:text-zinc-300">⠿</button><select aria-label="Floating secondary utility panel" value={secondaryPanel} onChange={(event) => onSecondaryPanelChange(event.target.value as UtilityPanelId)} className="min-w-0 flex-1 rounded border border-white/[0.07] bg-black/20 px-2 py-1 text-[9px] text-zinc-400">{panelOrder.map((panelId) => <option key={panelId} value={panelId}>{utilityTabs.find((tab) => tab.id === panelId)?.title ?? utilityTabs.find((tab) => tab.id === panelId)?.label}</option>)}</select><button type="button" aria-label="Dock secondary panels" onClick={onToggleSecondaryFloating} className="flex size-7 items-center justify-center rounded text-zinc-600 hover:text-zinc-200">⊣</button><button type="button" aria-label="Close secondary panels" onClick={() => onSecondaryPanelChange(null)} className="flex size-7 items-center justify-center rounded text-zinc-600 hover:text-red-300">×</button></header>{utilityPanelContent(secondaryPanel)}</aside>}
+    </>
   )
 }

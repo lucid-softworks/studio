@@ -21,6 +21,10 @@ describe('panel resizing', () => {
       utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
+      secondaryUtilityPanel: null,
+      secondaryPanelHeight: 280,
+      secondaryUtilityPanelFloating: false,
+      secondaryFloatingPanelPosition: { x: 640, y: 180 },
     })
     expect(normalizeWorkspaceLayout(null)).toEqual(defaultWorkspaceLayout)
   })

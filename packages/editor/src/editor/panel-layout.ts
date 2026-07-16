@@ -22,6 +22,10 @@ export type WorkspaceLayout = {
   utilityPanelOrder: UtilityPanelId[]
   utilityPanelFloating: boolean
   floatingPanelPosition: FloatingPanelPosition
+  secondaryUtilityPanel: UtilityPanelId | null
+  secondaryPanelHeight: number
+  secondaryUtilityPanelFloating: boolean
+  secondaryFloatingPanelPosition: FloatingPanelPosition
 }
 
 export type WorkspacePreset = {
@@ -38,6 +42,10 @@ export const defaultWorkspaceLayout: WorkspaceLayout = {
   utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
   utilityPanelFloating: false,
   floatingPanelPosition: { x: 960, y: 84 },
+  secondaryUtilityPanel: null,
+  secondaryPanelHeight: 280,
+  secondaryUtilityPanelFloating: false,
+  secondaryFloatingPanelPosition: { x: 640, y: 180 },
 }
 
 export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
@@ -53,6 +61,10 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       utilityPanelOrder: ['navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'layers', 'channels', 'paths', 'history', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
+      secondaryUtilityPanel: null,
+      secondaryPanelHeight: 280,
+      secondaryUtilityPanelFloating: false,
+      secondaryFloatingPanelPosition: { x: 640, y: 180 },
     },
   },
   {
@@ -66,6 +78,10 @@ export const builtInWorkspacePresets: readonly WorkspacePreset[] = [
       utilityPanelOrder: ['layers', 'channels', 'paths', 'history', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'info'],
       utilityPanelFloating: false,
       floatingPanelPosition: { x: 960, y: 84 },
+      secondaryUtilityPanel: 'history',
+      secondaryPanelHeight: 260,
+      secondaryUtilityPanelFloating: false,
+      secondaryFloatingPanelPosition: { x: 640, y: 180 },
     },
   },
 ]
@@ -98,6 +114,7 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
   const requestedOrder = Array.isArray(candidate.utilityPanelOrder) ? candidate.utilityPanelOrder.filter((panel): panel is UtilityPanelId => utilityPanels.includes(panel as UtilityPanelId)) : []
   const utilityPanelOrder = [...new Set([...requestedOrder, ...utilityPanels])]
   const floatingPosition = candidate.floatingPanelPosition
+  const secondaryFloatingPosition = candidate.secondaryFloatingPanelPosition
   return {
     propertiesOnLeft: typeof candidate.propertiesOnLeft === 'boolean' ? candidate.propertiesOnLeft : fallback.propertiesOnLeft,
     panelWidths: {
@@ -114,6 +131,13 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
     floatingPanelPosition: {
       x: typeof floatingPosition?.x === 'number' && Number.isFinite(floatingPosition.x) ? floatingPosition.x : fallback.floatingPanelPosition.x,
       y: typeof floatingPosition?.y === 'number' && Number.isFinite(floatingPosition.y) ? floatingPosition.y : fallback.floatingPanelPosition.y,
+    },
+    secondaryUtilityPanel: utilityPanels.includes(candidate.secondaryUtilityPanel as UtilityPanelId) ? candidate.secondaryUtilityPanel as UtilityPanelId : fallback.secondaryUtilityPanel,
+    secondaryPanelHeight: Math.round(Math.max(160, Math.min(600, typeof candidate.secondaryPanelHeight === 'number' && Number.isFinite(candidate.secondaryPanelHeight) ? candidate.secondaryPanelHeight : fallback.secondaryPanelHeight))),
+    secondaryUtilityPanelFloating: typeof candidate.secondaryUtilityPanelFloating === 'boolean' ? candidate.secondaryUtilityPanelFloating : fallback.secondaryUtilityPanelFloating,
+    secondaryFloatingPanelPosition: {
+      x: typeof secondaryFloatingPosition?.x === 'number' && Number.isFinite(secondaryFloatingPosition.x) ? secondaryFloatingPosition.x : fallback.secondaryFloatingPanelPosition.x,
+      y: typeof secondaryFloatingPosition?.y === 'number' && Number.isFinite(secondaryFloatingPosition.y) ? secondaryFloatingPosition.y : fallback.secondaryFloatingPanelPosition.y,
     },
   }
 }
