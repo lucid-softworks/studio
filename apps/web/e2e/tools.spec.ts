@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const shortcutTools = [
   ['v', 'Move'],
@@ -156,6 +156,66 @@ test.describe('built-in tools', () => {
     await expect(directSurface.locator('circle')).toHaveCount(handlesBeforeConvert)
     const collapsedAnchorX = await directSurface.locator('circle[fill="#38bdf8"]').getAttribute('cx')
     await expect(directSurface.locator('circle[stroke="#7dd3fc"]').first()).toHaveAttribute('cx', collapsedAnchorX!)
+  })
+
+  test('every anchor handle supports linked, unlinked, collapse, and expansion interactions', async ({ page }) => {
+    await openBlankEditor(page)
+    await page.getByRole('button', { name: 'Pen tool', exact: true }).click()
+    const penSurface = page.getByLabel('pen path editing surface')
+    const bounds = await penSurface.boundingBox()
+    expect(bounds).not.toBeNull()
+    for (const [x, y] of [[0.25, 0.3], [0.42, 0.22], [0.62, 0.38], [0.74, 0.62]]) {
+      await page.mouse.move(bounds!.x + bounds!.width * x, bounds!.y + bounds!.height * y)
+      await page.mouse.down()
+      await page.mouse.move(bounds!.x + bounds!.width * x + 18, bounds!.y + bounds!.height * y + 10)
+      await page.mouse.up()
+    }
+
+    await page.getByRole('button', { name: 'Direct Selection tool', exact: true }).click()
+    const directSurface = page.getByLabel('direct-select path editing surface')
+    const anchors = directSurface.locator('circle[stroke="#e0f2fe"]')
+    await expect(anchors).toHaveCount(4)
+    const point = async (locator: Locator) => ({ x: Number(await locator.getAttribute('cx')), y: Number(await locator.getAttribute('cy')) })
+    const drag = async (locator: Locator, dx: number, dy: number, alt = false) => {
+      const box = await locator.boundingBox()
+      expect(box).not.toBeNull()
+      await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+      await page.mouse.down()
+      if (alt) await page.keyboard.down('Alt')
+      await page.mouse.move(box!.x + box!.width / 2 + dx, box!.y + box!.height / 2 + dy, { steps: 4 })
+      await page.mouse.up()
+      if (alt) await page.keyboard.up('Alt')
+    }
+
+    for (let anchorIndex = 0; anchorIndex < 4; anchorIndex += 1) {
+      await anchors.nth(anchorIndex).click()
+      for (let handleIndex = 0; handleIndex < 2; handleIndex += 1) {
+        const anchor = anchors.nth(anchorIndex)
+        const handles = directSurface.locator('circle[stroke="#7dd3fc"]')
+        const oppositeIndex = handleIndex === 0 ? 1 : 0
+        const anchorPoint = await point(anchor)
+        await drag(handles.nth(handleIndex), handleIndex === 0 ? -14 : 14, 9)
+        const linked = [await point(handles.nth(0)), await point(handles.nth(1))]
+        expect(linked[0].x + linked[1].x).toBeCloseTo(anchorPoint.x * 2, 4)
+        expect(linked[0].y + linked[1].y).toBeCloseTo(anchorPoint.y * 2, 4)
+
+        const oppositeBefore = await point(handles.nth(oppositeIndex))
+        await drag(handles.nth(handleIndex), handleIndex === 0 ? -11 : 11, -7, true)
+        const oppositeAfter = await point(handles.nth(oppositeIndex))
+        expect(oppositeAfter.x).toBeCloseTo(oppositeBefore.x, 6)
+        expect(oppositeAfter.y).toBeCloseTo(oppositeBefore.y, 6)
+
+        await anchor.click({ modifiers: ['Alt'] })
+        const collapsed = [await point(handles.nth(0)), await point(handles.nth(1))]
+        expect(collapsed[0].x).toBeCloseTo(anchorPoint.x, 6)
+        expect(collapsed[0].y).toBeCloseTo(anchorPoint.y, 6)
+        expect(collapsed[1].x).toBeCloseTo(anchorPoint.x, 6)
+        expect(collapsed[1].y).toBeCloseTo(anchorPoint.y, 6)
+        await anchor.click({ modifiers: ['Alt'] })
+        const expanded = [await point(handles.nth(0)), await point(handles.nth(1))]
+        expect(Math.abs(expanded[0].x - expanded[1].x)).toBeGreaterThan(1)
+      }
+    }
   })
 
   test('warp and puppet-warp drags use pixel previews and commit once on release', async ({ page }) => {
