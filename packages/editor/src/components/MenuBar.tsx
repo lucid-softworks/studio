@@ -92,7 +92,7 @@ type MenuBarProps = {
 
 function MenuItem({ commandId, children, shortcut, disabled, checked, onSelect }: { commandId: string; children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
   return (
-    <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} data-command-id={commandId} aria-checked={checked} disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
+    <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'} data-command-id={commandId} aria-label={typeof children === 'string' ? children : undefined} aria-checked={checked} disabled={disabled} onClick={onSelect} className="flex w-full items-center justify-between gap-8 rounded-md px-2.5 py-1.5 text-left text-[11px] whitespace-nowrap text-zinc-300 outline-none transition hover:bg-violet-400/15 hover:text-white focus-visible:bg-violet-400/15 disabled:pointer-events-none disabled:text-zinc-700">
       <span className="flex items-center gap-2"><span aria-hidden="true" className="w-2 text-[9px] text-violet-300">{checked ? '✓' : ''}</span>{children}</span>{shortcut && <span className="font-mono text-[9px] text-zinc-600">{shortcut}</span>}
     </button>
   )
