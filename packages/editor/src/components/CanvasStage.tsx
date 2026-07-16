@@ -22,7 +22,7 @@ import { TransformOverlay } from './TransformOverlay'
 import { PathEditorOverlay } from './PathEditorOverlay'
 import { WarpOverlay } from './WarpOverlay'
 import { PerspectiveCropOverlay } from './PerspectiveCropOverlay'
-import type { BrushPreset } from '../editor/resources'
+import { defaultBrushDynamics, type BrushDynamics, type BrushPreset } from '../editor/resources'
 import { BrushSettingsPopover } from './BrushSettingsPopover'
 import { CanvasRulers } from './CanvasRulers'
 import { QuickMaskOverlay } from './QuickMaskOverlay'
@@ -171,6 +171,8 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const [brushSpacing, setBrushSpacing] = useState(12)
   const [pressureSize, setPressureSize] = useState(true)
   const [pressureOpacity, setPressureOpacity] = useState(false)
+  const [brushDynamics, setBrushDynamics] = useState<BrushDynamics>(defaultBrushDynamics)
+  const [pressureCalibration, setPressureCalibration] = useState({ minimum: 0, maximum: 1, gamma: 1 })
   const [toolStrength, setToolStrength] = useState(45)
   const [tolerance, setTolerance] = useState(32)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('replace')
@@ -203,6 +205,18 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
   const measurementLength = measurement ? Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY) : 0
 
   useEffect(() => setBrushSpacing(selectedBrush.spacing), [selectedBrush.id, selectedBrush.spacing])
+  useEffect(() => setBrushDynamics({ ...defaultBrushDynamics, ...selectedBrush.dynamics }), [selectedBrush.id, selectedBrush.dynamics])
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('studio.tablet-calibration')
+      if (stored) setPressureCalibration({ ...pressureCalibration, ...JSON.parse(stored) })
+    } catch { /* Device calibration is optional. */ }
+  // Calibration is restored once for this editor session.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('studio.tablet-calibration', JSON.stringify(pressureCalibration)) } catch { /* Device calibration is optional. */ }
+  }, [pressureCalibration])
   useEffect(() => setSelection(null), [preset.height, preset.width, setSelection])
   useEffect(() => setCropSelection(null), [preset.height, preset.width])
   useEffect(() => { if (tool !== 'crop') setCropSelection(null) }, [tool])
@@ -420,7 +434,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         <div className="flex items-center gap-3">
           {(paintTool || retouchTool) && (
             <div className="hidden items-center gap-2 md:flex">
-              {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} /></>}
+              {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} dynamics={brushDynamics} onDynamicsChange={setBrushDynamics} calibration={pressureCalibration} onCalibrationChange={setPressureCalibration} /></>}
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
               {tool === 'brush' && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
@@ -509,7 +523,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
             <PerspectiveCropOverlay canvasRef={canvasRef} enabled={tool === 'perspective-crop'} value={perspectiveCrop} onChange={setPerspectiveCrop} />
             <QuickMaskOverlay canvasRef={canvasRef} enabled={quickMask && (tool === 'brush' || tool === 'eraser')} tool={tool === 'eraser' ? 'eraser' : 'brush'} size={brushSize} selection={selection} onChange={setSelection} />
-            {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} dynamics={brushDynamics} pressureCalibration={pressureCalibration} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} endHistoryGroup={endHistoryGroup} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />

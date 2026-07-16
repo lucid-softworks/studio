@@ -1,11 +1,12 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { getLayerBounds, type LayerBounds } from '../editor/renderer'
-import { extractImageData, type RasterEdit, type RasterRegion } from '../editor/raster'
+import { type RasterEdit, type RasterRegion } from '../editor/raster'
 import { selectionAlphaAt, type SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
 import type { EditorDocument, Position, RasterLayer } from '../editor/types'
-import type { BrushPreset } from '../editor/resources'
-import { brushStampAlpha, brushStampRadius, interpolateBrushStamps, normalizePointerPressure } from '../editor/brush-engine'
+import type { BrushDynamics, BrushPreset } from '../editor/resources'
+import { brushStampAlpha, brushStampRadius, dynamicBrushStamps, interpolateBrushStamps, normalizePointerInput, smoothBrushPoint, type PointerBrushInput } from '../editor/brush-engine'
+import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
 
 type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -20,6 +21,8 @@ type Props = {
   flow: number
   pressureSize: boolean
   pressureOpacity: boolean
+  dynamics: BrushDynamics
+  pressureCalibration: { minimum: number; maximum: number; gamma: number }
   selection: SelectionState | null
   maskAssetId?: string
   maskLocked?: boolean
@@ -31,7 +34,7 @@ type Props = {
 type Stroke = {
   pointerId: number
   layer: RasterLayer
-  before: ImageData
+  before: RasterTileSnapshot
   last: Position
   lastPressure: number
   minX: number
@@ -41,9 +44,10 @@ type Stroke = {
   radius: number
   bounds: LayerBounds
   selectionData: ImageData | null
+  seed: number
 }
 
-export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, hardness, opacity, flow, pressureSize, pressureOpacity, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
+export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, size, color, hardness, opacity, flow, pressureSize, pressureOpacity, dynamics, pressureCalibration, selection, maskAssetId, maskLocked, locked, onChange, onCommit }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const strokeRef = useRef<Stroke | null>(null)
   const roundTipRef = useRef<{ hardness: number; surface: HTMLCanvasElement } | null>(null)
@@ -91,7 +95,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     return {
       point: { x: (localX / bounds.width + 0.5) * surface.width, y: (localY / bounds.height + 0.5) * surface.height },
       radius: Math.max(0.5, size / (bounds.width / surface.width) / 2),
-      pressure: normalizePointerPressure(event.pointerType, event.pressure),
+      input: normalizePointerInput(event.pointerType, event.pressure, event.tiltX, event.tiltY, event.twist, event.buttons, pressureCalibration),
       bounds,
     }
   }
@@ -114,12 +118,12 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     return tip
   }
 
-  const draw = (from: Position, to: Position, radius: number, fromPressure: number, toPressure: number) => {
+  const draw = (stroke: Stroke, from: Position, to: Position, radius: number, fromPressure: number, input: PointerBrushInput) => {
     if (!surface) return
     const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) return
     context.save()
-    context.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : tool === 'dodge' || tool === 'burn' ? 'soft-light' : 'source-over'
+    context.globalCompositeOperation = tool === 'eraser' || input.barrel ? 'destination-out' : tool === 'dodge' || tool === 'burn' ? 'soft-light' : 'source-over'
     const strokeColor = tool === 'dodge' ? '#ffffff' : tool === 'burn' ? '#000000' : maskAssetId ? '#ffffff' : color
     context.strokeStyle = strokeColor
     context.fillStyle = strokeColor
@@ -144,10 +148,29 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
         tip = tinted
       }
     }
-    for (const stamp of interpolateBrushStamps(from, to, fromPressure, toPressure, radius * 2, brush.spacing)) {
+    const baseStamps = interpolateBrushStamps(from, to, fromPressure, input.pressure, radius * 2, brush.spacing)
+    const stamps = dynamicBrushStamps(baseStamps, radius * 2, dynamics, input, stroke.seed++)
+    for (const stamp of stamps) {
       const stampRadius = brushStampRadius(radius, stamp.pressure, pressureSize)
-      context.globalAlpha = brushStampAlpha(opacity, flow, stamp.pressure, pressureOpacity)
-      context.drawImage(tip, stamp.x - stampRadius, stamp.y - stampRadius, stampRadius * 2, stampRadius * 2)
+      const extent = stampRadius * Math.max(stamp.scaleX, stamp.scaleY) + 3
+      captureRasterTiles(stroke.before, stamp.x - extent, stamp.y - extent, extent * 2, extent * 2)
+      stroke.minX = Math.min(stroke.minX, stamp.x - extent)
+      stroke.minY = Math.min(stroke.minY, stamp.y - extent)
+      stroke.maxX = Math.max(stroke.maxX, stamp.x + extent)
+      stroke.maxY = Math.max(stroke.maxY, stamp.y + extent)
+      context.globalAlpha = brushStampAlpha(opacity, dynamics.buildUp ? flow : 100, stamp.pressure, pressureOpacity) * stamp.texture
+      context.filter = `hue-rotate(${stamp.hue}deg) saturate(${Math.max(0, 100 + stamp.saturation)}%) brightness(${Math.max(0, 100 + stamp.brightness)}%)`
+      context.save()
+      context.translate(stamp.x, stamp.y)
+      context.rotate(stamp.angle * Math.PI / 180)
+      context.scale(stamp.scaleX, stamp.scaleY)
+      context.drawImage(tip, -stampRadius, -stampRadius, stampRadius * 2, stampRadius * 2)
+      if (dynamics.dualBrush) {
+        context.rotate(Math.PI / 2)
+        context.globalAlpha *= 0.55
+        context.drawImage(tip, -stampRadius * 0.65, -stampRadius * 0.65, stampRadius * 1.3, stampRadius * 1.3)
+      }
+      context.restore()
     }
     context.restore()
   }
@@ -159,14 +182,14 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     if (!mapped || !context) return
     event.preventDefault()
     try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
-    const { point, radius, pressure, bounds } = mapped
+    const { point, radius, input, bounds } = mapped
     const selectionContext = selection?.mask.getContext('2d', { willReadFrequently: true })
     strokeRef.current = {
       pointerId: event.pointerId,
       layer,
-      before: context.getImageData(0, 0, surface.width, surface.height),
+      before: createRasterTileSnapshot(surface),
       last: point,
-      lastPressure: pressure,
+      lastPressure: input.pressure,
       minX: point.x - radius,
       minY: point.y - radius,
       maxX: point.x + radius,
@@ -174,8 +197,9 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
       radius,
       bounds,
       selectionData: selectionContext && selection?.bounds ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null,
+      seed: Math.floor(performance.now() * 1000),
     }
-    draw(point, point, radius, pressure, pressure)
+    draw(strokeRef.current, point, point, radius, input.pressure, input)
     onChange(layer.assetId, { x: point.x - radius - 2, y: point.y - radius - 2, width: radius * 2 + 4, height: radius * 2 + 4 })
   }
 
@@ -185,18 +209,20 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     const mapped = sourcePoint(event)
     if (!mapped) return
     const previous = stroke.last
-    draw(previous, mapped.point, stroke.radius, stroke.lastPressure, mapped.pressure)
-    stroke.last = mapped.point
-    stroke.lastPressure = mapped.pressure
-    stroke.minX = Math.min(stroke.minX, mapped.point.x - stroke.radius)
-    stroke.minY = Math.min(stroke.minY, mapped.point.y - stroke.radius)
-    stroke.maxX = Math.max(stroke.maxX, mapped.point.x + stroke.radius)
-    stroke.maxY = Math.max(stroke.maxY, mapped.point.y + stroke.radius)
+    const point = smoothBrushPoint(previous, mapped.point, dynamics.smoothing)
+    draw(stroke, previous, point, stroke.radius, stroke.lastPressure, mapped.input)
+    stroke.last = point
+    stroke.lastPressure = mapped.input.pressure
+    const dynamicRadius = stroke.radius * (1 + dynamics.scatter * 2 / 100)
+    stroke.minX = Math.min(stroke.minX, point.x - dynamicRadius)
+    stroke.minY = Math.min(stroke.minY, point.y - dynamicRadius)
+    stroke.maxX = Math.max(stroke.maxX, point.x + dynamicRadius)
+    stroke.maxY = Math.max(stroke.maxY, point.y + dynamicRadius)
     onChange(stroke.layer.assetId, {
-      x: Math.min(previous.x, mapped.point.x) - stroke.radius - 2,
-      y: Math.min(previous.y, mapped.point.y) - stroke.radius - 2,
-      width: Math.abs(mapped.point.x - previous.x) + stroke.radius * 2 + 4,
-      height: Math.abs(mapped.point.y - previous.y) + stroke.radius * 2 + 4,
+      x: Math.min(previous.x, point.x) - dynamicRadius - 2,
+      y: Math.min(previous.y, point.y) - dynamicRadius - 2,
+      width: Math.abs(point.x - previous.x) + dynamicRadius * 2 + 4,
+      height: Math.abs(point.y - previous.y) + dynamicRadius * 2 + 4,
     })
   }
 
@@ -211,7 +237,7 @@ export function RasterPaintOverlay({ canvasRef, document, assets, tool, brush, s
     const width = Math.min(surface.width - x, Math.ceil(stroke.maxX + 2) - x)
     const height = Math.min(surface.height - y, Math.ceil(stroke.maxY + 2) - y)
     if (width <= 0 || height <= 0) return
-    const before = extractImageData(stroke.before, x, y, width, height)
+    const before = rasterSnapshotRegion(stroke.before, x, y, width, height)
     const after = context.getImageData(x, y, width, height)
     if (stroke.selectionData) {
       const centerX = stroke.bounds.x + stroke.bounds.width / 2

@@ -13,12 +13,29 @@ export type CustomFontResource = {
   family: string
 }
 
+export type BrushDynamics = {
+  scatter: number
+  count: number
+  angleJitter: number
+  roundness: number
+  texture: number
+  dualBrush: boolean
+  hueJitter: number
+  saturationJitter: number
+  brightnessJitter: number
+  smoothing: number
+  buildUp: boolean
+  tiltSize: boolean
+  twistRotation: boolean
+}
+
 export type BrushPreset = {
   id: string
   name: string
   spacing: number
   tip: HTMLCanvasElement | null
   builtIn?: boolean
+  dynamics?: Partial<BrushDynamics>
 }
 
 type StoredFont = CustomFontResource & { blob: Blob }
@@ -26,6 +43,7 @@ type StoredBrush = Omit<BrushPreset, 'tip' | 'builtIn'> & { blob: Blob }
 type PortableBrush = { app: 'studio-brush'; version: 1; name?: string; spacing?: number; tipData: string }
 
 export const roundBrush: BrushPreset = { id: 'round', name: 'Round', spacing: 12, tip: null, builtIn: true }
+export const defaultBrushDynamics: BrushDynamics = { scatter: 0, count: 1, angleJitter: 0, roundness: 100, texture: 0, dualBrush: false, hueJitter: 0, saturationJitter: 0, brightnessJitter: 0, smoothing: 35, buildUp: true, tiltSize: false, twistRotation: true }
 
 function resourceId(prefix: string) {
   const random = typeof crypto.randomUUID === 'function'

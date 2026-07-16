@@ -160,7 +160,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
 
 ## M8 — painting and retouching
 
-- [ ] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
+- [x] Add a high-performance tiled brush engine with spacing, scatter, count, texture, dual brush, color dynamics, smoothing, and build-up
 - [ ] Support ABR brush import and preserve compatible dynamics
 - [ ] Add pencil, color replacement, mixer brush, and history brush tools
 - [ ] Add clone source sampling, aligned/current-and-below modes, rotation, and scale
@@ -170,7 +170,7 @@ This is the working TODO for turning Studio into a serious local-first image edi
   - [x] Add persistent local custom-swatch, two-colour gradient, and procedural-pattern libraries connected to live editor state
   - [x] Expose browser-persisted custom brush tips and fonts through the Libraries panel
   - [ ] Add tool-preset and expanded brush-preset libraries plus multi-stop gradients and bitmap pattern import/export
-- [ ] Add tablet tilt, twist, barrel button, and per-device pressure calibration
+- [x] Add tablet tilt, twist, barrel button, and per-device pressure calibration
 
 ## M9 — workflow and extensibility
 
