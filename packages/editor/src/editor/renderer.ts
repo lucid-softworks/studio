@@ -8,6 +8,7 @@ import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import { backgroundPassSignature, groupPassSignature, layerPassSignature, layerPassStructureSignature, maskedLayerPassSignature, type RenderPassCache } from './rendering/render-pass-cache'
 import type { TypeGpuBlendMode } from './rendering/typegpu-blend-modes'
 import { flattenStackLayers, layerIsLocked, layerIsVisible } from './stack'
+import { quadBounds, smartObjectDisplayQuad, smartObjectSourceQuad } from './smart-objects'
 import type { AdjustmentDescriptor, BlendMode, EditorDocument, EditorLayer, ImageLayer, LayerEffects, LayerFilters, Position, RasterLayer, ShapeLayer, SmartObjectLayer, TextLayer, TextStyleRun } from './types'
 
 export type LayerBounds = { x: number; y: number; width: number; height: number; rotation: number }
@@ -332,6 +333,30 @@ function drawRasterLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
   context.globalAlpha = 1
 }
 
+function drawSmartObjectLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: SmartObjectLayer, assets: AssetMap, resources: RenderResourceRegistry) {
+  if (!layer.transformMatrix) {
+    drawRasterLayer(context, canvas, layer, assets, resources)
+    return
+  }
+  const asset = canvasImageResource(resources, assets, layer.assetId)
+  const quad = smartObjectSourceQuad(layer)
+  if (!asset || !quad) return
+  const center = {
+    x: quad.reduce((total, point) => total + point.x, 0) / quad.length,
+    y: quad.reduce((total, point) => total + point.y, 0) / quad.length,
+  }
+  context.save()
+  context.globalAlpha = layer.opacity / 100
+  context.translate(layer.position.x * canvas.width, layer.position.y * canvas.height)
+  context.translate(center.x, center.y)
+  context.rotate(layer.rotation * Math.PI / 180)
+  context.scale(layer.scale / 100 * (layer.flipX ? -1 : 1), layer.scale / 100 * (layer.flipY ? -1 : 1))
+  context.translate(-center.x, -center.y)
+  context.transform(...layer.transformMatrix)
+  context.drawImage(mipmapSource(asset, layer.width, layer.height), 0, 0, layer.width, layer.height)
+  context.restore()
+}
+
 function textStyleAt(layer: TextLayer, index: number): TextStyleRun {
   return layer.styleRuns?.find((run) => index >= run.start && index < run.start + run.length) ?? {
     start: 0,
@@ -508,7 +533,8 @@ function drawShapeLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEle
 
 function drawEditorLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, layer: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   if (layer.type === 'image') drawImageLayer(context, canvas, layer, assets, resources)
-  else if (layer.type === 'raster' || layer.type === 'smart-object') drawRasterLayer(context, canvas, layer, assets, resources)
+  else if (layer.type === 'raster') drawRasterLayer(context, canvas, layer, assets, resources)
+  else if (layer.type === 'smart-object') drawSmartObjectLayer(context, canvas, layer, assets, resources)
   else if (layer.type === 'text') drawTextLayer(context, canvas, layer)
   else if (layer.type === 'shape') drawShapeLayer(context, canvas, layer)
 }
@@ -1280,7 +1306,11 @@ export function getLayerBounds(
     const asset = assets[layer.assetId]
     return asset ? calculateImageRect(canvas.width, canvas.height, asset.element.naturalWidth, asset.element.naturalHeight, layer) : null
   }
-  if (layer.type === 'raster' || layer.type === 'smart-object') return rasterBounds(canvas, layer)
+  if (layer.type === 'raster') return rasterBounds(canvas, layer)
+  if (layer.type === 'smart-object') {
+    const quad = smartObjectDisplayQuad(layer, canvas.width, canvas.height)
+    return quad ? { ...quadBounds(quad), rotation: 0 } : rasterBounds(canvas, layer)
+  }
   if (layer.type === 'shape') return shapeBounds(canvas, layer)
   if (layer.type === 'adjustment') return null
   const metrics = textMetrics(context, layer)

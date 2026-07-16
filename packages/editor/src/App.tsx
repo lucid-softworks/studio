@@ -750,6 +750,7 @@ function App({ onExit }: AppProps) {
     source.surface?.getContext('2d')?.drawImage(canvas, 0, 0)
     const smartObject = {
       ...createSmartObjectLayer(assetId, layer.name, width, height, { kind: 'embedded', fileName: `${layer.name}.studio` }),
+      transformMatrix: [1, 0, 0, 1, 0, 0] as [number, number, number, number, number, number],
       id: layer.id,
       visible: layer.visible,
       locked: layer.locked,

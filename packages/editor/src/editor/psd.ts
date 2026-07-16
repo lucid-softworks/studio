@@ -6,6 +6,7 @@ import { createAdjustmentLayer, createId, createRasterLayer, createSmartObjectLa
 import { renderComposition, getLayerBounds, parseColorLookupLut } from './renderer'
 import { RenderResourceRegistry } from './rendering/render-resource-registry'
 import type { AssetMap, SourceImage } from './runtime-assets'
+import { affineTransformFromQuad, smartObjectDisplayQuad } from './smart-objects'
 import type { AdjustmentDescriptor, AdjustmentLayer, BlendIfSettings, BlendMode, EditorDocument, EditorLayer, LayerEffects, LayerGroup, LayerMaskSettings, Position, SerializedPsdValue, ShapeLayer, SmartObjectSource, TextLayer, VectorMask } from './types'
 
 let initialized = false
@@ -1045,6 +1046,13 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
             const embedded = await importPsdBuffer(bytes, linkedFile.name, smartObjectDepth + 1)
             importedLayer.embeddedDocument = embedded.document
             Object.assign(assets, embedded.assets)
+            const contentCanvas = document.createElement('canvas')
+            renderComposition(contentCanvas, { ...embedded.document, selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null }, assets)
+            importedLayer.width = contentCanvas.width
+            importedLayer.height = contentCanvas.height
+            importedLayer.position = { x: 0, y: 0 }
+            importedLayer.transformMatrix = affineTransformFromQuad(placedLayer!.transform, contentCanvas.width, contentCanvas.height)
+            assets[assetId] = await sourceFromCanvas(contentCanvas, `${path} smart-object contents`)
           } catch {
             // The raster preview remains editable as a smart-object layer when
             // the embedded payload uses a codec Studio cannot open yet.
@@ -1389,13 +1397,27 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   const bitDepth = documentState.bitDepth === 16 || documentState.bitDepth === 32 ? documentState.bitDepth : 8
 
   const exportLayer = (layer: EditorLayer): Layer => {
+    const placedLayer = layer.type === 'smart-object' ? (() => {
+      const preserved = layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined
+      const quad = smartObjectDisplayQuad(layer, width, height)
+      const bounds = getLayerBounds(geometryContext, geometryCanvas, layer, assets)
+      const transform = quad?.flatMap((point) => [point.x, point.y])
+        ?? (bounds ? [bounds.x, bounds.y, bounds.x + bounds.width, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height, bounds.x, bounds.y + bounds.height] : preserved?.transform)
+        ?? [0, 0, layer.width, 0, layer.width, layer.height, 0, layer.height]
+      return {
+        ...(preserved ?? { id: layer.source.linkedFileId ?? layer.id, type: 'raster' as const }),
+        width: layer.width,
+        height: layer.height,
+        transform,
+      }
+    })() : layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined
     const base: Layer = {
       name: layer.name, hidden: !layer.visible, opacity: layer.opacity / 100,
       blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
       protected: layer.locked ? { position: true, composite: true } : undefined,
       mask: exportedMask(layer, assets, width, height), vectorMask: exportedVectorMask(layer, width, height),
       blendingRanges: exportedBlendingRanges(layer), effects: exportedEffects(layer.effects, layer.psdEffectsMetadata, layer.additionalEffects), id: layer.psdLayerId,
-      placedLayer: layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined,
+      placedLayer,
     }
     if (layer.type === 'adjustment') {
       if (bitDepth !== 8) base.rawData = rawLayerData(bitDepth, psb, undefined, undefined, base.mask)

@@ -1,6 +1,6 @@
 import { createCanvas, ImageData } from '@napi-rs/canvas'
 import { describe, expect, it } from 'vitest'
-import { createShapeLayer, initialDocument } from './presets'
+import { createShapeLayer, createSmartObjectLayer, initialDocument } from './presets'
 import { defaultLayerEffects } from './effects'
 import { calculateImageRect, findResizeHandle, getResizeHandles, renderComposition, selectMipmapLevel } from './renderer'
 import type { ImageLayer } from './types'
@@ -69,6 +69,26 @@ describe('advanced masks', () => {
       layers: [{ ...layer, vectorMask: undefined, blendIf: { source: [100, 100, 255, 255], destination: [0, 0, 255, 255], channels: [] } }],
     }, {})
     expect(canvas.getContext('2d')!.getImageData(50, 50, 1, 1).data[3]).toBe(0)
+  })
+})
+
+describe('smart-object rendering', () => {
+  it('renders through an affine source matrix without changing the source surface', () => {
+    const source = createCanvas(2, 2)
+    const sourceContext = source.getContext('2d')!
+    sourceContext.fillStyle = '#ff0000'
+    sourceContext.fillRect(0, 0, 2, 2)
+    const layer = createSmartObjectLayer('smart-source', 'Placed', 2, 2, { kind: 'embedded', fileName: 'placed.psb' })
+    layer.transformMatrix = [2, 0, 0, 2, 3, 4]
+    const canvas = createCanvas(12, 12) as unknown as HTMLCanvasElement
+
+    renderComposition(canvas, { ...initialDocument, canvasPreset: 'custom', canvasSize: { width: 12, height: 12 }, layers: [layer] }, {
+      'smart-source': { element: source as unknown as HTMLImageElement, surface: source as unknown as HTMLCanvasElement, name: 'Placed' },
+    })
+
+    expect([...canvas.getContext('2d')!.getImageData(4, 5, 1, 1).data]).toEqual([255, 0, 0, 255])
+    expect(canvas.getContext('2d')!.getImageData(1, 1, 1, 1).data[3]).toBe(0)
+    expect(source.width).toBe(2)
   })
 })
 

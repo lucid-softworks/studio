@@ -120,6 +120,8 @@ export type SmartObjectSource = {
   lastModified?: number
 }
 
+export type AffineTransform = [number, number, number, number, number, number]
+
 export type SmartFilter = {
   id: string
   name: string
@@ -138,6 +140,7 @@ export type SmartObjectLayer = BaseLayer & {
   scale: number
   source: SmartObjectSource
   smartFilters: SmartFilter[]
+  transformMatrix?: AffineTransform
   contentHash?: string
   embeddedDocument?: EditorDocument
 }
@@ -329,6 +332,7 @@ export type LayerPatch = Partial<{
   adjustment: AdjustmentDescriptor | null
   source: SmartObjectSource
   smartFilters: SmartFilter[]
+  transformMatrix: AffineTransform
   contentHash: string
   embeddedDocument: EditorDocument
   shadow: number
