@@ -8,19 +8,17 @@ async function setZoom(page: Page, zoom: number) {
 
 async function stabilizeCanvasPresentation(page: Page, zoom: number) {
   await page.getByLabel('Composition canvas').evaluate((canvas: HTMLCanvasElement, scale: number) => {
-    const transformContainer = canvas.parentElement?.parentElement
-    if (transformContainer instanceof HTMLElement) {
-      transformContainer.style.aspectRatio = 'auto'
-      transformContainer.style.transform = 'none'
-    }
     const width = 744 * scale
+    canvas.ownerDocument.body.append(canvas)
     canvas.style.position = 'fixed'
     canvas.style.top = '0'
     canvas.style.left = '0'
+    canvas.style.zIndex = '2147483647'
     canvas.style.width = `${width}px`
     canvas.style.height = `${width * canvas.height / canvas.width}px`
     canvas.style.maxWidth = 'none'
     canvas.style.maxHeight = 'none'
+    canvas.style.background = '#111113'
   }, zoom / 100)
 }
 
