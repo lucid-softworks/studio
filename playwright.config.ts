@@ -4,6 +4,7 @@ const port = Number(process.env.STUDIO_E2E_PORT ?? 4173)
 
 export default defineConfig({
   testDir: './apps/web/e2e',
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
