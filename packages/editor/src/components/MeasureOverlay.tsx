@@ -11,6 +11,19 @@ type Props = {
 
 type Drag = { pointerId: number; startX: number; startY: number }
 
+function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
+}
+
+function constrainedEndPoint(event: ReactPointerEvent<HTMLCanvasElement>, drag: Drag) {
+  const end = canvasPoint(event)
+  if (!event.shiftKey) return end
+  const distance = Math.hypot(end.x - drag.startX, end.y - drag.startY)
+  const angle = Math.round(Math.atan2(end.y - drag.startY, end.x - drag.startX) / (Math.PI / 4)) * Math.PI / 4
+  return { x: drag.startX + Math.cos(angle) * distance, y: drag.startY + Math.sin(angle) * distance }
+}
+
 export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -46,19 +59,6 @@ export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
     context.restore()
   }, [canvas, value])
 
-  const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
-  }
-
-  const endPoint = (event: ReactPointerEvent<HTMLCanvasElement>, drag: Drag) => {
-    const end = point(event)
-    if (!event.shiftKey) return end
-    const distance = Math.hypot(end.x - drag.startX, end.y - drag.startY)
-    const angle = Math.round(Math.atan2(end.y - drag.startY, end.x - drag.startX) / (Math.PI / 4)) * Math.PI / 4
-    return { x: drag.startX + Math.cos(angle) * distance, y: drag.startY + Math.sin(angle) * distance }
-  }
-
   return (
     <canvas
       ref={overlayRef}
@@ -66,7 +66,7 @@ export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
       className={`absolute inset-0 size-full touch-none ${enabled ? 'cursor-crosshair' : 'pointer-events-none'}`}
       onPointerDown={(event) => {
         if (!enabled || event.button !== 0) return
-        const start = point(event)
+        const start = canvasPoint(event)
         dragRef.current = { pointerId: event.pointerId, startX: start.x, startY: start.y }
         onChange({ startX: start.x, startY: start.y, endX: start.x, endY: start.y })
         try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
@@ -74,13 +74,13 @@ export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
       onPointerMove={(event) => {
         const drag = dragRef.current
         if (!drag || drag.pointerId !== event.pointerId) return
-        const end = endPoint(event, drag)
+        const end = constrainedEndPoint(event, drag)
         onChange({ startX: drag.startX, startY: drag.startY, endX: end.x, endY: end.y })
       }}
       onPointerUp={(event) => {
         const drag = dragRef.current
         if (!drag || drag.pointerId !== event.pointerId) return
-        const end = endPoint(event, drag)
+        const end = constrainedEndPoint(event, drag)
         dragRef.current = null
         onChange(Math.hypot(end.x - drag.startX, end.y - drag.startY) < 1 ? null : { startX: drag.startX, startY: drag.startY, endX: end.x, endY: end.y })
       }}

@@ -201,10 +201,11 @@ function transactionRequest<T>(mode: IDBTransactionMode, operation: (store: IDBO
 }
 
 async function hydrateAssets(assets: StoredAsset[], document: EditorDocument, signal?: AbortSignal): Promise<AssetMap> {
+  const nestedDocuments = documentTree(document)
   const rasterAssetIds = new Set([
-    ...documentTree(document).flatMap((nested) => nested.layers.filter((layer) => layer.type === 'raster' || layer.type === 'smart-object').map((layer) => layer.assetId)),
-    ...documentTree(document).flatMap((nested) => nested.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : [])),
-    ...documentTree(document).flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
+    ...nestedDocuments.flatMap((nested) => nested.layers.flatMap((layer) => layer.type === 'raster' || layer.type === 'smart-object' ? [layer.assetId] : [])),
+    ...nestedDocuments.flatMap((nested) => nested.layers.flatMap((layer) => layer.maskAssetId ? [layer.maskAssetId] : [])),
+    ...nestedDocuments.flatMap((nested) => (nested.channels ?? []).flatMap((channel) => channel.assetId ? [channel.assetId] : [])),
   ])
   const entries = await Promise.all(assets.map(async (asset) => {
     signal?.throwIfAborted()
@@ -230,29 +231,31 @@ async function hydrateAssets(assets: StoredAsset[], document: EditorDocument, si
   return Object.fromEntries(entries)
 }
 
+async function storedAssetEntry(id: string, asset: AssetMap[string], signal?: AbortSignal): Promise<StoredAsset | null> {
+  signal?.throwIfAborted()
+  const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
+  signal?.throwIfAborted()
+  const precision = asset.precision
+  const precisionBytes = precision ? new Uint8Array(precision.data.byteLength) : undefined
+  if (precisionBytes && precision) precisionBytes.set(new Uint8Array(precision.data.buffer, precision.data.byteOffset, precision.data.byteLength))
+  const precisionBlob = precisionBytes ? new Blob([precisionBytes]) : undefined
+  return blob ? {
+    id,
+    name: asset.name,
+    blob,
+    contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
+    precision: precisionBlob,
+    bitDepth: precision?.bitDepth,
+    precisionWidth: precision?.width,
+    precisionHeight: precision?.height,
+    precisionRevision: precision?.revision,
+  } : null
+}
+
 async function* storedAssetEntries(document: EditorDocument, assets: AssetMap, signal?: AbortSignal): AsyncGenerator<StoredAsset> {
   const referencedIds = referencedAssetIds(document)
-  for (const [id, asset] of Object.entries(assets)) {
-    signal?.throwIfAborted()
-    if (!referencedIds.has(id)) continue
-    const blob = asset.surface ? await surfaceToBlob(asset.surface) : asset.blob
-    signal?.throwIfAborted()
-    const precision = asset.precision
-    const precisionBytes = precision ? new Uint8Array(precision.data.byteLength) : undefined
-    if (precisionBytes && precision) precisionBytes.set(new Uint8Array(precision.data.buffer, precision.data.byteOffset, precision.data.byteLength))
-    const precisionBlob = precisionBytes ? new Blob([precisionBytes]) : undefined
-    if (blob) yield {
-      id,
-      name: asset.name,
-      blob,
-      contentBounds: asset.contentBounds ? { ...asset.contentBounds } : asset.contentBounds,
-      precision: precisionBlob,
-      bitDepth: precision?.bitDepth,
-      precisionWidth: precision?.width,
-      precisionHeight: precision?.height,
-      precisionRevision: precision?.revision,
-    }
-  }
+  const pending = Object.entries(assets).flatMap(([id, asset]) => referencedIds.has(id) ? [storedAssetEntry(id, asset, signal)] : [])
+  for (const asset of await Promise.all(pending)) if (asset) yield asset
 }
 
 async function storedAssets(document: EditorDocument, assets: AssetMap, signal?: AbortSignal): Promise<StoredAsset[]> {
@@ -304,11 +307,14 @@ async function writeBase64(writable: BrowserWritable, blob: Blob, signal?: Abort
       bytes.set(remainder)
       bytes.set(chunk.value, remainder.length)
       const completeLength = bytes.length - bytes.length % 3
-      for (let offset = 0; offset < completeLength; offset += 24_576) {
+      const writeChunks = async (offset: number): Promise<void> => {
+        if (offset >= completeLength) return
         signal?.throwIfAborted()
         const end = Math.min(completeLength, offset + 24_576)
         await writable.write(btoa(String.fromCharCode(...bytes.subarray(offset, end))))
+        await writeChunks(end)
       }
+      await writeChunks(0)
       remainder = bytes.slice(completeLength)
     }
     if (remainder.length) await writable.write(btoa(String.fromCharCode(...remainder)))
@@ -352,10 +358,10 @@ export async function writeProjectStream(writable: BrowserWritable, document: Ed
 }
 
 export async function serializeProject(document: EditorDocument, assets: AssetMap, signal?: AbortSignal) {
-  const portableAssets: PortableAsset[] = []
-  for (const asset of await storedAssets(document, assets, signal)) {
+  const stored = await storedAssets(document, assets, signal)
+  const portableAssets = await Promise.all(stored.map(async (asset): Promise<PortableAsset> => {
     signal?.throwIfAborted()
-    portableAssets.push({
+    return {
       id: asset.id,
       name: asset.name,
       data: await blobToDataUrl(asset.blob, signal),
@@ -365,8 +371,8 @@ export async function serializeProject(document: EditorDocument, assets: AssetMa
       precisionWidth: asset.precisionWidth,
       precisionHeight: asset.precisionHeight,
       precisionRevision: asset.precisionRevision,
-    })
-  }
+    }
+  }))
   signal?.throwIfAborted()
   const project: PortableProject = { app: 'studio', version: STUDIO_PROJECT_VERSION, savedAt: new Date().toISOString(), document, assets: portableAssets }
   return JSON.stringify(project)

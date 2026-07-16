@@ -96,7 +96,7 @@ export function initializeTypeGpuRuntime(): Promise<TypeGpuRuntimeStatus> {
       clearRecoveryTimer()
       const ready: TypeGpuRuntimeStatus = {
         state: 'ready',
-        features: [...nextRoot.enabledFeatures].sort(),
+        features: [...nextRoot.enabledFeatures].toSorted(),
       }
       updateStatus(ready)
 

@@ -84,26 +84,6 @@ export function cloneSelection(selection: SelectionState): SelectionState {
   return synchronizedSelection(mask, selection.revision)
 }
 
-export function selectionBounds(mask: HTMLCanvasElement): SelectionBounds | null {
-  const context = mask.getContext('2d', { willReadFrequently: true })
-  if (!context) return null
-  const { data, width, height } = context.getImageData(0, 0, mask.width, mask.height)
-  let left = width
-  let top = height
-  let right = -1
-  let bottom = -1
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (data[(y * width + x) * 4 + 3] === 0) continue
-      left = Math.min(left, x)
-      top = Math.min(top, y)
-      right = Math.max(right, x)
-      bottom = Math.max(bottom, y)
-    }
-  }
-  return right < left ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
-}
-
 function drawShape(context: CanvasRenderingContext2D, shape: SelectionShape) {
   context.beginPath()
   if (shape.kind === 'ellipse') context.ellipse(shape.x + shape.width / 2, shape.y + shape.height / 2, Math.abs(shape.width / 2), Math.abs(shape.height / 2), 0, 0, Math.PI * 2)

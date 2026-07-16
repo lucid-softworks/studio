@@ -197,15 +197,14 @@ export async function importBrushes(file: File): Promise<BrushPreset[]> {
   if (fileExtension(file.name) !== 'abr') return [await importBrush(file)]
   const { parseAbrBuffer } = await import('./abr')
   const parsed = parseAbrBuffer(await file.arrayBuffer())
-  const brushes: BrushPreset[] = []
-  for (const brush of parsed) {
-    if (!brush.tip) continue
+  const imported = await Promise.all(parsed.map(async (brush): Promise<BrushPreset | null> => {
+    if (!brush.tip) return null
     const stored: StoredBrush = { id: resourceId('brush'), name: brush.name, spacing: brush.spacing, dynamics: brush.dynamics, blob: await canvasBlob(brush.tip) }
     const hydrated = await hydrateBrush(stored)
     await storeRequest(BRUSH_STORE, 'readwrite', (store) => store.put(stored))
-    brushes.push(hydrated)
-  }
-  return brushes
+    return hydrated
+  }))
+  return imported.flatMap((brush) => brush ? [brush] : [])
 }
 
 export async function serializeBrushPreset(brush: BrushPreset) {

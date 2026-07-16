@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction } from 'react'
 import { getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
 import { layerIsLocked } from '../editor/stack'
@@ -84,7 +84,7 @@ type ToolPreset = {
 
 function loadToolPresets(): ToolPreset[] {
   try {
-    const value = JSON.parse(localStorage.getItem('studio.tool-presets') ?? '[]') as unknown
+    const value = JSON.parse(localStorage.getItem('studio.tool-presets:v1') ?? localStorage.getItem('studio.tool-presets') ?? '[]') as unknown
     if (!Array.isArray(value)) return []
     return value.flatMap((entry): ToolPreset[] => {
       if (!entry || typeof entry !== 'object') return []
@@ -193,7 +193,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
   }
 }
 
-export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, shortcuts, onToolChange, onAddText, onAddShape, onCrop, onPerspectiveCrop, brushes, brushId, onBrushChange, onLoadBrush, foregroundColor, backgroundColor, gradientStops, onForegroundColorChange, onBackgroundColorChange }: CanvasStageProps) {
+function useCanvasStageController({ canvasRef, document, assets, dispatch, endHistoryGroup, isLoading, onFile, canUndo, canRedo, onUndo, onRedo, onAlign, onRasterChange, onRasterCommit, editingMaskLayerId, selection, onSelectionChange: setSelection, zoom, onZoomChange: setZoom, tool, shortcuts, onToolChange, onAddText, onAddShape, onCrop, onPerspectiveCrop, brushes, brushId, onBrushChange, onLoadBrush, foregroundColor, backgroundColor, gradientStops, onForegroundColorChange, onBackgroundColorChange }: CanvasStageProps) {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const [brushSize, setBrushSize] = useState(48)
   const [brushHardness, setBrushHardness] = useState(80)
@@ -244,19 +244,21 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
 
   useEffect(() => setBrushSpacing(selectedBrush.spacing), [selectedBrush.id, selectedBrush.spacing])
   useEffect(() => setBrushDynamics({ ...defaultBrushDynamics, ...selectedBrush.dynamics }), [selectedBrush.id, selectedBrush.dynamics])
+  const changeTool = useEffectEvent(onToolChange)
+
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('studio.tablet-calibration')
+      const stored = localStorage.getItem('studio.tablet-calibration:v1') ?? localStorage.getItem('studio.tablet-calibration')
       if (stored) setPressureCalibration({ ...pressureCalibration, ...JSON.parse(stored) })
     } catch { /* Device calibration is optional. */ }
   // Calibration is restored once for this editor session.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
-    try { localStorage.setItem('studio.tablet-calibration', JSON.stringify(pressureCalibration)) } catch { /* Device calibration is optional. */ }
+    try { localStorage.setItem('studio.tablet-calibration:v1', JSON.stringify(pressureCalibration)) } catch { /* Device calibration is optional. */ }
   }, [pressureCalibration])
   useEffect(() => {
-    try { localStorage.setItem('studio.tool-presets', JSON.stringify(toolPresets)) } catch { /* Presets are optional. */ }
+    try { localStorage.setItem('studio.tool-presets:v1', JSON.stringify(toolPresets)) } catch { /* Presets are optional. */ }
   }, [toolPresets])
   useEffect(() => setSelection(null), [preset.height, preset.width, setSelection])
   useEffect(() => setCropSelection(null), [preset.height, preset.width])
@@ -316,7 +318,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
         event.preventDefault()
         if (!event.repeat && temporaryToolRef.current === null) {
           temporaryToolRef.current = tool
-          onToolChange(event.metaKey || event.ctrlKey || event.altKey ? 'zoom' : 'hand')
+          changeTool(event.metaKey || event.ctrlKey || event.altKey ? 'zoom' : 'hand')
         }
         return
       }
@@ -324,19 +326,19 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       if (event.key.toLowerCase() === 'q') {
         event.preventDefault()
         setQuickMask((current) => !current)
-        if (tool !== 'brush' && tool !== 'eraser') onToolChange('brush')
+        if (tool !== 'brush' && tool !== 'eraser') changeTool('brush')
         return
       }
       const next = toolForShortcut(event, shortcuts)
       if (!next) return
       event.preventDefault()
-      onToolChange(next)
+      changeTool(next)
     }
     const restoreTemporaryTool = () => {
       const previous = temporaryToolRef.current
       if (previous === null) return
       temporaryToolRef.current = null
-      onToolChange(previous)
+      changeTool(previous)
     }
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === ' ') restoreTemporaryTool()
@@ -349,7 +351,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', restoreTemporaryTool)
     }
-  }, [onToolChange, shortcuts, tool])
+  }, [shortcuts, tool])
 
   useEffect(() => {
     const clearSelectedPixels = () => {
@@ -526,7 +528,7 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
           {(paintTool || retouchTool || pixelRetouchTool) && (
             <div className="hidden items-center gap-2 md:flex">
               <select aria-label="Tool preset" defaultValue="" onChange={(event) => { applyToolPreset(event.target.value); event.target.value = '' }} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="" disabled>Tool presets</option>{toolPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" aria-label="Save tool preset" title="Save current tool settings" onClick={saveToolPreset} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:text-zinc-200">+</button>{toolPresets.length > 0 && <button type="button" aria-label="Delete last tool preset" title={`Delete ${toolPresets.at(-1)?.name}`} onClick={() => setToolPresets((current) => current.slice(0, -1))} className="rounded-md px-1 py-1.5 text-[9px] text-zinc-700 hover:text-red-300">×</button>}
-              {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.filter((preset) => !preset.builtIn).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} dynamics={brushDynamics} onDynamicsChange={setBrushDynamics} calibration={pressureCalibration} onCalibrationChange={setPressureCalibration} /></>}
+              {paintTool && <><select aria-label="Brush preset" value={brush.id} onChange={(event) => changeBrush(event.target.value)} className="max-w-28 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none"><option value="round">Round</option>{brushes.flatMap((preset) => preset.builtIn ? [] : [<option key={preset.id} value={preset.id}>{preset.name}</option>])}</select><button type="button" onClick={onLoadBrush} className="rounded-md border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Load…</button><BrushSettingsPopover hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} spacing={brushSpacing} pressureSize={pressureSize} pressureOpacity={pressureOpacity} supportsHardness={!brush.tip} onHardnessChange={setBrushHardness} onOpacityChange={setBrushOpacity} onFlowChange={setBrushFlow} onSpacingChange={setBrushSpacing} onPressureSizeChange={setPressureSize} onPressureOpacityChange={setPressureOpacity} dynamics={brushDynamics} onDynamicsChange={setBrushDynamics} calibration={pressureCalibration} onCalibrationChange={setPressureCalibration} /></>}
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
               {(tool === 'brush' || tool === 'pencil' || tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'pattern-stamp') && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
@@ -652,4 +654,8 @@ export function CanvasStage({ canvasRef, document, assets, dispatch, endHistoryG
       </div>
     </section>
   )
+}
+
+export function CanvasStage(props: CanvasStageProps) {
+  return useCanvasStageController(props)
 }

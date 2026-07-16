@@ -119,7 +119,7 @@ function planNodes(
       filterGraph: layer.filterGraph ?? [],
       filterGraphEnabled: layer.filterGraphEnabled !== false,
       filterMaskAssetId: layer.filterMaskAssetId ?? null,
-      ...((layer.additionalEffects ?? []).some(hasEnabledLayerEffects) ? { additionalEffects: (layer.additionalEffects ?? []).filter(hasEnabledLayerEffects).map(normalizeLayerEffects) } : {}),
+      ...((layer.additionalEffects ?? []).some(hasEnabledLayerEffects) ? { additionalEffects: (layer.additionalEffects ?? []).flatMap((effects) => hasEnabledLayerEffects(effects) ? [normalizeLayerEffects(effects)] : []) } : {}),
     }]
   })
 }
@@ -159,11 +159,13 @@ export function buildNativeLayerCompositionPlan(document: EditorDocument): Nativ
   if (document.layers.some((layer) => !geometryTransformIsIdentity(layer.geometryTransform))) return null
   if (document.layers.some((layer) => (
     layer.vectorMask
+    || (layer.type === 'adjustment' && layer.maskAssetId)
     || layer.blendIf
     || (layer.maskSettings && (layer.maskSettings.density !== 100 || layer.maskSettings.feather > 0))
   ))) return null
   if (document.layers.some((layer) => layer.type === 'adjustment' && layer.adjustment && !(
     layer.adjustment.type === 'brightness/contrast'
+    || layer.adjustment.type === 'invert'
     || (layer.adjustment.type === 'hue/saturation' && !layer.adjustment.reds && !layer.adjustment.yellows && !layer.adjustment.greens && !layer.adjustment.cyans && !layer.adjustment.blues && !layer.adjustment.magentas)
   ))) return null
   if (document.layers.some((layer) => {

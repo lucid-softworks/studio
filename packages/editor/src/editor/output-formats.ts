@@ -110,14 +110,13 @@ export async function encodeGif(frames: RasterExportFrame[]) {
 }
 
 export async function encodePdf(frame: RasterExportFrame, dpi = 300, metadata: { author?: string; description?: string; title?: string } = {}) {
-  const { PDFDocument } = await import('pdf-lib')
-  const png = await pixelsToPng(frame.pixels, 'Could not render the PDF image.')
-  const pdf = await PDFDocument.create()
+  const [{ PDFDocument }, png] = await Promise.all([import('pdf-lib'), pixelsToPng(frame.pixels, 'Could not render the PDF image.')])
+  const [pdf, pngBytes] = await Promise.all([PDFDocument.create(), png.arrayBuffer()])
   if (metadata.title) pdf.setTitle(metadata.title)
   if (metadata.author) pdf.setAuthor(metadata.author)
   if (metadata.description) pdf.setSubject(metadata.description)
   pdf.setCreator('Studio')
-  const image = await pdf.embedPng(await png.arrayBuffer())
+  const image = await pdf.embedPng(pngBytes)
   const width = frame.pixels.width / dpi * 72
   const height = frame.pixels.height / dpi * 72
   const page = pdf.addPage([width, height])
@@ -126,14 +125,13 @@ export async function encodePdf(frame: RasterExportFrame, dpi = 300, metadata: {
 }
 
 export async function encodePrintPdf(frame: RasterExportFrame, settings: { widthInches: number; heightInches: number; bleedInches: number; cropMarks: boolean }, metadata: { author?: string; description?: string; title?: string } = {}) {
-  const { PDFDocument, grayscale } = await import('pdf-lib')
-  const png = await pixelsToPng(frame.pixels, 'Could not render print pixels.')
-  const pdf = await PDFDocument.create()
+  const [{ PDFDocument, grayscale }, png] = await Promise.all([import('pdf-lib'), pixelsToPng(frame.pixels, 'Could not render print pixels.')])
+  const [pdf, pngBytes] = await Promise.all([PDFDocument.create(), png.arrayBuffer()])
   if (metadata.title) pdf.setTitle(metadata.title)
   if (metadata.author) pdf.setAuthor(metadata.author)
   if (metadata.description) pdf.setSubject(metadata.description)
   pdf.setCreator('Studio')
-  const image = await pdf.embedPng(await png.arrayBuffer())
+  const image = await pdf.embedPng(pngBytes)
   const trimWidth = settings.widthInches * 72
   const trimHeight = settings.heightInches * 72
   const bleed = settings.bleedInches * 72

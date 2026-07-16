@@ -110,7 +110,7 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       const selectedParents = new Set(selected.map((layer) => layer.groupId ?? null))
       const parentId = selected.length && selectedParents.size === 1 ? selected[0].groupId ?? null : action.group.parentId ?? null
       const parentRefs = siblingRefs(state, parentId)
-      const selectedRefIds = new Set(selected.filter((layer) => (layer.groupId ?? null) === parentId).map((layer) => layer.id))
+      const selectedRefIds = new Set(selected.flatMap((layer) => (layer.groupId ?? null) === parentId ? [layer.id] : []))
       const topIndex = Math.max(-1, ...parentRefs.map((item, index) => item.type === 'layer' && selectedRefIds.has(item.id) ? index : -1))
       const remainingRefs = parentRefs.filter((item) => item.type !== 'layer' || !selectedRefIds.has(item.id))
       const insertion = topIndex < 0 ? remainingRefs.length : parentRefs.slice(0, topIndex + 1).filter((item) => item.type !== 'layer' || !selectedRefIds.has(item.id)).length
@@ -158,7 +158,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
     case 'remove-layers': {
       const ids = new Set(action.ids)
       const layers = state.layers.filter((layer) => !ids.has(layer.id))
-      const selectedLayerId = layers.findLast((layer) => state.selectedLayerIds.includes(layer.id))?.id ?? null
+      const selectedIds = new Set(state.selectedLayerIds)
+      const selectedLayerId = layers.findLast((layer) => selectedIds.has(layer.id))?.id ?? null
       return { ...state, layers, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [], selectedGroupId: null }
     }
     case 'remove-group': {
@@ -169,7 +170,7 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       const groupIndex = parentRefs.findIndex((item) => item.type === 'group' && item.id === action.id)
       const descendantGroupIds = getDescendantGroupIds(state, action.id)
       descendantGroupIds.add(action.id)
-      const removedIds = new Set(state.layers.filter((layer) => layer.groupId && descendantGroupIds.has(layer.groupId)).map((layer) => layer.id))
+      const removedIds = new Set(state.layers.flatMap((layer) => layer.groupId && descendantGroupIds.has(layer.groupId) ? [layer.id] : []))
       let next: EditorDocument
       if (action.deleteLayers) {
         next = {
@@ -182,7 +183,7 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
         const children = siblingRefs(state, action.id)
         next = {
           ...state,
-          groups: state.groups.filter((candidate) => candidate.id !== action.id).map((candidate) => (candidate.parentId ?? null) === action.id ? { ...candidate, parentId } : candidate),
+          groups: state.groups.flatMap((candidate) => candidate.id === action.id ? [] : [(candidate.parentId ?? null) === action.id ? { ...candidate, parentId } : candidate]),
           layers: state.layers.map((layer) => (layer.groupId ?? null) === action.id ? { ...layer, groupId: parentId } as EditorLayer : layer),
         }
         const insertion = groupIndex < 0 ? parentRefs.length : groupIndex
@@ -211,7 +212,7 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       if (!action.id) return { ...state, selectedGroupId: null, selectedLayerId: null, selectedLayerIds: [] }
       const descendantIds = getDescendantGroupIds(state, action.id)
       descendantIds.add(action.id)
-      const childIds = state.layers.filter((layer) => layer.groupId && descendantIds.has(layer.groupId)).map((layer) => layer.id)
+      const childIds = state.layers.flatMap((layer) => layer.groupId && descendantIds.has(layer.groupId) ? [layer.id] : [])
       return { ...state, selectedGroupId: action.id, selectedLayerId: null, selectedLayerIds: childIds }
     }
     case 'move-layer':
@@ -257,7 +258,7 @@ const documentFields = [
 ] as const satisfies readonly (keyof EditorDocument)[]
 
 function documentPatch(from: EditorDocument, to: EditorDocument): DocumentStatePatch {
-  return Object.fromEntries(documentFields.filter((field) => from[field] !== to[field]).map((field) => [field, to[field]])) as DocumentStatePatch
+  return Object.fromEntries(documentFields.flatMap((field) => from[field] !== to[field] ? [[field, to[field]]] : [])) as DocumentStatePatch
 }
 
 function applyDocumentPatch(document: EditorDocument, patch: DocumentStatePatch): EditorDocument {

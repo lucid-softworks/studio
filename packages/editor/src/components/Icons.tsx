@@ -8,14 +8,6 @@ export function UploadIcon({ className = 'size-4' }: IconProps) {
   )
 }
 
-export function DownloadIcon({ className = 'size-4' }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14" />
-    </svg>
-  )
-}
-
 export function ResetIcon({ className = 'size-4' }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -30,14 +22,6 @@ export function ImageIcon({ className = 'size-5' }: IconProps) {
       <rect x="3.5" y="4" width="17" height="16" rx="3" />
       <circle cx="9" cy="9.5" r="1.5" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M5.5 17l4.2-4.2a2 2 0 012.8 0l1.3 1.3 1.1-1.1a2 2 0 012.8 0l2.8 2.8" />
-    </svg>
-  )
-}
-
-export function ChevronIcon({ className = 'size-4' }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8 10l4 4 4-4" />
     </svg>
   )
 }

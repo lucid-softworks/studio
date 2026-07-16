@@ -6,6 +6,8 @@ export const defaultSwatches = [
   '#c084fc', '#831843', '#db2777', '#f472b6', '#a16207',
 ] as const
 
+const defaultSwatchSet = new Set<string>(defaultSwatches)
+
 export function normalizeHexColor(value: unknown, fallback = '#000000') {
   if (typeof value !== 'string') return fallback
   const color = value.trim().toLowerCase()
@@ -16,6 +18,6 @@ export function normalizeCustomSwatches(value: unknown) {
   if (!Array.isArray(value)) return []
   return [...new Set(value.flatMap((color) => {
     const normalized = normalizeHexColor(color, '')
-    return normalized && !defaultSwatches.includes(normalized as typeof defaultSwatches[number]) ? [normalized] : []
+    return normalized && !defaultSwatchSet.has(normalized) ? [normalized] : []
   }))].slice(0, 64)
 }

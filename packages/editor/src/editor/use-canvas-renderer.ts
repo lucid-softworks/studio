@@ -21,7 +21,7 @@ export function useCanvasRenderer(
   const requestRef = useRef(0)
   const renderStartedRef = useRef(new Map<number, number>())
   const latestFrameRef = useRef({ document, assets })
-  latestFrameRef.current = { document, assets }
+  useEffect(() => { latestFrameRef.current = { document, assets } }, [assets, document])
 
   const markRendered = useCallback((canvas: HTMLCanvasElement, requestId: number) => {
     const startedAt = renderStartedRef.current.get(requestId)

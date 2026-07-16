@@ -45,9 +45,9 @@ const gpuSetSaturation = tgpu.fn([d.vec3f, d.f32], d.vec3f)((color, value) => {
 })
 
 export const gpuApplyAdjustment = tgpu.fn(
-  [d.vec3f, d.f32, d.f32, d.f32, d.f32],
+  [d.vec3f, d.f32, d.f32, d.f32, d.f32, d.f32],
   d.vec3f,
-)((color, brightness, contrast, saturation, hue) => {
+)((color, brightness, contrast, saturation, hue, invert) => {
   'use gpu'
   let adjusted = std.mul(color, brightness)
   adjusted = std.add(std.mul(std.sub(adjusted, d.vec3f(0.5)), contrast), d.vec3f(0.5))
@@ -71,7 +71,8 @@ export const gpuApplyAdjustment = tgpu.fn(
     std.add(0.715, std.add(std.mul(-0.715, cosine), std.mul(0.715, sine))),
     std.add(0.072, std.add(std.mul(0.928, cosine), std.mul(0.072, sine))),
   ))
-  return std.clamp(d.vec3f(red, green, blue), d.vec3f(0), d.vec3f(1))
+  adjusted = std.clamp(d.vec3f(red, green, blue), d.vec3f(0), d.vec3f(1))
+  return std.mix(adjusted, std.sub(d.vec3f(1), adjusted), invert)
 })
 
 export const gpuApplyLayerFilters = tgpu.fn(
@@ -79,7 +80,7 @@ export const gpuApplyLayerFilters = tgpu.fn(
   d.vec3f,
 )((color, brightness, contrast, saturation, hue, grayscale, sepia, invert) => {
   'use gpu'
-  let filtered = gpuApplyAdjustment(color, brightness, contrast, saturation, hue)
+  let filtered = gpuApplyAdjustment(color, brightness, contrast, saturation, hue, 0)
   const luminance = std.dot(filtered, d.vec3f(0.2126, 0.7152, 0.0722))
   filtered = std.mix(filtered, d.vec3f(luminance), grayscale)
   const sepiaColor = d.vec3f(
@@ -207,6 +208,7 @@ export type TypeGpuCompositionAdjustment = {
   contrast: number
   saturation: number
   hue: number
+  invert: number
   blur: number
 }
 
@@ -326,6 +328,7 @@ export function createTypeGpuLayerCompositor(
   const adjustmentContrast = root.createUniform(d.f32, 1)
   const adjustmentSaturation = root.createUniform(d.f32, 1)
   const adjustmentHue = root.createUniform(d.f32, 0)
+  const adjustmentInvert = root.createUniform(d.f32, 0)
   const blurRadius = root.createUniform(d.f32, 0)
   const texelSize = root.createUniform(d.vec2f, d.vec2f(1 / width, 1 / height))
   const sampler = root.createSampler({
@@ -392,6 +395,7 @@ export function createTypeGpuLayerCompositor(
           adjustmentContrast.$,
           adjustmentSaturation.$,
           adjustmentHue.$,
+          adjustmentInvert.$,
         )
         sourceAlpha = std.mul(adjustmentAlpha, adjustmentOpacity.$)
       } else if (sourceKind.$ === 2) {
@@ -493,6 +497,7 @@ export function createTypeGpuLayerCompositor(
           adjustmentContrast.write(layer.contrast)
           adjustmentSaturation.write(layer.saturation)
           adjustmentHue.write(layer.hue)
+          adjustmentInvert.write(layer.invert)
           blurRadius.write(layer.blur)
           if (layer.blur > 0) {
             horizontalBlurPipelines[backdropIndex].withColorAttachment({ view: blurRenderViews[0], loadOp: 'clear' }).draw(3)
@@ -597,6 +602,7 @@ export function createTypeGpuLayerCompositor(
       adjustmentContrast.buffer.destroy()
       adjustmentSaturation.buffer.destroy()
       adjustmentHue.buffer.destroy()
+      adjustmentInvert.buffer.destroy()
       blurRadius.buffer.destroy()
       texelSize.buffer.destroy()
     },

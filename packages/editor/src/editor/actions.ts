@@ -9,8 +9,8 @@ export const actionCommandLabels: Record<ActionCommand, string> = {
 
 export function normalizeActions(value: unknown): ActionPreset[] {
   if (!Array.isArray(value)) return []
-  const commands = Object.keys(actionCommandLabels) as ActionCommand[]
-  const conditions: ActionCondition[] = ['always', 'has-selection', 'raster-layer', 'multiple-layers']
+  const commands = new Set(Object.keys(actionCommandLabels) as ActionCommand[])
+  const conditions = new Set<ActionCondition>(['always', 'has-selection', 'raster-layer', 'multiple-layers'])
   return value.flatMap((entry): ActionPreset[] => {
     if (!entry || typeof entry !== 'object') return []
     const candidate = entry as Partial<ActionPreset>
@@ -19,8 +19,8 @@ export function normalizeActions(value: unknown): ActionPreset[] {
     const steps = candidate.steps.flatMap((step): ActionStep[] => {
       if (!step || typeof step !== 'object') return []
       const value = step as Partial<ActionStep>
-      if (!commands.includes(value.command as ActionCommand)) return []
-      return [{ id: typeof value.id === 'string' ? value.id : crypto.randomUUID(), command: value.command as ActionCommand, enabled: value.enabled !== false, condition: conditions.includes(value.condition as ActionCondition) ? value.condition as ActionCondition : 'always' }]
+      if (!commands.has(value.command as ActionCommand)) return []
+      return [{ id: typeof value.id === 'string' ? value.id : crypto.randomUUID(), command: value.command as ActionCommand, enabled: value.enabled !== false, condition: conditions.has(value.condition as ActionCondition) ? value.condition as ActionCondition : 'always' }]
     }).slice(0, 100)
     return steps.length ? [{ id: typeof candidate.id === 'string' ? candidate.id : crypto.randomUUID(), name, steps }] : []
   }).slice(0, 64)

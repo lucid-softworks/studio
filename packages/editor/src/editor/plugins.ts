@@ -28,7 +28,11 @@ export function normalizePlugins(value: unknown): StudioPlugin[] {
     const source: Partial<StudioPlugin['hooks']> = candidate.hooks && typeof candidate.hooks === 'object' ? candidate.hooks : {}
     const importers = (Array.isArray(source.importers) ? source.importers : []).flatMap((hook): PluginImporterHook[] => {
       const hookId = safeId(hook?.id); const label = safeLabel(hook?.label)
-      const extensions = Array.isArray(hook?.extensions) ? hook.extensions.filter((extension): extension is string => typeof extension === 'string').map((extension) => extension.toLowerCase().replace(/^\./, '')).filter((extension) => /^[a-z0-9]{1,12}$/.test(extension)).slice(0, 16) : []
+      const extensions = Array.isArray(hook?.extensions) ? hook.extensions.flatMap((extension) => {
+        if (typeof extension !== 'string') return []
+        const normalized = extension.toLowerCase().replace(/^\./, '')
+        return /^[a-z0-9]{1,12}$/.test(normalized) ? [normalized] : []
+      }).slice(0, 16) : []
       return hookId && label && extensions.length ? [{ id: hookId, label, extensions }] : []
     })
     const exporters = (Array.isArray(source.exporters) ? source.exporters : []).flatMap((hook): PluginExporterHook[] => {

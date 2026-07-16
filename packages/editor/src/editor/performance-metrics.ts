@@ -20,7 +20,7 @@ const durationMetrics: PerformanceDurationMetric[] = ['pointer-latency', 'render
 
 function percentile(values: number[], fraction: number) {
   if (!values.length) return 0
-  const sorted = [...values].sort((left, right) => left - right)
+  const sorted = values.toSorted((left, right) => left - right)
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))]
 }
 

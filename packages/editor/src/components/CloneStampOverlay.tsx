@@ -45,6 +45,26 @@ type Stroke = {
   previewing: boolean
 }
 
+function tileSample(stroke: Stroke, centerX: number, centerY: number) {
+  const diameter = Math.max(1, Math.ceil(stroke.radius * 2))
+  const left = Math.floor(centerX - stroke.radius)
+  const top = Math.floor(centerY - stroke.radius)
+  const x = Math.max(0, left)
+  const y = Math.max(0, top)
+  const width = Math.max(0, Math.min(stroke.target.surface.width, left + diameter) - x)
+  const height = Math.max(0, Math.min(stroke.target.surface.height, top + diameter) - y)
+  const sample = stroke.sampleCanvas
+  if (sample.width !== diameter) sample.width = diameter
+  if (sample.height !== diameter) sample.height = diameter
+  const context = sample.getContext('2d')
+  context?.clearRect(0, 0, diameter, diameter)
+  if (context && width > 0 && height > 0) {
+    captureRasterTiles(stroke.before, x, y, width, height)
+    context.putImageData(rasterSnapshotRegion(stroke.before, x, y, width, height), x - left, y - top)
+  }
+  return sample
+}
+
 export function CloneStampOverlay({ canvasRef, document, assets, tool, size, strength, aligned, sampleMode, sourceRotation, sourceScale, selection, locked, onChange, onCommit }: Props) {
   const strokeRef = useRef<Stroke | null>(null)
   const alignedOffsetRef = useRef<Position | null>(null)
@@ -56,26 +76,6 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
   const canvasPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: (event.clientX - rect.left) / rect.width * (canvas?.width ?? 1600), y: (event.clientY - rect.top) / rect.height * (canvas?.height ?? 1000) }
-  }
-
-  const tileSample = (stroke: Stroke, centerX: number, centerY: number) => {
-    const diameter = Math.max(1, Math.ceil(stroke.radius * 2))
-    const left = Math.floor(centerX - stroke.radius)
-    const top = Math.floor(centerY - stroke.radius)
-    const x = Math.max(0, left)
-    const y = Math.max(0, top)
-    const width = Math.max(0, Math.min(stroke.target.surface.width, left + diameter) - x)
-    const height = Math.max(0, Math.min(stroke.target.surface.height, top + diameter) - y)
-    const sample = stroke.sampleCanvas
-    if (sample.width !== diameter) sample.width = diameter
-    if (sample.height !== diameter) sample.height = diameter
-    const context = sample.getContext('2d')
-    context?.clearRect(0, 0, diameter, diameter)
-    if (context && width > 0 && height > 0) {
-      captureRasterTiles(stroke.before, x, y, width, height)
-      context.putImageData(rasterSnapshotRegion(stroke.before, x, y, width, height), x - left, y - top)
-    }
-    return sample
   }
 
   const mergedTile = (stroke: Stroke, tileX: number, tileY: number) => {
@@ -91,10 +91,10 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       sourceToCanvas({ x: x + width, y }, stroke.target),
       sourceToCanvas({ x: x + width, y: y + height }, stroke.target),
       sourceToCanvas({ x, y: y + height }, stroke.target),
-      ...geometryMesh(stroke.target.layer.geometryTransform).source
-        .map((point) => ({ x: point.x * stroke.target.surface.width, y: point.y * stroke.target.surface.height }))
-        .filter((point) => point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height)
-        .map((point) => sourceToCanvas(point, stroke.target)),
+      ...geometryMesh(stroke.target.layer.geometryTransform).source.flatMap((sourcePoint) => {
+        const point = { x: sourcePoint.x * stroke.target.surface.width, y: sourcePoint.y * stroke.target.surface.height }
+        return point.x >= x && point.x <= x + width && point.y >= y && point.y <= y + height ? [sourceToCanvas(point, stroke.target)] : []
+      }),
     ]
     const left = Math.floor(Math.min(...samplePoints.map((point) => point.x))) - 2
     const top = Math.floor(Math.min(...samplePoints.map((point) => point.y))) - 2

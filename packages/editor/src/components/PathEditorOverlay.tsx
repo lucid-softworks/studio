@@ -15,6 +15,10 @@ type Props = {
 }
 
 const distance = (a: Position, b: Position) => Math.hypot(a.x - b.x, a.y - b.y)
+const normalizedPointerPoint = (event: ReactPointerEvent<SVGSVGElement | SVGCircleElement | SVGPathElement>) => {
+  const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect()
+  return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) }
+}
 const pathData = (path: VectorPath, width: number, height: number) => {
   const point = (value: Position) => `${value.x * width} ${value.y * height}`
   const first = path.knots[0]
@@ -47,15 +51,10 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
     dispatch({ type: 'set-paths', paths, selectedPathId: path.id })
   }
 
-  const normalizedPoint = (event: ReactPointerEvent<SVGSVGElement | SVGCircleElement | SVGPathElement>) => {
-    const rect = event.currentTarget.ownerSVGElement?.getBoundingClientRect() ?? event.currentTarget.getBoundingClientRect()
-    return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) }
-  }
-
   const penDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (!enabled || tool !== 'pen') return
     event.preventDefault()
-    const point = normalizedPoint(event)
+    const point = normalizedPointerPoint(event)
     const source: DocumentPath = active ? structuredClone(active) : { id: createId(), name: 'Work Path', kind: 'work', paths: [] }
     let pathIndex = source.paths.findIndex((path) => !path.closed)
     if (pathIndex < 0) {
@@ -82,7 +81,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
     if (!active || !enabled || tool === 'pen') return
     event.preventDefault()
     event.stopPropagation()
-    const start = normalizedPoint(event)
+    const start = normalizedPointerPoint(event)
     const source = structuredClone(active)
     if (tool === 'direct-select' && knotIndex !== undefined && !handle && event.altKey) {
       const knot = source.paths[pathIndex].knots[knotIndex]
@@ -102,7 +101,7 @@ export function PathEditorOverlay({ canvasRef, document, dispatch, tool, enabled
   const move = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current
     if (!drag) return
-    const point = axisConstrainedPosition(drag.start, normalizedPoint(event), event.shiftKey)
+    const point = axisConstrainedPosition(drag.start, normalizedPointerPoint(event), event.shiftKey)
     const source = structuredClone(drag.source)
     const dx = point.x - drag.start.x
     const dy = point.y - drag.start.y

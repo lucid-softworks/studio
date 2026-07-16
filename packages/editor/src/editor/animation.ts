@@ -16,7 +16,7 @@ export function normalizeAnimation(value: DocumentAnimation | undefined): Docume
 }
 
 export function captureAnimationFrame(document: EditorDocument, index: number): AnimationFrame {
-  return { id: crypto.randomUUID(), name: `Frame ${index + 1}`, delayMs: Math.round(1000 / normalizeAnimation(document.animation).fps), visibleLayerIds: document.layers.filter((layer) => layer.visible).map((layer) => layer.id) }
+  return { id: crypto.randomUUID(), name: `Frame ${index + 1}`, delayMs: Math.round(1000 / normalizeAnimation(document.animation).fps), visibleLayerIds: document.layers.flatMap((layer) => layer.visible ? [layer.id] : []) }
 }
 
 export function captureLayerKeyframe(layer: EditorLayer, time: number): AnimationKeyframe {
@@ -46,7 +46,7 @@ export function animationDocumentAt(document: EditorDocument, preview: { frameIn
   const adjacent = [animation.frames[preview.frameIndex - 1], animation.frames[preview.frameIndex + 1]].filter((candidate): candidate is AnimationFrame => Boolean(candidate))
   const onions = adjacent.flatMap((candidate, adjacentIndex) => {
     const ids = new Set(candidate.visibleLayerIds)
-    return document.layers.filter((layer) => ids.has(layer.id) && !visible.has(layer.id)).map((layer) => ({ ...layer, id: `onion-${adjacentIndex}-${layer.id}`, name: `Onion · ${layer.name}`, opacity: Math.min(22, layer.opacity * 0.22), locked: true } as EditorLayer))
+    return document.layers.flatMap((layer) => ids.has(layer.id) && !visible.has(layer.id) ? [{ ...layer, id: `onion-${adjacentIndex}-${layer.id}`, name: `Onion · ${layer.name}`, opacity: Math.min(22, layer.opacity * 0.22), locked: true } as EditorLayer] : [])
   })
   return { ...document, layers: [...onions, ...current], selectedLayerId: null, selectedLayerIds: [] }
 }

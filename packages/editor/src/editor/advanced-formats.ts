@@ -47,8 +47,7 @@ function tiffBytes(ifd: Record<string, unknown>, tag: number) {
 }
 
 async function decodeTiff(file: File, extension: string, signal?: AbortSignal): Promise<AdvancedRasterImport> {
-  const UTIF = await import('utif')
-  const buffer = await file.arrayBuffer()
+  const [UTIF, buffer] = await Promise.all([import('utif'), file.arrayBuffer()])
   signal?.throwIfAborted()
   const ifds = UTIF.decode(buffer)
   const pages: DecodedRasterPage[] = []
@@ -132,8 +131,8 @@ async function decodePdf(file: File, signal?: AbortSignal): Promise<AdvancedRast
   try {
     signal?.throwIfAborted()
     const pdf = await task.promise
-    const pages: DecodedRasterPage[] = []
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index): Promise<DecodedRasterPage> => {
+      const pageNumber = index + 1
       signal?.throwIfAborted()
       const page = await pdf.getPage(pageNumber)
       const viewport = page.getViewport({ scale: 2 })
@@ -142,11 +141,12 @@ async function decodePdf(file: File, signal?: AbortSignal): Promise<AdvancedRast
       surface.height = Math.ceil(viewport.height)
       const context = surface.getContext('2d', { willReadFrequently: true })
       if (!context) throw new Error('Studio could not allocate a PDF page surface.')
-      await page.render({ canvas: surface, canvasContext: context, viewport }).promise
+      await page.render({ canvasContext: context, viewport }).promise
       signal?.throwIfAborted()
-      pages.push({ name: `${file.name} · page ${pageNumber}`, width: surface.width, height: surface.height, source: { element: new Image(), name: file.name, surface, revision: 0 } })
+      const result = { name: `${file.name} · page ${pageNumber}`, width: surface.width, height: surface.height, source: { element: new Image(), name: file.name, surface, revision: 0 } }
       page.cleanup()
-    }
+      return result
+    }))
     return { pages, bitDepth: 8, metadata: { sourceFormat: 'pdf', resolutionDpi: 144, importedAt: new Date().toISOString() }, warnings: [`Rendered ${pages.length} PDF page${pages.length === 1 ? '' : 's'} locally at 144 ppi; text and vectors were rasterized.`] }
   } catch (error) {
     signal?.throwIfAborted()

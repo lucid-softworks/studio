@@ -42,6 +42,7 @@ export type NativeAdjustmentPass = {
   contrast: number
   saturation: number
   hue: number
+  invert: number
   blur: number
 }
 export type NativeLayerPass = NativeTextureLayerPass | NativeAdjustmentPass
@@ -387,10 +388,6 @@ export function clearSmartFilterResultCache() {
 
 export function smartFilterResultCacheSize() {
   return smartFilterResultCache.size
-}
-
-export function smartFilterResultCacheUsage() {
-  return { entries: smartFilterResultCache.size, bytes: smartFilterCacheBytes }
 }
 
 function cacheSmartFilterResult(key: string, canvas: HTMLCanvasElement) {
@@ -1092,7 +1089,7 @@ function drawMaskedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasEl
     const originalContext = originalCanvas.getContext('2d')
     originalContext?.clearRect(0, 0, canvas.width, canvas.height)
     originalContext?.drawImage(composition, 0, 0)
-    const blur = Math.max(0, ...filterGraph.filter((node) => node.kind === 'gaussian-blur').map((node) => node.size))
+    const blur = Math.max(0, ...filterGraph.flatMap((node) => node.kind === 'gaussian-blur' ? [node.size] : []))
     if (blur > 0) {
       filterGraphBlurCanvas = prepareScratchCanvas(filterGraphBlurCanvas, canvas)
       const blurContext = filterGraphBlurCanvas.getContext('2d')
@@ -1351,9 +1348,10 @@ function drawLayerWithEffects(
     }
     if (value.bevel.enabled) {
       const angle = value.bevel.angle * Math.PI / 180
-      const distance = Math.max(1, value.bevel.size * value.bevel.depth / 100 / 2) * (value.bevel.direction === 'down' ? -1 : 1)
-      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.highlightColor, value.bevel.highlightOpacity, value.bevel.size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
-      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.shadowColor, value.bevel.shadowOpacity, value.bevel.size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
+      const size = value.bevel.size
+      const distance = Math.max(1, size * value.bevel.depth / 100 / 2) * (value.bevel.direction === 'down' ? -1 : 1)
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.highlightColor, value.bevel.highlightOpacity, size / 3, -Math.cos(angle) * distance, -Math.sin(angle) * distance, 'screen')
+      drawInnerTintedEffect(context, canvas, layerEffectsCanvas, value.bevel.shadowColor, value.bevel.shadowOpacity, size / 3, Math.cos(angle) * distance, Math.sin(angle) * distance, 'multiply')
     }
     if (value.stroke.enabled && value.stroke.position === 'inside') drawStrokeEffect(context, canvas, layerEffectsCanvas, value.stroke, true)
   }
@@ -1379,7 +1377,7 @@ function drawClippedLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasE
 
 function curveValue(value: number, points: Array<{ input: number; output: number }> | undefined) {
   if (!points?.length) return value
-  const sorted = [...points].sort((left, right) => left.input - right.input)
+  const sorted = points.toSorted((left, right) => left.input - right.input)
   if (value <= sorted[0].input) return sorted[0].output
   for (let index = 1; index < sorted.length; index += 1) {
     const left = sorted[index - 1]
@@ -1714,7 +1712,7 @@ function applyAdvancedAdjustment(pixels: ImageData, adjustment: AdjustmentDescri
   }
 }
 
-function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, adjustment: AdjustmentRenderNode) {
+function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanvasElement, adjustment: AdjustmentRenderNode, layer: EditorLayer, assets: AssetMap, resources: RenderResourceRegistry) {
   adjustmentCanvas = prepareScratchCanvas(adjustmentCanvas, canvas)
   const adjustmentContext = adjustmentCanvas.getContext('2d')
   if (!adjustmentContext) return
@@ -1723,6 +1721,17 @@ function drawAdjustmentLayer(context: CanvasRenderingContext2D, canvas: HTMLCanv
   const advanced = adjustment.adjustment && adjustment.adjustment.type !== 'brightness/contrast' && adjustment.adjustment.type !== 'hue/saturation'
   if (advanced) {
     mutateCanvasStripes(adjustmentContext, canvas, (pixels) => applyAdvancedAdjustment(pixels, adjustment.adjustment!))
+  }
+  const rasterMask = layer.maskAssetId ? canvasImageResource(resources, assets, layer.maskAssetId)?.source : null
+  for (const mask of [
+    rasterMask ? preparedRasterMask(canvas, rasterMask, layer) : null,
+    preparedVectorMask(canvas, layer),
+  ]) {
+    if (!mask) continue
+    adjustmentContext.save()
+    adjustmentContext.globalCompositeOperation = 'destination-in'
+    adjustmentContext.drawImage(mask, 0, 0, canvas.width, canvas.height)
+    adjustmentContext.restore()
   }
   context.save()
   context.globalAlpha = adjustment.opacity / 100
@@ -1810,7 +1819,7 @@ function drawRenderPlan(
     const layer = layers.get(node.layerId)
     if (!layer) continue
     if (node.kind === 'adjustment' && layer.type === 'adjustment') {
-      drawAdjustmentLayer(context, canvas, node)
+      drawAdjustmentLayer(context, canvas, node, layer, assets, resources)
       continue
     }
     if (node.kind !== 'layer' || layer.type === 'adjustment') continue
@@ -2125,6 +2134,7 @@ export function renderNativeLayerPasses(
         contrast: node.contrast / 100,
         saturation: node.saturation / 100,
         hue: node.hue * Math.PI / 180,
+        invert: node.adjustment?.type === 'invert' ? 1 : 0,
         blur: node.blur,
       })
       return

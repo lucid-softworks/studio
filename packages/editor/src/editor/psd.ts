@@ -1076,6 +1076,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
   const layers: EditorLayer[] = []
   const groups: LayerGroup[] = []
   const previewedColorLookups = new Set<Layer>()
+  const linkedFilesById = new Map((psd.linkedFiles ?? []).map((file) => [file.id, file]))
   const sourceIsTopToBottom = detectSourceTopToBottom(psd)
   let importedLayerCount = 0
 
@@ -1164,7 +1165,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
         y: (centerY - psd.height / 2) / psd.height,
       }
       const placedLayer = layer.placedLayer
-      const linkedFile = placedLayer ? psd.linkedFiles?.find((file) => file.id === placedLayer.id) : undefined
+      const linkedFile = placedLayer ? linkedFilesById.get(placedLayer.id) : undefined
       const importedLayer = placedLayer
         ? createSmartObjectLayer(assetId, name, canvas.width, canvas.height, psdSmartObjectSource(placedLayer, linkedFile), position)
         : createRasterLayer(assetId, name, canvas.width, canvas.height, position)
@@ -1636,20 +1637,15 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
   const groups = new Map(documentState.groups.map((group) => [group.id, group]))
   const exportChildren = async (parentId: string | null): Promise<Layer[]> => {
     const items: Array<{ stackOrder: number; layer?: EditorLayer; group?: LayerGroup }> = [
-      ...documentState.layers.filter((layer) => (layer.groupId ?? null) === parentId).map((layer) => ({ stackOrder: layer.stackOrder ?? 0, layer })),
-      ...documentState.groups.filter((group) => (group.parentId ?? null) === parentId).map((group) => ({ stackOrder: group.stackOrder ?? 0, group })),
+      ...documentState.layers.flatMap((layer) => (layer.groupId ?? null) === parentId ? [{ stackOrder: layer.stackOrder ?? 0, layer }] : []),
+      ...documentState.groups.flatMap((group) => (group.parentId ?? null) === parentId ? [{ stackOrder: group.stackOrder ?? 0, group }] : []),
     ]
-    const children: Layer[] = []
-    for (const item of items.sort((left, right) => right.stackOrder - left.stackOrder)) {
+    return Promise.all(items.toSorted((left, right) => right.stackOrder - left.stackOrder).map(async (item): Promise<Layer> => {
       signal?.throwIfAborted()
-      if (item.layer) {
-        children.push(await exportLayer(item.layer))
-        continue
-      }
+      if (item.layer) return exportLayer(item.layer)
       const group = groups.get(item.group!.id)!
-      children.push({ name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: await exportChildren(group.id) })
-    }
-    return children
+      return { name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: await exportChildren(group.id) }
+    }))
   }
 
   const compositeCanvas = renderCanvas(documentState.layers, true, documentState.groups)

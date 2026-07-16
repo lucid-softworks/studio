@@ -1,10 +1,30 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import type { WorkspacePreset } from '../editor/panel-layout'
 import { commandForEvent, shortcutLabel, type ShortcutMap } from '../editor/shortcuts'
 import type { PluginExporterHook, PluginFilterHook } from '../editor/plugins'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type MenuName = 'file' | 'edit' | 'image' | 'layer' | 'select' | 'filter' | 'view' | 'help'
+
+type MenuStatus = {
+  desktopAvailable: boolean
+  propertiesPanelVisible: boolean
+  layersPanelVisible: boolean
+  timelineVisible: boolean
+  canUndo: boolean
+  canRedo: boolean
+  canTransformAgain: boolean
+  canContentAwareFill: boolean
+  hasLayerSelection: boolean
+  canRasterize: boolean
+  canConvertToSmartObject: boolean
+  hasLayerEffects: boolean
+  hasPixelSelection: boolean
+  hasFilterTarget: boolean
+  saving: boolean
+  exporting: boolean
+  hasArtboards: boolean
+}
 
 type MenuBarProps = {
   onNew: () => void
@@ -30,7 +50,7 @@ type MenuBarProps = {
   onExportArtboards: () => void
   onOpenExportWorkspace: () => void
   onOpenPrint: () => void
-  desktopAvailable: boolean
+  status: MenuStatus
   onManageScratch: () => void
   onUndo: () => void
   onRedo: () => void
@@ -67,23 +87,7 @@ type MenuBarProps = {
   onSaveWorkspace: () => void
   onDeleteWorkspace: (name: string) => void
   workspacePresets: readonly WorkspacePreset[]
-  propertiesPanelVisible: boolean
-  layersPanelVisible: boolean
-  timelineVisible: boolean
-  canUndo: boolean
-  canRedo: boolean
-  canTransformAgain: boolean
-  canContentAwareFill: boolean
-  hasLayerSelection: boolean
-  canRasterize: boolean
-  canConvertToSmartObject: boolean
   smartObjectKind?: 'embedded' | 'linked'
-  hasLayerEffects: boolean
-  hasPixelSelection: boolean
-  hasFilterTarget: boolean
-  saving: boolean
-  exporting: boolean
-  hasArtboards: boolean
 }
 
 function MenuItem({ commandId, children, shortcut, disabled, checked, onSelect }: { commandId: string; children: ReactNode; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }) {
@@ -104,47 +108,48 @@ function SavedWorkspaceItem({ name, onSelect, onDelete }: { name: string; onSele
 }
 
 function Separator() {
-  return <div role="separator" className="my-1 border-t border-white/[0.07]" />
+  return <hr className="my-1 border-t border-white/[0.07]" />
 }
 
-export function MenuBar(props: MenuBarProps) {
+export function MenuBar(input: MenuBarProps) {
+  const props = { ...input, ...input.status }
   const [openMenu, setOpenMenu] = useState<MenuName | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      setOpenMenu(null)
+      return
+    }
+    const target = event.target as HTMLElement | null
+    if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+    const command = commandForEvent(event, props.shortcuts)
+    if (command === 'file.new') props.onNew()
+    else if (command === 'file.open') props.onOpen()
+    else if (command === 'file.save') props.onSave()
+    else if (command === 'edit.undo' && props.canUndo) props.onUndo()
+    else if (command === 'edit.redo' && props.canRedo) props.onRedo()
+    else if (command === 'edit.transform-again' && props.canTransformAgain) props.onTransformAgain()
+    else if (command === 'layer.new') props.onNewLayer()
+    else if (command === 'layer.duplicate' && props.hasLayerSelection) props.onDuplicateLayer()
+    else if (command === 'select.inverse') props.onInvertSelection()
+    else if (command === 'view.actual') props.onZoom('actual')
+    else if (command === 'view.zoom-in') props.onZoom('in')
+    else if (command === 'view.zoom-out') props.onZoom('out')
+    else return
+    event.preventDefault()
+  })
 
   useEffect(() => {
     const pointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpenMenu(null)
     }
-    const keyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpenMenu(null)
-        return
-      }
-      const target = event.target as HTMLElement | null
-      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
-      const command = commandForEvent(event, props.shortcuts)
-      if (command === 'file.new') props.onNew()
-      else if (command === 'file.open') props.onOpen()
-      else if (command === 'file.save') props.onSave()
-      else if (command === 'edit.undo' && props.canUndo) props.onUndo()
-      else if (command === 'edit.redo' && props.canRedo) props.onRedo()
-      else if (command === 'edit.transform-again' && props.canTransformAgain) props.onTransformAgain()
-      else if (command === 'layer.new') props.onNewLayer()
-      else if (command === 'layer.duplicate' && props.hasLayerSelection) props.onDuplicateLayer()
-      else if (command === 'select.inverse') props.onInvertSelection()
-      else if (command === 'view.actual') props.onZoom('actual')
-      else if (command === 'view.zoom-in') props.onZoom('in')
-      else if (command === 'view.zoom-out') props.onZoom('out')
-      else return
-      event.preventDefault()
-    }
     window.addEventListener('pointerdown', pointerDown)
-    window.addEventListener('keydown', keyDown)
+    window.addEventListener('keydown', handleShortcut)
     return () => {
       window.removeEventListener('pointerdown', pointerDown)
-      window.removeEventListener('keydown', keyDown)
+      window.removeEventListener('keydown', handleShortcut)
     }
-  }, [props])
+  }, [])
 
   const select = (action: () => void) => {
     setOpenMenu(null)

@@ -77,10 +77,6 @@ export function layerIsLocked(document: EditorDocument, layer: EditorLayer) {
   return layer.locked || getGroupAncestors(document, layer.groupId ?? null).some((group) => group.locked)
 }
 
-export function groupIsVisible(document: EditorDocument, group: LayerGroup) {
-  return group.visible && getGroupAncestors(document, group.parentId ?? null).every((ancestor) => ancestor.visible)
-}
-
 export function groupIsLocked(document: EditorDocument, group: LayerGroup) {
   return group.locked || getGroupAncestors(document, group.parentId ?? null).some((ancestor) => ancestor.locked)
 }

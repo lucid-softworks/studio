@@ -4,7 +4,7 @@ import { calculateEffectOffset, gpuApplyAdjustment, gpuApplyLayerFilters, gpuTin
 
 describe('TypeGPU adjustment shader', () => {
   it('keeps neutral adjustment parameters pixel-identical', () => {
-    const adjusted = gpuApplyAdjustment(d.vec3f(0.2, 0.4, 0.6), 1, 1, 1, 0)
+    const adjusted = gpuApplyAdjustment(d.vec3f(0.2, 0.4, 0.6), 1, 1, 1, 0, 0)
 
     expect(adjusted.x).toBeCloseTo(0.2, 6)
     expect(adjusted.y).toBeCloseTo(0.4, 6)
@@ -12,11 +12,19 @@ describe('TypeGPU adjustment shader', () => {
   })
 
   it('applies the same ordered color transforms on the CPU reference path', () => {
-    const adjusted = gpuApplyAdjustment(d.vec3f(0.2, 0.3, 0.4), 2, 1, 0, 0)
+    const adjusted = gpuApplyAdjustment(d.vec3f(0.2, 0.3, 0.4), 2, 1, 0, 0, 0)
 
     expect(adjusted.x).toBeCloseTo(0.5718, 4)
     expect(adjusted.y).toBeCloseTo(0.5718, 4)
     expect(adjusted.z).toBeCloseTo(0.5718, 4)
+  })
+
+  it('inverts adjustment-layer color channels', () => {
+    const adjusted = gpuApplyAdjustment(d.vec3f(0.2, 0.4, 0.6), 1, 1, 1, 0, 1)
+
+    expect(adjusted.x).toBeCloseTo(0.8, 6)
+    expect(adjusted.y).toBeCloseTo(0.6, 6)
+    expect(adjusted.z).toBeCloseTo(0.4, 6)
   })
 })
 

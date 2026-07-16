@@ -19,6 +19,13 @@ import type { StudioPlugin } from '../editor/plugins'
 
 export type AlphaChannelTransform = 'invert' | 'flip-horizontal' | 'flip-vertical' | 'rotate-clockwise'
 
+const histogramChannelStyles: Record<HistogramChannel, { fill: string; stroke: string }> = {
+  red: { fill: 'rgba(248,113,113,0.18)', stroke: '#f87171' },
+  green: { fill: 'rgba(74,222,128,0.18)', stroke: '#4ade80' },
+  blue: { fill: 'rgba(96,165,250,0.18)', stroke: '#60a5fa' },
+  luminance: { fill: 'rgba(196,181,253,0.25)', stroke: '#c4b5fd' },
+}
+
 export function ChannelsPanel({ channels, hasSelection, onLoadComponent, onSaveSelection, onLoadAlpha, onDuplicateAlpha, onDeleteAlpha, onTransformAlpha }: {
   channels: DocumentChannel[]
   hasSelection: boolean
@@ -56,10 +63,10 @@ export function ChannelsPanel({ channels, hasSelection, onLoadComponent, onSaveS
       </section>
       <section className="mt-4">
         <div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Alpha channels</h3><span className="font-mono text-[8px] text-zinc-700">{channels.length}</span></div>
-        {channels.length ? <div className="space-y-1">{channels.map((channel, index) => <button key={`${channel.id ?? 'alpha'}:${index}`} type="button" aria-pressed={selectedAlphaIndex === index} onClick={() => setSelectedAlphaIndex(index)} onDoubleClick={() => onLoadAlpha(channel, combineMode)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition ${selectedAlphaIndex === index ? 'border-violet-300/30 bg-violet-400/[0.08]' : 'border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]'}`}><span className="size-5 rounded border border-white/10 bg-[linear-gradient(135deg,#fff,#111)]" /><span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">{channel.name}</span><span className="text-[8px] text-zinc-700">α</span></button>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Save a pixel selection to keep it as an editable alpha channel.</div>}
+        {channels.length ? <div className="space-y-1">{channels.map((channel, index) => <button key={channel.id ?? channel.name} type="button" aria-pressed={selectedAlphaIndex === index} onClick={() => setSelectedAlphaIndex(index)} onDoubleClick={() => onLoadAlpha(channel, combineMode)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition ${selectedAlphaIndex === index ? 'border-violet-300/30 bg-violet-400/[0.08]' : 'border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]'}`}><span className="size-5 rounded border border-white/10 bg-[linear-gradient(135deg,#fff,#111)]" /><span className="min-w-0 flex-1 truncate text-[10px] text-zinc-400">{channel.name}</span><span className="text-[8px] text-zinc-700">α</span></button>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] leading-relaxed text-zinc-700">Save a pixel selection to keep it as an editable alpha channel.</div>}
       </section>
       <section className="mt-4">
-        <label className="block text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Selection combine</label>
+        <p className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Selection combine</p>
         <select aria-label="Channel selection combine mode" value={combineMode} onChange={(event) => setCombineMode(event.target.value as SelectionMode)} className="mt-2 w-full rounded-md border border-white/[0.08] bg-zinc-950 px-2.5 py-2 text-[9px] text-zinc-400 outline-none"><option value="replace">Replace selection</option><option value="add">Add to selection</option><option value="subtract">Subtract from selection</option><option value="intersect">Intersect selection</option></select>
         <div className="mt-2 flex gap-2"><input aria-label="New alpha channel name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save() }} placeholder={`Alpha ${channels.length + 1}`} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[9px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!hasSelection} onClick={save} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div>
       </section>
@@ -105,7 +112,7 @@ export function PathsPanel({ paths, selectedPathId, customShapes, onChange, onFi
       <div className="flex items-center justify-between"><div><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Document paths</h3><p className="mt-1 text-[9px] text-zinc-700">Work, saved, and clipping paths</p></div><button type="button" onClick={addPath} className="rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200">+ New</button></div>
       {paths.length ? <div className="mt-3 space-y-1">{[...paths].reverse().map((path) => <button key={path.id} type="button" aria-pressed={selected?.id === path.id} onClick={() => onChange(paths, path.id)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2.5 text-left transition ${selected?.id === path.id ? 'border-cyan-300/25 bg-cyan-400/[0.07]' : 'border-transparent hover:border-white/[0.06] hover:bg-white/[0.03]'}`}><svg viewBox="0 0 28 20" aria-hidden="true" className="h-5 w-7 rounded bg-black/25"><path d="M3 16C8 2 18 2 25 14" fill="none" stroke="currentColor" className="text-cyan-300/70" /><circle cx="3" cy="16" r="1.5" fill="currentColor" /><circle cx="25" cy="14" r="1.5" fill="currentColor" /></svg><span className="min-w-0 flex-1"><span className="block truncate text-[10px] text-zinc-400">{path.name}</span><span className="block text-[8px] capitalize text-zinc-700">{path.kind} · {path.paths.length} component{path.paths.length === 1 ? '' : 's'}</span></span>{path.kind === 'clipping' && <span className="text-[8px] text-amber-300/70">Clip</span>}</button>)}</div> : <div className="mt-3 rounded-lg border border-dashed border-white/[0.07] px-3 py-6 text-center text-[9px] leading-relaxed text-zinc-700">Choose the Pen tool and click the canvas to create a work path.</div>}
       {selected && <>
-        <section className="mt-4 rounded-lg border border-white/[0.07] bg-black/15 p-2.5"><label className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Path operation</label><div className="mt-2 grid grid-cols-4 gap-1">{([['combine', '+'], ['subtract', '−'], ['intersect', '∩'], ['exclude', '⊕']] as Array<[VectorPath['operation'], string]>).map(([operation, label]) => <button key={operation} type="button" title={operation} aria-pressed={selected.paths.every((path) => path.operation === operation)} onClick={() => setOperation(operation)} className={`rounded-md py-2 text-[10px] ${selected.paths.every((path) => path.operation === operation) ? 'bg-cyan-400/15 text-cyan-200' : 'bg-white/[0.03] text-zinc-600 hover:text-zinc-200'}`}>{label}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1"><button type="button" disabled={!selected.paths.length} onClick={() => onFill(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Fill path</button><button type="button" disabled={!selected.paths.length} onClick={() => onStroke(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Stroke path</button></div></section>
+        <section className="mt-4 rounded-lg border border-white/[0.07] bg-black/15 p-2.5"><p className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Path operation</p><div className="mt-2 grid grid-cols-4 gap-1">{([['combine', '+'], ['subtract', '−'], ['intersect', '∩'], ['exclude', '⊕']] as Array<[VectorPath['operation'], string]>).map(([operation, label]) => <button key={operation} type="button" title={operation} aria-pressed={selected.paths.every((path) => path.operation === operation)} onClick={() => setOperation(operation)} className={`rounded-md py-2 text-[10px] ${selected.paths.every((path) => path.operation === operation) ? 'bg-cyan-400/15 text-cyan-200' : 'bg-white/[0.03] text-zinc-600 hover:text-zinc-200'}`}>{label}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1"><button type="button" disabled={!selected.paths.length} onClick={() => onFill(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Fill path</button><button type="button" disabled={!selected.paths.length} onClick={() => onStroke(selected)} className="rounded-md bg-white/[0.04] py-2 text-[9px] text-zinc-500 hover:text-zinc-200 disabled:opacity-30">Stroke path</button></div></section>
         <section className="mt-3"><div className="flex gap-2"><input aria-label="Saved path name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save() }} placeholder={selected.name} className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[9px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-cyan-400/40" /><button type="button" onClick={save} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:text-zinc-200">Save</button></div><div className="mt-2 grid grid-cols-3 gap-1"><button type="button" onClick={() => { const copy = { ...structuredClone(selected), id: crypto.randomUUID(), name: `${selected.name} copy`, kind: 'saved' as const }; onChange([...paths, copy], copy.id) }} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-zinc-200">Duplicate</button><button type="button" onClick={() => mutateSelected((path) => ({ ...path, kind: path.kind === 'clipping' ? 'saved' : 'clipping' }))} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-amber-200">{selected.kind === 'clipping' ? 'Unclip' : 'Clipping'}</button><button type="button" onClick={() => { const next = paths.filter((path) => path.id !== selected.id); onChange(next, next.at(-1)?.id ?? null) }} className="rounded-md bg-red-400/[0.04] py-2 text-[8px] text-zinc-600 hover:text-red-300">Delete</button></div><div className="mt-1 grid grid-cols-2 gap-1"><button type="button" disabled={!selected.paths.length} onClick={() => onSaveCustomShape(selected)} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">Add to shapes</button><button type="button" disabled={!selected.paths.length} onClick={() => onExportPath(selected)} className="rounded-md bg-white/[0.03] py-2 text-[8px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">Export shape</button></div></section>
       </>}
       <section className="mt-4"><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom shapes</h3><button type="button" onClick={onImportCustomShape} className="rounded-md border border-white/[0.07] px-2 py-1 text-[8px] text-zinc-600 hover:text-zinc-200">Import</button></div>{customShapes.length ? <div className="grid grid-cols-2 gap-2">{customShapes.map((shape) => <div key={shape.id} className="group relative rounded-lg border border-white/[0.06] bg-black/15 p-2"><button type="button" onClick={() => onApplyCustomShape(shape)} className="w-full text-left"><svg viewBox="0 0 80 48" aria-hidden="true" className="h-12 w-full rounded bg-black/20"><path d="M8 39C20 5 58 5 72 35" fill="none" stroke="currentColor" className="text-cyan-300/70" /></svg><span className="mt-1 block truncate text-[9px] text-zinc-500">{shape.name}</span></button><button type="button" aria-label={`Delete ${shape.name} custom shape`} onClick={() => onRemoveCustomShape(shape.id)} className="absolute top-1 right-1 flex size-5 items-center justify-center rounded bg-zinc-950/80 text-zinc-700 opacity-0 hover:text-red-300 group-hover:opacity-100">×</button></div>)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Save a selected path or import a .studio-shape file.</div>}</section>
@@ -343,13 +350,6 @@ export function HistogramPanel({ sourceCanvasRef, document, assets, renderRevisi
   const visibleChannels: HistogramChannel[] = view === 'rgb' ? ['red', 'green', 'blue'] : [view]
   const maximum = Math.max(1, ...visibleChannels.flatMap((channel) => result?.bins[channel] ?? []))
   const statisticChannel: HistogramChannel = view === 'rgb' ? 'luminance' : view
-  const channelStyles: Record<HistogramChannel, { fill: string; stroke: string }> = {
-    red: { fill: 'rgba(248,113,113,0.18)', stroke: '#f87171' },
-    green: { fill: 'rgba(74,222,128,0.18)', stroke: '#4ade80' },
-    blue: { fill: 'rgba(96,165,250,0.18)', stroke: '#60a5fa' },
-    luminance: { fill: 'rgba(196,181,253,0.25)', stroke: '#c4b5fd' },
-  }
-
   return (
     <div role="tabpanel" aria-label="Histogram" className="min-h-0 flex-1 overflow-y-auto p-3">
       <div className="mb-2 grid grid-cols-3 gap-1 rounded-lg bg-black/25 p-1">{(['histogram', 'waveform', 'vectorscope'] as AnalysisView[]).map((value) => <button key={value} type="button" aria-pressed={analysisView === value} onClick={() => setAnalysisView(value)} className={`rounded-md py-1.5 text-[8px] font-semibold capitalize ${analysisView === value ? 'bg-violet-400/15 text-violet-100' : 'text-zinc-700 hover:text-zinc-400'}`}>{value}</button>)}</div>
@@ -363,7 +363,7 @@ export function HistogramPanel({ sourceCanvasRef, document, assets, renderRevisi
       <div className="relative mt-3 overflow-hidden rounded-lg border border-white/[0.08] bg-black/35 p-2">
         <div className="pointer-events-none absolute inset-2 bg-[linear-gradient(to_right,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:25%_25%]" />
         {result ? <svg viewBox="0 0 255 110" preserveAspectRatio="none" aria-label={`${view} histogram`} className="relative h-40 w-full">
-          {visibleChannels.map((channel) => <path key={channel} d={histogramPath(result.bins[channel], maximum)} fill={channelStyles[channel].fill} stroke={channelStyles[channel].stroke} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />)}
+          {visibleChannels.map((channel) => <path key={channel} d={histogramPath(result.bins[channel], maximum)} fill={histogramChannelStyles[channel].fill} stroke={histogramChannelStyles[channel].stroke} strokeWidth="0.8" vectorEffect="non-scaling-stroke" />)}
         </svg> : <div className="flex h-40 items-center justify-center text-[10px] text-zinc-700">Sampling document…</div>}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
@@ -439,7 +439,7 @@ export function GradientsPanel({ foregroundColor, backgroundColor, customGradien
 
   return (
     <div role="tabpanel" aria-label="Gradients" className="min-h-0 flex-1 overflow-y-auto p-3">
-      <section><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Active gradient</h3><button type="button" onClick={() => { const reversed = normalizedStops.toReversed().map((stop) => ({ ...stop, position: 100 - stop.position })); setStops(reversed); onApplyGradient({ start: reversed[0].color, end: reversed.at(-1)!.color, stops: reversed }) }} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">Reverse</button></div><GradientRow gradient={current} onApply={() => onApplyGradient(current)} /><div className="mt-2 space-y-1">{normalizedStops.map((stop, index) => <div key={`${index}:${stop.position}`} className="flex items-center gap-1"><input aria-label={`Gradient stop ${index + 1} color`} type="color" value={stop.color} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, color: event.target.value } : candidate))} className="size-6 border-0 bg-transparent p-0" /><input aria-label={`Gradient stop ${index + 1} position`} type="number" min="0" max="100" value={stop.position} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, position: Number(event.target.value) } : candidate))} className="w-14 rounded border border-white/[0.08] bg-black/20 px-1 py-1 font-mono text-[9px] text-zinc-400" /><span className="text-[8px] text-zinc-700">%</span>{normalizedStops.length > 2 && <button type="button" aria-label={`Remove gradient stop ${index + 1}`} onClick={() => setStops((currentStops) => currentStops.filter((_, candidateIndex) => candidateIndex !== index))} className="ml-auto text-zinc-700 hover:text-red-300">×</button>}</div>)}</div><button type="button" disabled={normalizedStops.length >= 16} onClick={() => setStops((currentStops) => [...currentStops, { color: foregroundColor, position: 50 }])} className="mt-2 w-full rounded-md border border-white/[0.07] py-1.5 text-[9px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">+ Add colour stop</button></section>
+      <section><div className="mb-2 flex items-center justify-between"><h3 className="text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Active gradient</h3><button type="button" onClick={() => { const reversed = normalizedStops.toReversed().map((stop) => ({ ...stop, position: 100 - stop.position })); setStops(reversed); onApplyGradient({ start: reversed[0].color, end: reversed.at(-1)!.color, stops: reversed }) }} className="rounded-md border border-white/[0.07] px-2 py-1 text-[9px] text-zinc-600 hover:bg-white/[0.04] hover:text-zinc-200">Reverse</button></div><GradientRow gradient={current} onApply={() => onApplyGradient(current)} /><div className="mt-2 space-y-1">{normalizedStops.map((stop, index) => <div key={`${stop.position}:${stop.color}`} className="flex items-center gap-1"><input aria-label={`Gradient stop ${index + 1} color`} type="color" value={stop.color} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, color: event.target.value } : candidate))} className="size-6 border-0 bg-transparent p-0" /><input aria-label={`Gradient stop ${index + 1} position`} type="number" min="0" max="100" value={stop.position} onChange={(event) => setStops((currentStops) => currentStops.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, position: Number(event.target.value) } : candidate))} className="w-14 rounded border border-white/[0.08] bg-black/20 px-1 py-1 font-mono text-[9px] text-zinc-400" /><span className="text-[8px] text-zinc-700">%</span>{normalizedStops.length > 2 && <button type="button" aria-label={`Remove gradient stop ${index + 1}`} onClick={() => setStops((currentStops) => currentStops.filter((_, candidateIndex) => candidateIndex !== index))} className="ml-auto text-zinc-700 hover:text-red-300">×</button>}</div>)}</div><button type="button" disabled={normalizedStops.length >= 16} onClick={() => setStops((currentStops) => [...currentStops, { color: foregroundColor, position: 50 }])} className="mt-2 w-full rounded-md border border-white/[0.07] py-1.5 text-[9px] text-zinc-600 hover:text-zinc-200 disabled:opacity-30">+ Add colour stop</button></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Studio gradients</h3><div className="space-y-1.5">{defaultGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} onApply={() => apply(gradient)} />)}</div></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Save gradient</h3><div className="flex gap-2"><input aria-label="Custom gradient name" value={name} maxLength={48} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') saveCurrent() }} placeholder="Gradient name" className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-black/20 px-2.5 py-2 text-[10px] text-zinc-300 outline-none placeholder:text-zinc-700 focus:border-violet-400/40" /><button type="button" disabled={!name.trim()} onClick={saveCurrent} className="rounded-md border border-white/[0.07] px-2.5 text-[9px] text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200 disabled:pointer-events-none disabled:text-zinc-800">Save</button></div></section>
       <section className="mt-4"><h3 className="mb-2 text-[8px] font-semibold tracking-[0.16em] text-zinc-700 uppercase">Custom gradients</h3>{customGradients.length ? <div className="space-y-1.5">{customGradients.map((gradient) => <GradientRow key={gradient.id} gradient={gradient} custom onApply={() => apply(gradient)} onRemove={() => onRemoveGradient(gradient.id)} />)}</div> : <div className="rounded-lg border border-dashed border-white/[0.07] px-3 py-5 text-center text-[9px] text-zinc-700">Build and save a multi-stop gradient to add it here.</div>}</section>
@@ -525,7 +525,7 @@ export function PatternsPanel({ pattern, customPatterns, onApplyPattern, onAddPa
 
 export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }) {
   const [actions, setActions] = useState<ActionPreset[]>(() => {
-    try { return normalizeActions(JSON.parse(localStorage.getItem('studio.actions') ?? '[]')) } catch { return [] }
+    try { return normalizeActions(JSON.parse(localStorage.getItem('studio.actions:v1') ?? localStorage.getItem('studio.actions') ?? '[]')) } catch { return [] }
   })
   const [recording, setRecording] = useState(false)
   const [draft, setDraft] = useState<ActionStep[]>([])
@@ -534,19 +534,19 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
   const [batching, setBatching] = useState(false)
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 })
   const batchInputRef = useRef<HTMLInputElement>(null)
-  const batchJobRef = useRef<{ cancelled: boolean; worker: Worker | null; reject: ((reason: DOMException) => void) | null } | null>(null)
+  const batchJobRef = useRef<{ cancelled: boolean; workers: Set<Worker>; rejects: Set<(reason: DOMException) => void> } | null>(null)
   const selected = actions.find((action) => action.id === selectedId) ?? null
 
   useEffect(() => {
-    try { localStorage.setItem('studio.actions', JSON.stringify(actions)) } catch { /* Local action storage is optional. */ }
+    try { localStorage.setItem('studio.actions:v1', JSON.stringify(actions)) } catch { /* Local action storage is optional. */ }
   }, [actions])
 
   const cancelBatch = () => {
     const job = batchJobRef.current
     if (!job || job.cancelled) return
     job.cancelled = true
-    job.worker?.terminate()
-    job.reject?.(new DOMException('Action batch was cancelled.', 'AbortError'))
+    for (const worker of job.workers) worker.terminate()
+    for (const reject of job.rejects) reject(new DOMException('Action batch was cancelled.', 'AbortError'))
     batchJobRef.current = null
     setBatching(false)
   }
@@ -567,8 +567,8 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
     const job = batchJobRef.current
     if (!job) return
     job.cancelled = true
-    job.worker?.terminate()
-    job.reject?.(new DOMException('Action batch was cancelled.', 'AbortError'))
+    for (const worker of job.workers) worker.terminate()
+    for (const reject of job.rejects) reject(new DOMException('Action batch was cancelled.', 'AbortError'))
     batchJobRef.current = null
   }, [])
 
@@ -594,35 +594,41 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
 
   const batchFiles = async (files: FileList | null) => {
     if (!files?.length || !selected) return
-    const commands = selected.steps.filter((step) => step.enabled).map((step) => step.command).filter((command) => ['invert', 'grayscale', 'sharpen', 'rotate-cw', 'flip-x'].includes(command))
+    const batchCommands = new Set<ActionCommand>(['invert', 'grayscale', 'sharpen', 'rotate-cw', 'flip-x'])
+    const commands = selected.steps.flatMap((step) => step.enabled && batchCommands.has(step.command) ? [step.command] : [])
     if (!commands.length) return
     const batchName = selected.name
-    const job = { cancelled: false, worker: null as Worker | null, reject: null as ((reason: DOMException) => void) | null }
+    const job = { cancelled: false, workers: new Set<Worker>(), rejects: new Set<(reason: DOMException) => void>() }
     batchJobRef.current = job
     setBatching(true)
     setBatchProgress({ current: 0, total: files.length })
     try {
-      for (const [index, file] of Array.from(files).entries()) {
+      let completed = 0
+      await Promise.all(Array.from(files).map(async (file) => {
         if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
-        setBatchProgress({ current: index + 1, total: files.length })
         const worker = new Worker(new URL('../editor/workers/action-batch.worker.ts', import.meta.url), { type: 'module' })
-        job.worker = worker
+        job.workers.add(worker)
         const buffer = await file.arrayBuffer()
         if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
+        let cancelJob: ((reason: DOMException) => void) | null = null
         const response = await new Promise<{ blob?: Blob; error?: string }>((resolve, reject) => {
-          job.reject = reject
+          const cancel = (reason: DOMException) => reject(reason)
+          cancelJob = cancel
+          job.rejects.add(cancel)
           worker.onmessage = (event) => resolve(event.data as { blob?: Blob; error?: string })
           worker.onerror = () => reject(new Error('The batch worker stopped unexpectedly.'))
           worker.postMessage({ data: buffer, type: file.type, commands }, [buffer])
         }).finally(() => {
           worker.terminate()
-          if (job.worker === worker) job.worker = null
-          job.reject = null
+          job.workers.delete(worker)
+          if (cancelJob) job.rejects.delete(cancelJob)
         })
         if (job.cancelled) throw new DOMException('Action batch was cancelled.', 'AbortError')
         if (response.error || !response.blob) throw new Error(response.error || 'The batch worker returned no file.')
         downloadBlob(response.blob, `${file.name.replace(/\.[^.]+$/, '')}-${batchName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`)
-      }
+        completed += 1
+        setBatchProgress({ current: completed, total: files.length })
+      }))
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) throw error
     } finally {
@@ -643,7 +649,7 @@ export function ActionsPanel({ onRun }: { onRun: (steps: ActionStep[]) => void }
         <div className="flex gap-1"><button type="button" onClick={() => onRun(selected.steps)} className="flex-1 rounded-md bg-violet-500 px-2 py-2 text-[9px] font-semibold text-white">▶ Play</button><button type="button" onClick={() => batching ? cancelBatch() : batchInputRef.current?.click()} className={`rounded-md border px-2 text-[9px] ${batching ? 'border-red-300/20 bg-red-400/[0.08] text-red-200' : 'border-white/[0.08] text-zinc-500'}`}>{batching ? `Cancel ${batchProgress.current}/${batchProgress.total}` : 'Batch files…'}</button><button type="button" aria-label="Delete selected action" onClick={() => { setActions((current) => current.filter((action) => action.id !== selected.id)); setSelectedId(null) }} className="rounded-md px-2 text-zinc-700 hover:text-red-300">×</button></div>
         <div className="mt-2 space-y-1">{selected.steps.map((step, index) => <div key={step.id} className="grid grid-cols-[20px_1fr_90px] items-center gap-1 rounded bg-white/[0.025] p-1"><input aria-label={`Enable step ${index + 1}`} type="checkbox" checked={step.enabled} onChange={(event) => updateStep(step.id, { enabled: event.target.checked })} /><span className="truncate text-[8px] text-zinc-500">{index + 1}. {actionCommandLabels[step.command]}</span><select aria-label={`Condition for step ${index + 1}`} value={step.condition} onChange={(event) => updateStep(step.id, { condition: event.target.value as ActionCondition })} className="rounded border border-white/[0.06] bg-black/20 px-1 py-1 text-[7px] text-zinc-600"><option value="always">Always</option><option value="has-selection">If selected</option><option value="raster-layer">If raster</option><option value="multiple-layers">If multi-layer</option></select></div>)}</div>
       </section>}
-      <input ref={batchInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void batchFiles(event.target.files); event.target.value = '' }} />
+      <input ref={batchInputRef} aria-label="Choose files for batch action" type="file" multiple accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => { void batchFiles(event.target.files); event.target.value = '' }} />
     </div>
   )
 }
@@ -753,8 +759,8 @@ export function InfoPanel({ sourceCanvasRef, document, assets, selection, zoom, 
   renderRevision: number
 }) {
   const size = getDocumentSize(document)
-  const [sampleX, setSampleX] = useState(Math.floor(size.width / 2))
-  const [sampleY, setSampleY] = useState(Math.floor(size.height / 2))
+  const [sampleX, setSampleX] = useState(() => Math.floor(size.width / 2))
+  const [sampleY, setSampleY] = useState(() => Math.floor(size.height / 2))
   const [sampleSize, setSampleSize] = useState<1 | 3 | 5>(1)
   const [liveSample, setLiveSample] = useState(true)
   const [sample, setSample] = useState(() => describePixel(0, 0, 0, 0))

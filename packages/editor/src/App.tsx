@@ -83,9 +83,36 @@ function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number | u
   })
 }
 
-function App({ onExit, initialState, performanceMetrics, rendererOverride }: AppProps) {
+function runWorkerTask<T>(label: string, worker: Worker, message: unknown, transfer: Transferable[], signal?: AbortSignal) {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', cancel)
+      worker.terminate()
+      callback()
+    }
+    const cancel = () => finish(() => reject(signal?.reason instanceof Error ? signal.reason : new DOMException(`${label} was cancelled.`, 'AbortError')))
+    worker.onmessage = (event) => finish(() => resolve(event.data as T))
+    worker.onerror = () => finish(() => reject(new Error(`The ${label.toLocaleLowerCase()} worker stopped unexpectedly.`)))
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      worker.postMessage(message, transfer)
+    } catch (error) {
+      finish(() => reject(error))
+    }
+  })
+}
+
+function exportDocumentPath(path: DocumentPath) {
+  const fileName = `${path.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'custom-shape'}.studio-shape`
+  downloadBlob(serializeCustomShape({ id: path.id, name: path.name, paths: path.paths }), fileName)
+}
+
+function useAppController({ onExit, initialState, performanceMetrics, rendererOverride }: AppProps) {
   const [history, historyDispatch] = useReducer(historyReducer, initialState, (document) => document ? { ...structuredClone(initialHistoryState), present: structuredClone(document) } : structuredClone(initialHistoryState))
-  const initialTabId = useRef<string>(createId()).current
+  const [initialTabId] = useState(createId)
   const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>(() => [{ id: initialTabId, name: initialState ? 'Performance fixture' : 'Untitled', history: structuredClone(history), assets: {} }])
   const documentTabsRef = useRef(documentTabs)
   const [activeTabId, setActiveTabId] = useState<string>(initialTabId)
@@ -102,7 +129,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
   const [tool, setTool] = useState<EditorTool>('move')
-  const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => { try { return normalizeShortcutMap(JSON.parse(localStorage.getItem('studio.shortcuts') ?? '{}')) } catch { return normalizeShortcutMap({}) } })
+  const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => { try { return normalizeShortcutMap(JSON.parse(localStorage.getItem('studio.shortcuts:v1') ?? localStorage.getItem('studio.shortcuts') ?? '{}')) } catch { return normalizeShortcutMap({}) } })
   const [editingShortcuts, setEditingShortcuts] = useState(false)
   const [editingScripts, setEditingScripts] = useState(false)
   const [editingPlugins, setEditingPlugins] = useState(false)
@@ -113,7 +140,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
   const [animationPreview, setAnimationPreview] = useState({ frameIndex: 0, time: 0 })
   const [recoverySavedAt, setRecoverySavedAt] = useState<string>()
-  const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
+  const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins:v1') ?? localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
   const [lastGeometryTransform, setLastGeometryTransform] = useState<LayerGeometryTransform | null>(null)
   const [zoom, setZoom] = useState(100)
   const [customFonts, setCustomFonts] = useState<CustomFontResource[]>([])
@@ -126,22 +153,22 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     try { return normalizeHexColor(localStorage.getItem('studio.background-color'), '#5b21b6') } catch { return '#5b21b6' }
   })
   const [customSwatches, setCustomSwatches] = useState<string[]>(() => {
-    try { return normalizeCustomSwatches(JSON.parse(localStorage.getItem('studio.custom-swatches') ?? '[]')) } catch { return [] }
+    try { return normalizeCustomSwatches(JSON.parse(localStorage.getItem('studio.custom-swatches:v1') ?? localStorage.getItem('studio.custom-swatches') ?? '[]')) } catch { return [] }
   })
   const [customGradients, setCustomGradients] = useState<GradientPreset[]>(() => {
-    try { return normalizeCustomGradients(JSON.parse(localStorage.getItem('studio.custom-gradients') ?? '[]')) } catch { return [] }
+    try { return normalizeCustomGradients(JSON.parse(localStorage.getItem('studio.custom-gradients:v1') ?? localStorage.getItem('studio.custom-gradients') ?? '[]')) } catch { return [] }
   })
   const [activeGradientStops, setActiveGradientStops] = useState<GradientStop[]>(() => gradientStops([foregroundColor, backgroundColor]))
   const [customPatterns, setCustomPatterns] = useState<PatternPreset[]>(() => {
-    try { return normalizeCustomPatterns(JSON.parse(localStorage.getItem('studio.custom-patterns') ?? '[]')) } catch { return [] }
+    try { return normalizeCustomPatterns(JSON.parse(localStorage.getItem('studio.custom-patterns:v1') ?? localStorage.getItem('studio.custom-patterns') ?? '[]')) } catch { return [] }
   })
   const [customShapes, setCustomShapes] = useState<CustomShapePreset[]>(() => {
-    try { return normalizeCustomShapes(JSON.parse(localStorage.getItem('studio.custom-shapes') ?? '[]')) } catch { return [] }
+    try { return normalizeCustomShapes(JSON.parse(localStorage.getItem('studio.custom-shapes:v1') ?? localStorage.getItem('studio.custom-shapes') ?? '[]')) } catch { return [] }
   })
   const [resourceRevision, bumpResourceRevision] = useReducer((value: number) => value + 1, 0)
   const [workspaceLayout, setWorkspaceLayout] = useState<WorkspaceLayout>(() => {
     try {
-      const saved = localStorage.getItem('studio.workspace-layout')
+      const saved = localStorage.getItem('studio.workspace-layout:v1') ?? localStorage.getItem('studio.workspace-layout')
       if (saved) return normalizeWorkspaceLayout(JSON.parse(saved))
       const legacyWidths = JSON.parse(localStorage.getItem('studio.panel-widths') ?? '{}') as { properties?: number; layers?: number }
       return normalizeWorkspaceLayout({
@@ -155,7 +182,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   const [smartObjectSessions, setSmartObjectSessions] = useState<Array<{ parentHistory: HistoryState; layerId: string; assetId: string; name: string }>>([])
   const [savedWorkspaces, setSavedWorkspaces] = useState<WorkspacePreset[]>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('studio.saved-workspaces') ?? '[]') as unknown
+      const saved = JSON.parse(localStorage.getItem('studio.saved-workspaces:v1') ?? localStorage.getItem('studio.saved-workspaces') ?? '[]') as unknown
       if (!Array.isArray(saved)) return []
       return saved.flatMap((value) => {
         if (!value || typeof value !== 'object') return []
@@ -216,26 +243,6 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     return () => window.removeEventListener('keydown', keyDown)
   }, [setNotice])
 
-  const runWorkerTask = <T,>(label: string, worker: Worker, message: unknown, transfer: Transferable[], signal?: AbortSignal) => new Promise<T>((resolve, reject) => {
-    let settled = false
-    const finish = (callback: () => void) => {
-      if (settled) return
-      settled = true
-      signal?.removeEventListener('abort', cancel)
-      worker.terminate()
-      callback()
-    }
-    const cancel = () => finish(() => reject(signal?.reason instanceof Error ? signal.reason : new DOMException(`${label} was cancelled.`, 'AbortError')))
-    worker.onmessage = (event) => finish(() => resolve(event.data as T))
-    worker.onerror = () => finish(() => reject(new Error(`The ${label.toLocaleLowerCase()} worker stopped unexpectedly.`)))
-    signal?.addEventListener('abort', cancel, { once: true })
-    try {
-      worker.postMessage(message, transfer)
-    } catch (error) {
-      finish(() => reject(error))
-    }
-  })
-
   const runCancelableJob = async <T,>(label: string, task: (signal: AbortSignal) => Promise<T>) => {
     const controller = new AbortController()
     const job: ActiveWorkerJob = { label, cancel: () => controller.abort() }
@@ -269,8 +276,8 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     return () => { unsubscribeOpen(); unsubscribeCommand(); unsubscribeChange(); window.removeEventListener('studio:desktop-error', desktopError); window.removeEventListener('dragover', dragOver); window.removeEventListener('drop', drop) }
   }, [setNotice])
 
-  assetsRef.current = assets
-  documentTabsRef.current = documentTabs
+  useEffect(() => { assetsRef.current = assets }, [assets])
+  useEffect(() => { documentTabsRef.current = documentTabs }, [documentTabs])
   useCanvasRenderer(canvasRef, renderDocument, assets, resourceRevision, activeRenderer, performanceMetrics)
 
   useEffect(() => {
@@ -333,37 +340,33 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     })
   }, [document.bitDepth])
 
-  useEffect(() => {
-    setDocumentTabs((current) => current.map((tab) => tab.id === activeTabId ? { ...tab, history, assets } : tab))
-  }, [activeTabId, assets, history])
+  const firstOtherTabId = documentTabs.find((tab) => tab.id !== activeTabId)?.id ?? ''
+  const effectiveLayerTransferTarget = documentTabs.some((tab) => tab.id === layerTransferTarget && tab.id !== activeTabId)
+    ? layerTransferTarget
+    : firstOtherTabId
 
   useEffect(() => {
-    const firstOther = documentTabs.find((tab) => tab.id !== activeTabId)?.id ?? ''
-    if (!documentTabs.some((tab) => tab.id === layerTransferTarget && tab.id !== activeTabId)) setLayerTransferTarget(firstOther)
-  }, [activeTabId, documentTabs, layerTransferTarget])
-
-  useEffect(() => {
-    try { localStorage.setItem('studio.workspace-layout', JSON.stringify(workspaceLayout)) } catch { /* local storage is optional */ }
+    try { localStorage.setItem('studio.workspace-layout:v1', JSON.stringify(workspaceLayout)) } catch { /* local storage is optional */ }
   }, [workspaceLayout])
 
   useEffect(() => {
-    try { localStorage.setItem('studio.saved-workspaces', JSON.stringify(savedWorkspaces)) } catch { /* local storage is optional */ }
+    try { localStorage.setItem('studio.saved-workspaces:v1', JSON.stringify(savedWorkspaces)) } catch { /* local storage is optional */ }
   }, [savedWorkspaces])
   useEffect(() => {
-    try { localStorage.setItem('studio.shortcuts', JSON.stringify(shortcuts)) } catch { /* Shortcut customization is optional. */ }
+    try { localStorage.setItem('studio.shortcuts:v1', JSON.stringify(shortcuts)) } catch { /* Shortcut customization is optional. */ }
   }, [shortcuts])
   useEffect(() => {
-    try { localStorage.setItem('studio.plugins', JSON.stringify(plugins)) } catch { /* Plugin manifests are optional. */ }
+    try { localStorage.setItem('studio.plugins:v1', JSON.stringify(plugins)) } catch { /* Plugin manifests are optional. */ }
   }, [plugins])
 
   useEffect(() => {
     try {
       localStorage.setItem('studio.foreground-color', foregroundColor)
       localStorage.setItem('studio.background-color', backgroundColor)
-      localStorage.setItem('studio.custom-swatches', JSON.stringify(customSwatches))
-      localStorage.setItem('studio.custom-gradients', JSON.stringify(customGradients))
-      localStorage.setItem('studio.custom-patterns', JSON.stringify(customPatterns))
-      localStorage.setItem('studio.custom-shapes', JSON.stringify(customShapes))
+      localStorage.setItem('studio.custom-swatches:v1', JSON.stringify(customSwatches))
+      localStorage.setItem('studio.custom-gradients:v1', JSON.stringify(customGradients))
+      localStorage.setItem('studio.custom-patterns:v1', JSON.stringify(customPatterns))
+      localStorage.setItem('studio.custom-shapes:v1', JSON.stringify(customShapes))
     } catch { /* local storage is optional */ }
   }, [backgroundColor, customGradients, customPatterns, customShapes, customSwatches, foregroundColor])
 
@@ -592,7 +595,8 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     return () => window.removeEventListener('paste', onPaste)
   }, [addImageFile])
 
-  const selectedLayers = document.layers.filter((layer) => document.selectedLayerIds.includes(layer.id))
+  const selectedLayerIdSet = new Set(document.selectedLayerIds)
+  const selectedLayers = document.layers.filter((layer) => selectedLayerIdSet.has(layer.id))
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
 
   useEffect(() => {
@@ -732,7 +736,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
       }
       if ((event.key === 'Backspace' || event.key === 'Delete') && selectedLayers.some((layer) => !layer.locked)) {
         event.preventDefault()
-        dispatch({ type: 'remove-layers', ids: selectedLayers.filter((layer) => !layer.locked).map((layer) => layer.id) })
+        dispatch({ type: 'remove-layers', ids: selectedLayers.flatMap((layer) => layer.locked ? [] : [layer.id]) })
         return
       }
       if (selectedLayers.some((layer) => !layerIsLocked(document, layer)) && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
@@ -742,7 +746,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
           x: event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
           y: event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0,
         }
-        dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => !layerIsLocked(document, layer)).map((layer) => ({ id: layer.id, patch: { position: { x: layer.position.x + delta.x, y: layer.position.y + delta.y } } })) }, { groupKey: 'nudge-selection' })
+        dispatch({ type: 'update-layers', changes: selectedLayers.flatMap((layer) => layerIsLocked(document, layer) ? [] : [{ id: layer.id, patch: { position: { x: layer.position.x + delta.x, y: layer.position.y + delta.y } } }]) }, { groupKey: 'nudge-selection' })
       }
     }
     const onKeyUp = (event: KeyboardEvent) => {
@@ -799,7 +803,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
 
   const addLayerMask = (layerId: string) => {
     const layer = document.layers.find((candidate) => candidate.id === layerId)
-    if (!layer || layer.type === 'adjustment' || layer.maskAssetId) return
+    if (!layer || layer.maskAssetId) return
     const size = getDocumentSize(document)
     const assetId = createId()
     const source = createLayerMaskSource(size.width, size.height, `${layer.name} mask`)
@@ -827,7 +831,8 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
     if (!canvas || !context || selectedLayers.length < 2) return
-    const entries = selectedLayers.filter((layer) => !layerIsLocked(document, layer)).flatMap((layer) => {
+    const entries = selectedLayers.flatMap((layer) => {
+      if (layerIsLocked(document, layer)) return []
       const bounds = getLayerBounds(context, canvas, layer, assets)
       return bounds ? [{ layer, bounds }] : []
     })
@@ -1342,7 +1347,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
   const deleteSelection = () => {
     if (selectedGroup && !groupIsLocked(document, selectedGroup)) dispatch({ type: 'remove-group', id: selectedGroup.id, deleteLayers: true })
     else {
-      const ids = selectedLayers.filter((layer) => !layerIsLocked(document, layer)).map((layer) => layer.id)
+      const ids = selectedLayers.flatMap((layer) => layerIsLocked(document, layer) ? [] : [layer.id])
       if (ids.length) dispatch({ type: 'remove-layers', ids })
     }
   }
@@ -1548,11 +1553,6 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     }
   }
 
-  const exportDocumentPath = (path: DocumentPath) => {
-    const fileName = `${path.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'custom-shape'}.studio-shape`
-    downloadBlob(serializeCustomShape({ id: path.id, name: path.name, paths: path.paths }), fileName)
-  }
-
   const exportImage = async (format: ExportFormat) => {
     setIsExporting(true)
     if (format === 'svg') {
@@ -1592,10 +1592,11 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
           return context.getImageData(0, 0, canvas.width, canvas.height)
         }
         const composite = { name: 'Composite', pixels: pixelsFor(exportCanvas), delayMs: 100 }
-        const layerFrames = document.layers.filter((layer) => layer.visible && layer.type !== 'adjustment').map((layer) => {
+        const layerFrames = document.layers.flatMap((layer) => {
+          if (!layer.visible || layer.type === 'adjustment') return []
           const canvas = window.document.createElement('canvas')
           canvas2dCompositionRenderer.render(canvas, { ...document, background: { ...document.background, kind: 'transparent' }, layers: [layer], selectedLayerId: null, selectedLayerIds: [] }, assets)
-          return { name: layer.name, pixels: pixelsFor(canvas), delayMs: 100 }
+          return [{ name: layer.name, pixels: pixelsFor(canvas), delayMs: 100 }]
         })
         const animationFrames: typeof layerFrames = []
         if ((format === 'gif' || format === 'apng') && document.animation) {
@@ -1635,8 +1636,10 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     }
     try {
       await runCancelableJob(`${format.toUpperCase()} export`, async (signal) => {
-        const blob = await canvasBlob(exportCanvas, `image/${format}`, format === 'png' ? undefined : 0.92, signal)
-        const { applyImageMetadata } = await import('./editor/metadata')
+        const [blob, { applyImageMetadata }] = await Promise.all([
+          canvasBlob(exportCanvas, `image/${format}`, format === 'png' ? undefined : 0.92, signal),
+          import('./editor/metadata'),
+        ])
         const tagged = await applyImageMetadata(blob, format, document.fileMetadata ?? {})
         signal.throwIfAborted()
         downloadBlob(tagged, `studio-composition.${format === 'jpeg' ? 'jpg' : format}`)
@@ -1653,14 +1656,16 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
       await runCancelableJob('Artboard export', async (signal) => {
         const composition = window.document.createElement('canvas')
         canvas2dCompositionRenderer.render(composition, { ...document, selectedLayerId: null, selectedLayerIds: [] }, assets)
-        for (const [index, artboard] of document.artboards!.entries()) {
+        const exports = document.artboards!.map((artboard, index) => {
           signal.throwIfAborted()
           const output = window.document.createElement('canvas')
           output.width = Math.max(1, Math.round(artboard.width))
           output.height = Math.max(1, Math.round(artboard.height))
           output.getContext('2d')?.drawImage(composition, artboard.x, artboard.y, artboard.width, artboard.height, 0, 0, output.width, output.height)
-          const blob = await canvasBlob(output, 'image/png', undefined, signal)
           const name = artboard.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `artboard-${index + 1}`
+          return canvasBlob(output, 'image/png', undefined, signal).then((blob) => ({ blob, name }))
+        })
+        for (const { blob, name } of await Promise.all(exports)) {
           signal.throwIfAborted()
           downloadBlob(blob, `${name}.png`)
         }
@@ -1913,19 +1918,21 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
     try { const file = await desktop.openFile(); if (file) await openFile(nativeFile(file)) } catch (error) { setNotice(error instanceof Error ? error.message : 'The native open dialog failed.') }
   }
 
-  desktopOpenRef.current = (file) => { void openFile(nativeFile(file)) }
-  desktopDropRef.current = (file) => { void openFile(file) }
-  desktopCommandRef.current = (command) => {
-    if (command === 'new') newDocument()
-    else if (command === 'open') void requestOpen()
-    else if (command === 'save') void saveProject()
-    else if (command === 'undo') performUndo()
-    else if (command === 'redo') performRedo()
-    else if (command === 'copy-merged') {
-      const canvas = canvasRef.current
-      if (canvas) void desktopBridge()?.writeClipboardImage(canvas.toDataURL('image/png')).then(() => setNotice('Copied the merged composition to the system clipboard.', 'success')).catch((error) => setNotice(error instanceof Error ? error.message : 'The image could not be copied.'))
-    } else if (command === 'pick-color') void desktopBridge()?.pickColor().then((color) => { if (color) { setForegroundColor(color); setTool('eyedropper'); setNotice(`Picked ${color} from the screen.`, 'success') } }).catch((error) => setNotice(error instanceof Error ? error.message : 'The screen colour could not be sampled.'))
-  }
+  useEffect(() => {
+    desktopOpenRef.current = (file) => { void openFile(nativeFile(file)) }
+    desktopDropRef.current = (file) => { void openFile(file) }
+    desktopCommandRef.current = (command) => {
+      if (command === 'new') newDocument()
+      else if (command === 'open') void requestOpen()
+      else if (command === 'save') void saveProject()
+      else if (command === 'undo') performUndo()
+      else if (command === 'redo') performRedo()
+      else if (command === 'copy-merged') {
+        const canvas = canvasRef.current
+        if (canvas) void desktopBridge()?.writeClipboardImage(canvas.toDataURL('image/png')).then(() => setNotice('Copied the merged composition to the system clipboard.', 'success')).catch((error) => setNotice(error instanceof Error ? error.message : 'The image could not be copied.'))
+      } else if (command === 'pick-color') void desktopBridge()?.pickColor().then((color) => { if (color) { setForegroundColor(color); setTool('eyedropper'); setNotice(`Picked ${color} from the screen.`, 'success') } }).catch((error) => setNotice(error instanceof Error ? error.message : 'The screen colour could not be sampled.'))
+    }
+  })
 
   const manageDesktopScratch = async () => {
     const desktop = desktopBridge()
@@ -2175,11 +2182,10 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
             onExportArtboards={() => void exportArtboards()}
             onOpenExportWorkspace={() => setExportWorkspaceOpen(true)}
             onOpenPrint={() => setPrintDialogOpen(true)}
-            desktopAvailable={Boolean(desktopBridge())}
             onManageScratch={() => void manageDesktopScratch()}
             onUndo={performUndo}
             onRedo={performRedo}
-            onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } })) }) }}
+            onTransformAgain={() => { if (lastGeometryTransform) dispatch({ type: 'update-layers', changes: selectedLayers.flatMap((layer) => layer.type === 'adjustment' ? [] : [{ id: layer.id, patch: { geometryTransform: structuredClone(lastGeometryTransform) } }]) }) }}
             shortcuts={shortcuts}
             onEditShortcuts={() => setEditingShortcuts(true)}
             onOpenScripts={() => setEditingScripts(true)}
@@ -2203,7 +2209,7 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
             onReplaceSmartObject={() => replaceSmartObjectInputRef.current?.click()}
             onRelinkSmartObject={() => relinkSmartObjectInputRef.current?.click()}
             onExportSmartObject={() => void exportSmartObjectContents()}
-            onClearLayerEffects={() => dispatch({ type: 'update-layers', changes: selectedLayers.filter((layer) => layer.type !== 'adjustment').map((layer) => ({ id: layer.id, patch: { effects: null } })) })}
+            onClearLayerEffects={() => dispatch({ type: 'update-layers', changes: selectedLayers.flatMap((layer) => layer.type === 'adjustment' ? [] : [{ id: layer.id, patch: { effects: null } }]) })}
             onDeleteLayer={deleteSelection}
             onSelectAll={applySelectAll}
             onDeselect={() => setSelection(null)}
@@ -2231,23 +2237,26 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
             onSaveWorkspace={saveCurrentWorkspace}
             onDeleteWorkspace={deleteWorkspace}
             workspacePresets={[...builtInWorkspacePresets, ...savedWorkspaces]}
-            propertiesPanelVisible={!workspaceLayout.collapsedPanels.properties}
-            layersPanelVisible={!workspaceLayout.collapsedPanels.layers}
-            timelineVisible={timelineOpen}
-            canUndo={history.past.length > 0 || rasterUndoRef.current.length > 0}
-            canRedo={history.future.length > 0 || rasterRedoRef.current.length > 0}
-            canTransformAgain={Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment'))}
-            canContentAwareFill={Boolean(selection?.bounds && selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && !layerIsLocked(document, selectedLayers[0]))}
-            hasLayerSelection={Boolean(selectedGroup || selectedLayers.length)}
-            canRasterize={selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type)}
-            canConvertToSmartObject={selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type)}
+            status={{
+              desktopAvailable: Boolean(desktopBridge()),
+              propertiesPanelVisible: !workspaceLayout.collapsedPanels.properties,
+              layersPanelVisible: !workspaceLayout.collapsedPanels.layers,
+              timelineVisible: timelineOpen,
+              canUndo: history.past.length > 0 || rasterUndoRef.current.length > 0,
+              canRedo: history.future.length > 0 || rasterRedoRef.current.length > 0,
+              canTransformAgain: Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment')),
+              canContentAwareFill: Boolean(selection?.bounds && selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && !layerIsLocked(document, selectedLayers[0])),
+              hasLayerSelection: Boolean(selectedGroup || selectedLayers.length),
+              canRasterize: selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type),
+              canConvertToSmartObject: selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type),
+              hasLayerEffects: selectedLayers.some((layer) => hasEnabledLayerEffects(layer.effects)),
+              hasPixelSelection: Boolean(selection?.bounds),
+              hasFilterTarget: selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer)),
+              saving: isProjectSaving,
+              exporting: isExporting,
+              hasArtboards: Boolean(document.artboards?.length),
+            }}
             smartObjectKind={selectedLayers.length === 1 && selectedLayers[0].type === 'smart-object' ? selectedLayers[0].source.kind : undefined}
-            hasLayerEffects={selectedLayers.some((layer) => hasEnabledLayerEffects(layer.effects))}
-            hasPixelSelection={Boolean(selection?.bounds)}
-            hasFilterTarget={selectedLayers.some((layer) => layer.type !== 'adjustment' && !layerIsLocked(document, layer))}
-            saving={isProjectSaving}
-            exporting={isExporting}
-            hasArtboards={Boolean(document.artboards?.length)}
           />
         </div>
 
@@ -2273,11 +2282,11 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
         </div>
         <div className="flex shrink-0 items-center gap-1 border-l border-white/[0.07] px-1.5">
           {documentTabs.length > 1 && selectedLayers.length > 0 && <>
-            <select aria-label="Layer transfer document" value={layerTransferTarget} onChange={(event) => setLayerTransferTarget(event.target.value)} className="h-6 max-w-36 rounded border border-white/[0.08] bg-[#19191c] px-1.5 text-[10px] text-zinc-400">
-              {documentTabs.filter((tab) => tab.id !== activeTabId).map((tab) => <option key={tab.id} value={tab.id}>{tab.name}</option>)}
+            <select aria-label="Layer transfer document" value={effectiveLayerTransferTarget} onChange={(event) => setLayerTransferTarget(event.target.value)} className="h-6 max-w-36 rounded border border-white/[0.08] bg-[#19191c] px-1.5 text-[10px] text-zinc-400">
+              {documentTabs.flatMap((tab) => tab.id === activeTabId ? [] : [<option key={tab.id} value={tab.id}>{tab.name}</option>])}
             </select>
-            <button type="button" onClick={() => transferSelectedLayers(layerTransferTarget, false)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Copy layer</button>
-            <button type="button" onClick={() => transferSelectedLayers(layerTransferTarget, true)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Move layer</button>
+            <button type="button" onClick={() => transferSelectedLayers(effectiveLayerTransferTarget, false)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Copy layer</button>
+            <button type="button" onClick={() => transferSelectedLayers(effectiveLayerTransferTarget, true)} className="rounded px-2 py-1 text-[10px] text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">Move layer</button>
           </>}
           <button type="button" onClick={duplicateDocumentTab} aria-label="Duplicate document" title="Duplicate document" className="flex size-6 items-center justify-center rounded text-xs text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">⧉</button>
           <button type="button" onClick={newDocument} aria-label="New document" title="New document" className="flex size-6 items-center justify-center rounded text-base text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200">+</button>
@@ -2293,17 +2302,17 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
         <LayersPanel document={document} dispatch={dispatch} onAddLayer={addEmptyLayer} onAddAdjustment={addAdjustment} onAddGroup={addLayerGroup} onDuplicateSelection={duplicateSelection} editingMaskLayerId={editingMaskLayerId} onAddMask={addLayerMask} onEditMask={editLayerMask} onRemoveMask={removeLayerMask} dockSide={workspaceLayout.propertiesOnLeft ? 'right' : 'left'} onSwapPanels={() => setWorkspaceLayout((current) => ({ ...current, propertiesOnLeft: !current.propertiesOnLeft }))} width={workspaceLayout.panelWidths.layers} onWidthChange={(width) => setWorkspaceLayout((current) => ({ ...current, panelWidths: { ...current.panelWidths, layers: width } }))} collapsed={workspaceLayout.collapsedPanels.layers} onToggleCollapsed={() => setWorkspaceLayout((current) => ({ ...current, collapsedPanels: { ...current.collapsedPanels, layers: !current.collapsedPanels.layers } }))} activePanel={workspaceLayout.activeUtilityPanel} onActivePanelChange={(activeUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, activeUtilityPanel }))} assets={assets} canvasRef={canvasRef} selection={selection} onLoadComponentChannel={loadComponentChannel} onSaveAlphaChannel={saveAlphaChannel} onLoadAlphaChannel={loadAlphaChannel} onDuplicateAlphaChannel={duplicateAlphaChannel} onDeleteAlphaChannel={deleteAlphaChannel} onTransformAlphaChannel={transformAlphaChannel} onFillPath={(path) => addPathShape(path, 'fill')} onStrokePath={(path) => addPathShape(path, 'stroke')} customShapes={customShapes} onSaveCustomShape={saveCustomShape} onApplyCustomShape={applyCustomShape} onRemoveCustomShape={(id) => setCustomShapes((current) => current.filter((shape) => shape.id !== id))} onImportCustomShape={() => shapeInputRef.current?.click()} onExportPath={exportDocumentPath} zoom={zoom} onZoomChange={setZoom} renderer={activeRenderer} historyPast={history.past} historyFuture={history.future} rasterUndoDepth={rasterUndoRef.current.length} onJumpHistory={jumpDocumentHistory} renderRevision={resourceRevision + Object.values(assets).reduce((total, asset) => total + (asset.revision ?? 0), 0)} panelOrder={workspaceLayout.utilityPanelOrder} onPanelOrderChange={(moved, before) => setWorkspaceLayout((current) => ({ ...current, utilityPanelOrder: reorderUtilityPanels(current.utilityPanelOrder, moved, before) }))} floating={workspaceLayout.utilityPanelFloating} floatingPosition={workspaceLayout.floatingPanelPosition} onFloatingPositionChange={(floatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, floatingPanelPosition }))} onToggleFloating={() => setWorkspaceLayout((current) => ({ ...current, utilityPanelFloating: !current.utilityPanelFloating, collapsedPanels: { ...current.collapsedPanels, layers: false } }))} secondaryPanel={workspaceLayout.secondaryUtilityPanel} onSecondaryPanelChange={(secondaryUtilityPanel) => setWorkspaceLayout((current) => ({ ...current, secondaryUtilityPanel }))} secondaryHeight={workspaceLayout.secondaryPanelHeight} onSecondaryHeightChange={(secondaryPanelHeight) => setWorkspaceLayout((current) => ({ ...current, secondaryPanelHeight }))} secondaryFloating={workspaceLayout.secondaryUtilityPanelFloating} onToggleSecondaryFloating={() => setWorkspaceLayout((current) => ({ ...current, secondaryUtilityPanelFloating: !current.secondaryUtilityPanelFloating }))} secondaryFloatingPosition={workspaceLayout.secondaryFloatingPanelPosition} onSecondaryFloatingPositionChange={(secondaryFloatingPanelPosition) => setWorkspaceLayout((current) => ({ ...current, secondaryFloatingPanelPosition }))} onRunActions={runActionSteps} plugins={plugins} foregroundColor={foregroundColor} backgroundColor={backgroundColor} customSwatches={customSwatches} onForegroundColorChange={(color) => setForegroundColor(normalizeHexColor(color, foregroundColor))} onBackgroundColorChange={(color) => setBackgroundColor(normalizeHexColor(color, backgroundColor))} onAddSwatch={(color) => setCustomSwatches((current) => normalizeCustomSwatches([...current, color]))} onRemoveSwatch={(color) => setCustomSwatches((current) => current.filter((swatch) => swatch !== color))} customGradients={customGradients} onApplyGradient={(gradient) => { setActiveGradientStops(normalizeGradientStops(gradient.stops, gradient.start, gradient.end)); setForegroundColor(gradient.start); setBackgroundColor(gradient.end); setTool('gradient') }} onAddGradient={(name, stops) => setCustomGradients((current) => normalizeCustomGradients([...current, { id: createId(), name, stops, start: stops[0].color, end: stops.at(-1)!.color }]))} onRemoveGradient={(id) => setCustomGradients((current) => current.filter((gradient) => gradient.id !== id))} customPatterns={customPatterns} onApplyPattern={(pattern) => dispatch({ type: 'set-pattern', patch: pattern })} onAddPattern={(name, pattern) => setCustomPatterns((current) => normalizeCustomPatterns([...current, { id: createId(), name, ...pattern }]))} onRemovePattern={(id) => setCustomPatterns((current) => current.filter((pattern) => pattern.id !== id))} onImportPattern={() => patternInputRef.current?.click()} onExportPattern={exportPatternFromLibrary} brushes={[roundBrush, ...customBrushes]} brushId={brushId} customFonts={customFonts} onBrushChange={(id) => { setBrushId(id); setTool('brush') }} onLoadBrush={() => brushInputRef.current?.click()} onRemoveBrush={(id) => void removeBrushFromLibrary(id)} onExportBrush={(brush) => void exportBrushFromLibrary(brush)} onLoadFont={() => fontInputRef.current?.click()} onRemoveFont={(id) => void removeFontFromLibrary(id)} />
       </main>
 
-      <input ref={imageInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp,image/avif,image/x-icon" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
-      <input ref={linkedSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addLinkedSmartObjectFile(file); event.target.value = '' }} />
-      <input ref={replaceSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'embedded'); event.target.value = '' }} />
-      <input ref={relinkSmartObjectInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'linked'); event.target.value = '' }} />
-      <input ref={backgroundInputRef} type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
-      <input ref={projectInputRef} type="file" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
-      <input ref={fontInputRef} type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
-      <input ref={brushInputRef} type="file" className="sr-only" accept=".abr,.studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
-      <input ref={shapeInputRef} type="file" className="sr-only" accept=".studio-shape,application/json,application/x-studio-shape+json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadCustomShapeFile(file); event.target.value = '' }} />
-      <input ref={patternInputRef} type="file" className="sr-only" accept=".studio-pattern,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadPatternFile(file); event.target.value = '' }} />
-      <input ref={profileInputRef} type="file" className="sr-only" accept=".icc,.icm,application/vnd.iccprofile" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadColorProfile(file); event.target.value = '' }} />
+      <input ref={imageInputRef} aria-label="Open image" type="file" className="sr-only" accept="image/png,image/jpeg,image/webp,image/avif,image/x-icon" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addImageFile(file); event.target.value = '' }} />
+      <input ref={linkedSmartObjectInputRef} aria-label="Open linked smart object" type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addLinkedSmartObjectFile(file); event.target.value = '' }} />
+      <input ref={replaceSmartObjectInputRef} aria-label="Replace embedded smart object" type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'embedded'); event.target.value = '' }} />
+      <input ref={relinkSmartObjectInputRef} aria-label="Relink smart object" type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void replaceSmartObjectSource(file, 'linked'); event.target.value = '' }} />
+      <input ref={backgroundInputRef} aria-label="Choose background image" type="file" className="sr-only" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void setBackgroundFile(file); event.target.value = '' }} />
+      <input ref={projectInputRef} aria-label="Open project or document" type="file" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void openFile(file); event.target.value = '' }} />
+      <input ref={fontInputRef} aria-label="Load font" type="file" className="sr-only" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadFontFile(file); event.target.value = '' }} />
+      <input ref={brushInputRef} aria-label="Load brush" type="file" className="sr-only" accept=".abr,.studio-brush,.json,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadBrushFile(file); event.target.value = '' }} />
+      <input ref={shapeInputRef} aria-label="Load custom shape" type="file" className="sr-only" accept=".studio-shape,application/json,application/x-studio-shape+json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadCustomShapeFile(file); event.target.value = '' }} />
+      <input ref={patternInputRef} aria-label="Load pattern" type="file" className="sr-only" accept=".studio-pattern,image/png,image/jpeg,image/webp,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadPatternFile(file); event.target.value = '' }} />
+      <input ref={profileInputRef} aria-label="Load color profile" type="file" className="sr-only" accept=".icc,.icm,application/vnd.iccprofile" onChange={(event) => { const file = event.target.files?.[0]; if (file) void loadColorProfile(file); event.target.value = '' }} />
 
       {notice && <Toast value={notice} onDismiss={() => setNotice(null)} />}
       {selectionWorkspaceSource && <SelectAndMaskWorkspace source={selectionWorkspaceSource} onPreview={setSelection} onApply={() => setSelectionWorkspaceSource(null)} onCancel={() => { setSelection(cloneSelection(selectionWorkspaceSource)); setSelectionWorkspaceSource(null) }} />}
@@ -2317,6 +2326,10 @@ function App({ onExit, initialState, performanceMetrics, rendererOverride }: App
       {printDialogOpen && <PrintDialog canvasSize={document.canvasSize} metadata={document.fileMetadata ?? {}} value={document.printSettings ?? (() => { const dpi = document.fileMetadata?.resolutionDpi ?? 300; return { widthInches: document.canvasSize.width / dpi, heightInches: document.canvasSize.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true } })()} onChange={(settings) => dispatch({ type: 'set-print-settings', settings })} onExport={() => void createPrintPdf(false)} onPrint={() => void createPrintPdf(true)} onClose={() => setPrintDialogOpen(false)} />}
     </div>
   )
+}
+
+function App(props: AppProps) {
+  return useAppController(props)
 }
 
 export default App

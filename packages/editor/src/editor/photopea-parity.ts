@@ -271,7 +271,7 @@ export const studioShortcutParity = [
       ? validated(`The ${command.label} binding is assignable and covered through its browser interaction path.`, ...evidence)
       : implemented(`The ${command.label} binding is assignable in Studio.`))
   }),
-  ...Object.keys(studioToolParity).filter((tool) => !shortcutCommands.some((command) => command.id === `tool.${tool}`)).map((tool) => item(`shortcut.tool.${tool}`, 'Unassigned', `Photopea shortcut for ${tool}`, partial(`The ${tool} tool is available but has no assignable default shortcut entry.`))),
+  ...Object.keys(studioToolParity).flatMap((tool) => shortcutCommands.some((command) => command.id === `tool.${tool}`) ? [] : [item(`shortcut.tool.${tool}`, 'Unassigned', `Photopea shortcut for ${tool}`, partial(`The ${tool} tool is available but has no assignable default shortcut entry.`))]),
   ...explicitShortcutCommands.map(([id, label, binding]) => item(`shortcut.${id}`, `${label} · ${binding}`, `Photopea shortcut for ${label}`, partial(`${label} works with a fixed binding but is not yet exposed in the shortcut editor.`))),
 ] as const
 

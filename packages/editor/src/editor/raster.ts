@@ -23,7 +23,7 @@ export function floodFillImageData(image: ImageData, startX: number, startY: num
   const y = Math.max(0, Math.min(height - 1, Math.floor(startY)))
   const startOffset = (y * width + x) * 4
   const target = [image.data[startOffset], image.data[startOffset + 1], image.data[startOffset + 2], image.data[startOffset + 3]]
-  if (target.every((value, channel) => value === replacement[channel])) return null
+  if (target.length === replacement.length && target.every((value, channel) => value === replacement[channel])) return null
   const threshold = Math.max(0, Math.min(255, tolerance))
   const visited = new Uint8Array(width * height)
   const stack = [y * width + x]

@@ -3,6 +3,11 @@ import { createSelection, selectionFromMask, type SelectionState } from '../edit
 
 type Props = { canvasRef: RefObject<HTMLCanvasElement | null>; enabled: boolean; tool: 'brush' | 'eraser'; size: number; selection: SelectionState | null; onChange: (selection: SelectionState) => void }
 
+function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
+}
+
 export function QuickMaskOverlay({ canvasRef, enabled, tool, size, selection, onChange }: Props) {
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const drawingRef = useRef<number | null>(null)
@@ -27,15 +32,11 @@ export function QuickMaskOverlay({ canvasRef, enabled, tool, size, selection, on
   useEffect(() => {
     renderOverlay()
   }, [renderOverlay])
-  const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
-  }
   const paint = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const working = workingRef.current
     const context = working?.mask.getContext('2d')
     if (!working || !context) return
-    const position = point(event)
+    const position = canvasPoint(event)
     context.save()
     context.globalCompositeOperation = tool === 'brush' ? 'source-over' : 'destination-out'
     context.fillStyle = '#fff'

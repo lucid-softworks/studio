@@ -111,7 +111,8 @@ export function normalizeWorkspaceLayout(value: unknown, fallback = defaultWorks
   const widths = candidate.panelWidths
   const collapsed = candidate.collapsedPanels
   const utilityPanels: UtilityPanelId[] = ['layers', 'channels', 'paths', 'history', 'actions', 'navigator', 'histogram', 'swatches', 'gradients', 'patterns', 'libraries', 'plugins', 'info']
-  const requestedOrder = Array.isArray(candidate.utilityPanelOrder) ? candidate.utilityPanelOrder.filter((panel): panel is UtilityPanelId => utilityPanels.includes(panel as UtilityPanelId)) : []
+  const utilityPanelSet = new Set<unknown>(utilityPanels)
+  const requestedOrder = Array.isArray(candidate.utilityPanelOrder) ? candidate.utilityPanelOrder.filter((panel): panel is UtilityPanelId => utilityPanelSet.has(panel)) : []
   const utilityPanelOrder = [...new Set([...requestedOrder, ...utilityPanels])]
   const floatingPosition = candidate.floatingPanelPosition
   const secondaryFloatingPosition = candidate.secondaryFloatingPanelPosition

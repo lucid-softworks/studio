@@ -33,7 +33,7 @@ const handles: Array<{ id: ResizeHandle; x: number; y: number; cursor: string }>
   { id: 'w', x: -0.5, y: 0, cursor: 'ew-resize' },
 ]
 
-export function TransformOverlay({ canvasRef, document, assets, dispatch, endHistoryGroup, enabled = true }: Props) {
+function useTransformOverlayController({ canvasRef, document, assets, dispatch, endHistoryGroup, enabled = true }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const previewCanvasRef = useRef<HTMLCanvasElement>(null)
   const previewViewportRef = useRef({ x: 0, y: 0, width: 1, height: 1 })
@@ -46,7 +46,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
   const interactionRef = useRef<Interaction | null>(null)
   const canvas = canvasRef.current
   const context = canvas?.getContext('2d') ?? null
-  const selectedLayers = document.layers.filter((layer) => document.selectedLayerIds.includes(layer.id) && layerIsVisible(document, layer))
+  const selectedLayerIdSet = new Set(document.selectedLayerIds)
+  const selectedLayers = document.layers.filter((layer) => selectedLayerIdSet.has(layer.id) && layerIsVisible(document, layer))
   const activeLayer = document.layers.find((layer) => layer.id === document.selectedLayerId) ?? null
   const activeBounds = canvas && context && activeLayer ? getLayerBounds(context, canvas, activeLayer, assets) : null
   const selectedBounds = useMemo(() => {
@@ -121,7 +122,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       selectedLayerIds: [],
       selectedGroupId: null,
     }
-    const captureBounds = document.layers.filter((layer) => ids.has(layer.id)).flatMap((layer) => {
+    const captureBounds = document.layers.flatMap((layer) => {
+      if (!ids.has(layer.id)) return []
       const bounds = context ? getLayerBounds(context, canvas, layer, assets) : null
       if (!bounds) return []
       const angle = bounds.rotation * Math.PI / 180
@@ -247,26 +249,28 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
       dispatch({ type: 'select-layer', id: null }, { record: false })
       return
     }
-    const movingIds = document.selectedLayerIds.includes(layer.id) ? document.selectedLayerIds : [layer.id]
-    if (!document.selectedLayerIds.includes(layer.id)) dispatch({ type: 'select-layer', id: layer.id }, { record: false })
-    const layers = document.layers
-      .filter((candidate) => movingIds.includes(candidate.id) && !layerIsLocked(document, candidate))
-      .map((candidate) => ({ id: candidate.id, position: candidate.position }))
-    if (layers.length === 0) return
+    const movingIds = selectedLayerIdSet.has(layer.id) ? document.selectedLayerIds : [layer.id]
+    if (!selectedLayerIdSet.has(layer.id)) dispatch({ type: 'select-layer', id: layer.id }, { record: false })
     const movingIdSet = new Set(movingIds)
-    const movingBounds = document.layers.filter((candidate) => movingIdSet.has(candidate.id)).flatMap((candidate) => {
+    const layers = document.layers.flatMap((candidate) => movingIdSet.has(candidate.id) && !layerIsLocked(document, candidate)
+      ? [{ id: candidate.id, position: candidate.position }]
+      : [])
+    if (layers.length === 0) return
+    const movingBounds = document.layers.flatMap((candidate) => {
+      if (!movingIdSet.has(candidate.id)) return []
       const candidateBounds = getLayerBounds(context, canvas, candidate, assets)
       return candidateBounds ? [candidateBounds] : []
     })
     const bounds = movingBounds.reduce<SnapBounds>((result, candidate) => ({ x: Math.min(result.x, candidate.x), y: Math.min(result.y, candidate.y), width: Math.max(result.x + result.width, candidate.x + candidate.width) - Math.min(result.x, candidate.x), height: Math.max(result.y + result.height, candidate.y + candidate.height) - Math.min(result.y, candidate.y) }), movingBounds[0] ?? { x: 0, y: 0, width: 0, height: 0 })
-    const otherBounds = document.layers.filter((candidate) => !movingIdSet.has(candidate.id) && layerIsVisible(document, candidate)).flatMap((candidate) => {
+    const otherBounds = document.layers.flatMap((candidate) => {
+      if (movingIdSet.has(candidate.id) || !layerIsVisible(document, candidate)) return []
       const candidateBounds = getLayerBounds(context, canvas, candidate, assets)
       return candidateBounds ? [candidateBounds] : []
     })
     interactionRef.current = {
       mode: 'move', pointerId: event.pointerId, start: cursor, bounds, layers,
-      xTargets: [0, canvas.width / 2, canvas.width, ...(document.guides ?? []).filter((guide) => guide.direction === 'vertical').map((guide) => guide.position), ...otherBounds.flatMap((candidate) => [candidate.x, candidate.x + candidate.width / 2, candidate.x + candidate.width])],
-      yTargets: [0, canvas.height / 2, canvas.height, ...(document.guides ?? []).filter((guide) => guide.direction === 'horizontal').map((guide) => guide.position), ...otherBounds.flatMap((candidate) => [candidate.y, candidate.y + candidate.height / 2, candidate.y + candidate.height])],
+      xTargets: [0, canvas.width / 2, canvas.width, ...(document.guides ?? []).flatMap((guide) => guide.direction === 'vertical' ? [guide.position] : []), ...otherBounds.flatMap((candidate) => [candidate.x, candidate.x + candidate.width / 2, candidate.x + candidate.width])],
+      yTargets: [0, canvas.height / 2, canvas.height, ...(document.guides ?? []).flatMap((guide) => guide.direction === 'horizontal' ? [guide.position] : []), ...otherBounds.flatMap((candidate) => [candidate.y, candidate.y + candidate.height / 2, candidate.y + candidate.height])],
       gridSpacing: document.grid?.visible ? document.grid.spacing / Math.max(1, document.grid.subdivisions) : undefined,
       lastDx: 0,
       lastDy: 0,
@@ -435,4 +439,8 @@ export function TransformOverlay({ canvasRef, document, assets, dispatch, endHis
     </svg>
     </Fragment>
   )
+}
+
+export function TransformOverlay(props: Props) {
+  return useTransformOverlayController(props)
 }

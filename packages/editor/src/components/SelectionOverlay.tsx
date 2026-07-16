@@ -12,6 +12,11 @@ type Props = {
 
 type Drag = { pointerId: number; startX: number; startY: number }
 
+function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
+}
+
 export function SelectionOverlay({ canvasRef, enabled, kind, mode, selection, onChange }: Props) {
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -58,13 +63,8 @@ export function SelectionOverlay({ canvasRef, enabled, kind, mode, selection, on
     }
   }, [canvas, preview, selection])
 
-  const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    return { x: (event.clientX - rect.left) / rect.width * event.currentTarget.width, y: (event.clientY - rect.top) / rect.height * event.currentTarget.height }
-  }
-
   const shapeFromEvent = (event: ReactPointerEvent<HTMLCanvasElement>, drag: Drag): SelectionShape => {
-    const end = point(event)
+    const end = canvasPoint(event)
     let dx = end.x - drag.startX
     let dy = end.y - drag.startY
     if (event.shiftKey) {
@@ -83,7 +83,7 @@ export function SelectionOverlay({ canvasRef, enabled, kind, mode, selection, on
       className={`absolute inset-0 size-full touch-none ${enabled ? 'cursor-crosshair' : 'pointer-events-none'}`}
       onPointerDown={(event) => {
         if (!enabled) return
-        const start = point(event)
+        const start = canvasPoint(event)
         dragRef.current = { pointerId: event.pointerId, startX: start.x, startY: start.y }
         try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Synthetic events do not expose capture. */ }
         setPreview({ kind, x: start.x, y: start.y, width: 0, height: 0 })

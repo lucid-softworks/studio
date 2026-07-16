@@ -70,7 +70,7 @@ function pngMetadata(bytes: Uint8Array): DocumentFileMetadata {
     const data = bytes.slice(offset + 8, offset + 8 + length)
     if (type === 'pHYs' && data.length >= 9 && data[8] === 1) resolutionDpi = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0) * 0.0254
     if (type === 'eXIf') exif = Array.from(data)
-    if (type === 'iTXt' && ascii(data).startsWith('XML:com.adobe.xmp')) { const zeroes = [...data].map((value, index) => value === 0 ? index : -1).filter((index) => index >= 0); xmp = utf8(data.subarray((zeroes[4] ?? zeroes.at(-1) ?? -1) + 1)) }
+    if (type === 'iTXt' && ascii(data).startsWith('XML:com.adobe.xmp')) { const zeroes = [...data].flatMap((value, index) => value === 0 ? [index] : []); xmp = utf8(data.subarray((zeroes[4] ?? zeroes.at(-1) ?? -1) + 1)) }
     if (['eXIf', 'iTXt', 'iCCP'].includes(type)) chunks.push({ container: 'png', type, data: Array.from(data) })
     offset += length + 12
     if (type === 'IEND') break
