@@ -15,4 +15,8 @@ export const browserPerformanceBudgets: Record<PerformanceFixtureId, BrowserPerf
   'deep-layers': { readyMs: 12_000, renderP95Ms: 1_000, pointerP95Ms: 100, saveP95Ms: 5_000, gradientCommitMs: 1_000 },
   'high-depth': { readyMs: 12_000, renderP95Ms: 750, pointerP95Ms: 100, saveP95Ms: 4_000, gradientCommitMs: 3_000 },
   animation: { readyMs: 10_000, renderP95Ms: 750, pointerP95Ms: 100, saveP95Ms: 4_000, gradientCommitMs: 1_000 },
+  'renderer-native-8': { readyMs: 8_000, renderP95Ms: 500, pointerP95Ms: 75, saveP95Ms: 3_000, gradientCommitMs: 1_500 },
+  'renderer-native-16': { readyMs: 8_000, renderP95Ms: 500, pointerP95Ms: 75, saveP95Ms: 3_000, gradientCommitMs: 1_500 },
+  'renderer-native-32': { readyMs: 8_000, renderP95Ms: 500, pointerP95Ms: 75, saveP95Ms: 3_000, gradientCommitMs: 1_500 },
+  'renderer-compat-16': { readyMs: 8_000, renderP95Ms: 650, pointerP95Ms: 75, saveP95Ms: 3_000, gradientCommitMs: 1_500 },
 }

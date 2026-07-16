@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createPerformanceFixture, performanceFixtureDefinitions, performanceFixtureIds } from './performance-fixtures'
+import { compatibilityRendererFeatureIds, createPerformanceFixture, nativeRendererFeatureIds, performanceFixtureDefinitions, performanceFixtureIds } from './performance-fixtures'
 import { EditorPerformanceMetrics } from './performance-metrics'
 import { browserPerformanceBudgets } from './performance-budgets'
 
 describe('performance fixtures', () => {
   it('provides deterministic documents for every required stress category', () => {
-    expect(performanceFixtureIds).toEqual(['2k', '4k', '8k', 'deep-layers', 'high-depth', 'animation'])
+    expect(performanceFixtureIds).toEqual(['2k', '4k', '8k', 'deep-layers', 'high-depth', 'animation', 'renderer-native-8', 'renderer-native-16', 'renderer-native-32', 'renderer-compat-16'])
     for (const id of performanceFixtureIds) {
       const first = createPerformanceFixture(id)
       const second = createPerformanceFixture(id)
@@ -23,6 +23,18 @@ describe('performance fixtures', () => {
     const animation = createPerformanceFixture('animation').document.animation
     expect(animation?.mode).toBe('timeline')
     expect(animation?.keyframes).toHaveLength(240)
+  })
+
+  it('covers every native and compatibility renderer feature with deterministic fixtures', () => {
+    for (const id of ['renderer-native-8', 'renderer-native-16', 'renderer-native-32'] as const) {
+      const fixture = createPerformanceFixture(id)
+      const labels = [fixture.document.background.kind, fixture.document.pattern.kind, ...fixture.document.groups.map((group) => group.name), ...fixture.document.layers.map((layer) => layer.name)].join(' ')
+      for (const feature of nativeRendererFeatureIds) expect(labels).toContain(feature)
+    }
+    const compatibility = createPerformanceFixture('renderer-compat-16')
+    const labels = [...(compatibility.document.artboards ?? []).map((artboard) => artboard.name), ...compatibility.document.layers.map((layer) => layer.name)].join(' ')
+    for (const feature of compatibilityRendererFeatureIds) expect(labels).toContain(feature)
+    expect(compatibility.document.bitDepth).toBe(16)
   })
 
   it('defines supported-browser budgets for every fixture', () => {

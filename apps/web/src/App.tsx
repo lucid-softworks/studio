@@ -20,6 +20,7 @@ export default function App() {
     return id && performanceFixtureIds.includes(id as (typeof performanceFixtureIds)[number]) ? createPerformanceFixture(id as (typeof performanceFixtureIds)[number]) : null
   }, [])
   const performanceMetrics = useMemo(() => benchmark ? new EditorPerformanceMetrics() : undefined, [benchmark])
+  const rendererOverride = useMemo(() => new URLSearchParams(window.location.search).get('renderer') === 'canvas2d' ? 'canvas2d' as const : undefined, [])
 
   useEffect(() => {
     if (!benchmark || !performanceMetrics) return
@@ -50,6 +51,6 @@ export default function App() {
   }
 
   return isEditor
-    ? <EditorErrorBoundary onExit={() => navigate('home')}><StudioEditor onExit={() => navigate('home')} initialState={benchmark?.document} performanceMetrics={performanceMetrics} /></EditorErrorBoundary>
+    ? <EditorErrorBoundary onExit={() => navigate('home')}><StudioEditor onExit={() => navigate('home')} initialState={benchmark?.document} performanceMetrics={performanceMetrics} rendererOverride={rendererOverride} /></EditorErrorBoundary>
     : <LandingPage onOpenEditor={() => navigate('editor')} />
 }
