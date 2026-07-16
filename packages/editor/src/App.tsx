@@ -1922,7 +1922,7 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
   const loadColorProfile = async (file: File) => {
     setIsLoading(true)
     try {
-      const { bakeProofProfile, convertIccImageData, inspectIccProfile } = await import('./editor/icc')
+      const { bakeProofProfile, inspectIccProfile } = await import('./editor/icc')
       const profile = await inspectIccProfile(new Uint8Array(await file.arrayBuffer()))
       const settings = document.colorSettings ?? { intent: 'relative' as const, blackPointCompensation: true, proofEnabled: false, gamutWarning: false }
       if (profileActionRef.current === 'proof') {
@@ -1931,21 +1931,52 @@ function App({ onExit, initialState, performanceMetrics }: AppProps) {
         setNotice(`Loaded ${profile.name} for local soft proofing.`, 'success')
       } else {
         if (profileActionRef.current === 'convert') {
-          for (const [assetId, asset] of Object.entries(assetsRef.current)) {
+          const targets = Object.entries(assetsRef.current).flatMap(([assetId, asset]) => {
             const surface = asset.surface
             const context = surface?.getContext('2d', { willReadFrequently: true })
-            if (!surface || !context) continue
+            if (!surface || !context) return []
             const before = context.getImageData(0, 0, surface.width, surface.height)
-            const after = await convertIccImageData(before, settings.workingProfile, profile, settings.intent, settings.blackPointCompensation)
-            context.putImageData(after, 0, 0)
-            refreshRasterAsset(assetId, { x: 0, y: 0, width: surface.width, height: surface.height })
-            commitRasterEdit({ assetId, x: 0, y: 0, before, after })
+            return [{ assetId, asset, surface, revision: asset.revision ?? 0, before }]
+          })
+          if (targets.length) {
+            setNotice(`Converting ${targets.length} local raster asset${targets.length === 1 ? '' : 's'} to ${profile.name}… Press Escape to cancel.`, 'info')
+            const worker = new Worker(new URL('./editor/workers/icc-conversion.worker.ts', import.meta.url), { type: 'module' })
+            const response = await runWorkerJob<{ results?: Array<{ assetId: string; before: ArrayBuffer; after: ArrayBuffer; width: number; height: number }>; error?: string }>(
+              'ICC profile conversion',
+              worker,
+              {
+                assets: targets.map(({ assetId, before }) => ({ assetId, data: before.data.buffer, width: before.width, height: before.height })),
+                source: settings.workingProfile,
+                target: profile,
+                intent: settings.intent,
+                blackPointCompensation: settings.blackPointCompensation,
+              },
+              targets.map(({ before }) => before.data.buffer),
+            )
+            if (response.error || response.results?.length !== targets.length) throw new Error(response.error || 'ICC conversion returned incomplete pixels.')
+            const results = new Map(response.results.map((result) => [result.assetId, result]))
+            for (const target of targets) {
+              const current = assetsRef.current[target.assetId]
+              const result = results.get(target.assetId)
+              if (!result || current !== target.asset || current.surface !== target.surface || (current.revision ?? 0) !== target.revision || result.width !== target.surface.width || result.height !== target.surface.height) throw new Error('A raster asset changed while its ICC conversion was running. No pixels were applied.')
+              if (result.before.byteLength !== result.width * result.height * 4 || result.after.byteLength !== result.width * result.height * 4) throw new Error('ICC conversion returned invalid pixel dimensions.')
+            }
+            for (const target of targets) {
+              const result = results.get(target.assetId)!
+              const before = new ImageData(new Uint8ClampedArray(result.before), result.width, result.height)
+              const after = new ImageData(new Uint8ClampedArray(result.after), result.width, result.height)
+              const context = target.surface.getContext('2d', { willReadFrequently: true })!
+              context.putImageData(after, 0, 0)
+              refreshRasterAsset(target.assetId, { x: 0, y: 0, width: target.surface.width, height: target.surface.height })
+              commitRasterEdit({ assetId: target.assetId, x: 0, y: 0, before, after })
+            }
           }
         }
         dispatch({ type: 'set-color-settings', patch: { workingProfile: profile } })
         setNotice(`${profileActionRef.current === 'convert' ? 'Converted to' : 'Assigned'} ${profile.name}.`, 'success')
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setNotice(error instanceof Error ? error.message : 'That ICC profile could not be loaded.')
     } finally { setIsLoading(false) }
   }
