@@ -30,7 +30,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   count: validated('Persistent numbered markers support named color-coded groups, editable labels, canvas overlays, project round-trips, undo, and CSV export.', 'packages/editor/src/editor/counts.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   note: validated('Persistent notes expose editable title, content, author, color, and popup state and round-trip as Photoshop text annotations in PSD/PSB.', 'packages/editor/src/editor/psd.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   healing: partial('Needs spot/patch modes, diffusion and sampling controls, and stronger texture/luminosity matching.', 'visually-inaccurate'),
-  'clone-stamp': partial('Needs multiple sources, source overlay, flip/offset controls, and source presets.'),
+  'clone-stamp': partial('Five source slots, aligned sampling, current/current-and-below modes, offsets, rotation, scale, flips, and clipped/inverted source overlays are implemented; cross-layer source retention, pressure, and reference-stroke validation remain.'),
   brush: partial('Needs broader ABR dynamics, reference-stroke parity, mode parity, and large-brush performance fixtures.', 'visually-inaccurate'),
   pencil: partial('Needs mode, auto-erase, preset, and reference-stroke parity.'),
   'color-replacement': partial('Needs limits, sampling, tolerance, anti-alias, and mode parity.'),

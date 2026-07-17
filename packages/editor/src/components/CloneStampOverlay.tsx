@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { Fragment, useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { type RasterEdit, type RasterRegion } from '../editor/raster'
 import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, sourceToCanvas, type RasterTarget } from '../editor/raster-target'
@@ -18,18 +18,23 @@ type Props = {
   strength: number
   aligned: boolean
   sampleMode: 'current' | 'current-and-below'
-  sourceRotation: number
-  sourceScale: number
+  source: CloneSource | null
+  onSourceChange: (source: CloneSource) => void
+  overlayVisible: boolean
+  overlayOpacity: number
+  overlayClipped: boolean
+  overlayInverted: boolean
   selection: SelectionState | null
   locked?: boolean
   onChange: (assetId: string, region?: RasterRegion) => void
   onCommit: (edit: RasterEdit) => void
 }
 
-type Source = { assetId: string; point: Position }
+export type CloneSource = { assetId: string; point: Position; offsetX: number; offsetY: number; rotation: number; scale: number; flipX: boolean; flipY: boolean }
 type Stroke = {
   pointerId: number
   target: RasterTarget
+  source: CloneSource
   before: RasterTileSnapshot
   mergedDocument: EditorDocument | null
   mergedTiles: Map<string, { canvas: HTMLCanvasElement; x: number; y: number }>
@@ -65,13 +70,42 @@ function tileSample(stroke: Stroke, centerX: number, centerY: number) {
   return sample
 }
 
-export function CloneStampOverlay({ canvasRef, document, assets, tool, size, strength, aligned, sampleMode, sourceRotation, sourceScale, selection, locked, onChange, onCommit }: Props) {
+export function CloneStampOverlay({ canvasRef, document, assets, tool, size, strength, aligned, sampleMode, source, onSourceChange, overlayVisible, overlayOpacity, overlayClipped, overlayInverted, selection, locked, onChange, onCommit }: Props) {
   const strokeRef = useRef<Stroke | null>(null)
   const alignedOffsetRef = useRef<Position | null>(null)
-  const [source, setSource] = useState<Source | null>(null)
+  const sourceOverlayRef = useRef<HTMLCanvasElement>(null)
   const canvas = canvasRef.current
   const target = canvas ? resolveRasterTarget(canvas, document, assets, undefined, undefined, locked) : null
   const strokePreview = useRasterStrokePreview({ canvasRef, document, assets, layer: target?.layer, surface: target?.surface })
+
+  const drawSourceOverlay = (destination: Position | null) => {
+    const overlay = sourceOverlayRef.current
+    if (!overlay || !canvas) return
+    if (overlay.width !== canvas.width) overlay.width = canvas.width
+    if (overlay.height !== canvas.height) overlay.height = canvas.height
+    const context = overlay.getContext('2d')
+    context?.clearRect(0, 0, overlay.width, overlay.height)
+    overlay.dataset.overlayStatus = `context:${Boolean(context)} destination:${Boolean(destination)} source:${Boolean(source)} target:${Boolean(target)} match:${Boolean(source && target && source.assetId === target.layer.assetId)} visible:${overlayVisible}`
+    if (!context || !destination || !source || !target || source.assetId !== target.layer.assetId || !overlayVisible) return
+    const sourceCenter = { x: source.point.x + source.offsetX, y: source.point.y + source.offsetY }
+    const radius = Math.max(1, size / 2)
+    const pixelsPerSourceX = target.bounds.width / target.surface.width
+    const pixelsPerSourceY = target.bounds.height / target.surface.height
+    context.save()
+    if (overlayClipped) {
+      context.beginPath()
+      context.arc(destination.x, destination.y, radius, 0, Math.PI * 2)
+      context.clip()
+    }
+    context.globalAlpha = overlayOpacity / 100
+    context.filter = overlayInverted ? 'invert(1)' : 'none'
+    context.translate(destination.x, destination.y)
+    context.rotate(source.rotation * Math.PI / 180)
+    context.scale((source.flipX ? -1 : 1) * source.scale / 100, (source.flipY ? -1 : 1) * source.scale / 100)
+    context.drawImage(target.surface, -sourceCenter.x * pixelsPerSourceX, -sourceCenter.y * pixelsPerSourceY, target.surface.width * pixelsPerSourceX, target.surface.height * pixelsPerSourceY)
+    context.restore()
+    overlay.dataset.overlayStatus = 'drawn'
+  }
 
   const canvasPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -178,8 +212,8 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       context.globalAlpha = tool === 'healing' ? Math.min(0.72, strength / 100) : strength / 100
       context.globalCompositeOperation = tool === 'healing' ? 'luminosity' : 'source-over'
       context.translate(x, y)
-      context.rotate(sourceRotation * Math.PI / 180)
-      context.scale(sourceScale / 100, sourceScale / 100)
+      context.rotate(stroke.source.rotation * Math.PI / 180)
+      context.scale((stroke.source.flipX ? -1 : 1) * stroke.source.scale / 100, (stroke.source.flipY ? -1 : 1) * stroke.source.scale / 100)
       context.drawImage(sourceImage, 0, 0, sourceImage.width, sourceImage.height, -stroke.radius, -stroke.radius, stroke.radius * 2, stroke.radius * 2)
       context.restore()
       stroke.minX = Math.min(stroke.minX, x - stroke.radius)
@@ -201,8 +235,9 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     if (!target || target.locked) return
     const point = canvasToSource(canvasPoint(event), target)
     if (event.altKey || !source || source.assetId !== target.layer.assetId) {
-      setSource({ assetId: target.layer.assetId, point })
+      onSourceChange({ assetId: target.layer.assetId, point, offsetX: source?.offsetX ?? 0, offsetY: source?.offsetY ?? 0, rotation: source?.rotation ?? 0, scale: source?.scale ?? 100, flipX: source?.flipX ?? false, flipY: source?.flipY ?? false })
       alignedOffsetRef.current = null
+      drawSourceOverlay(canvasPoint(event))
       return
     }
     const context = target.surface.getContext('2d', { willReadFrequently: true })
@@ -216,11 +251,12 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
     const radius = Math.max(0.5, size / (target.bounds.width / target.surface.width) / 2)
     const selectionContext = selection?.bounds ? selection.mask.getContext('2d', { willReadFrequently: true }) : null
     const selectionData = selectionContext && selection ? selectionContext.getImageData(0, 0, selection.mask.width, selection.mask.height) : null
-    const strokeOffset = aligned && alignedOffsetRef.current ? alignedOffsetRef.current : { x: source.point.x - point.x, y: source.point.y - point.y }
+    const strokeOffset = aligned && alignedOffsetRef.current ? alignedOffsetRef.current : { x: source.point.x + source.offsetX - point.x, y: source.point.y + source.offsetY - point.y }
     if (aligned) alignedOffsetRef.current = strokeOffset
     const stroke: Stroke = {
       pointerId: event.pointerId,
       target,
+      source,
       before,
       mergedDocument,
       mergedTiles: new Map(),
@@ -244,8 +280,10 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
 
   const pointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const stroke = strokeRef.current
-    if (!stroke || stroke.pointerId !== event.pointerId) return
+    if (!stroke) { drawSourceOverlay(canvasPoint(event)); return }
+    if (stroke.pointerId !== event.pointerId) return
     stamp(stroke, canvasToSource(canvasPoint(event), stroke.target))
+    drawSourceOverlay(canvasPoint(event))
   }
 
   const pointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -275,6 +313,7 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
       strokePreview.drawPreview()
       strokePreview.finishPreview()
     }
+    drawSourceOverlay(canvasPoint(event))
   }
 
   const marker = source && target && source.assetId === target.layer.assetId ? sourceToCanvas(source.point, target) : null
@@ -282,15 +321,18 @@ export function CloneStampOverlay({ canvasRef, document, assets, tool, size, str
   return (
     <Fragment>
       <canvas ref={strokePreview.previewCanvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 hidden size-full" />
+      <canvas ref={sourceOverlayRef} aria-label="Clone source overlay" className="pointer-events-none absolute inset-0 size-full" />
       <svg
         aria-label={`${tool === 'healing' ? 'Healing brush' : 'Clone stamp'} surface`}
         viewBox={`0 0 ${canvas?.width ?? 1600} ${canvas?.height ?? 1000}`}
         preserveAspectRatio="none"
         className={`absolute inset-0 size-full touch-none ${target && !target.locked ? 'cursor-crosshair' : 'cursor-not-allowed'}`}
         onPointerDown={pointerDown}
+        onPointerEnter={(event) => drawSourceOverlay(canvasPoint(event))}
         onPointerMove={pointerMove}
         onPointerUp={pointerEnd}
         onPointerCancel={pointerEnd}
+        onPointerLeave={() => drawSourceOverlay(null)}
       >
         {marker && <g className="pointer-events-none"><circle cx={marker.x} cy={marker.y} r={Math.max(10, (canvas?.width ?? 1600) / 90)} fill="none" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" /><line x1={marker.x - 12} y1={marker.y} x2={marker.x + 12} y2={marker.y} stroke="#18181b" strokeWidth="3" vectorEffect="non-scaling-stroke" /><line x1={marker.x} y1={marker.y - 12} x2={marker.x} y2={marker.y + 12} stroke="#18181b" strokeWidth="3" vectorEffect="non-scaling-stroke" /></g>}
       </svg>
