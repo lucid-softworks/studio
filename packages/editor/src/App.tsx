@@ -702,6 +702,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
           name: group.id === selectedGroup?.id ? `${group.name} copy` : group.name,
           parentId: group.id === selectedGroup?.id ? group.parentId ?? null : groupCopies.get(group.parentId ?? '') ?? null,
           stackOrder: undefined,
+          psdLayerId: undefined,
         },
         layerIds: [],
       }, { groupKey: 'duplicate-selection' })

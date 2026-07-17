@@ -74,6 +74,53 @@ describe('PSD layer ordering', () => {
     expect(psdLayerNamesInEditorOrder(children, '', false)).toEqual(['Background', 'Artwork'])
   })
 
+  it('preserves folder IDs, effects, and Blend If settings across Studio round trips', async () => {
+    const imageData = new ImageData(4, 4)
+    imageData.data.fill(255)
+    const source: Psd = {
+      width: 4,
+      height: 4,
+      imageData,
+      children: [{
+        id: 902,
+        name: 'Styled folder',
+        blendMode: 'pass through',
+        effects: {
+          dropShadow: [{ enabled: true, color: { r: 20, g: 30, b: 40 }, opacity: 0.45, distance: { units: 'Pixels', value: 3 }, size: { units: 'Pixels', value: 5 } }],
+        },
+        blendingRanges: {
+          compositeGrayBlendSource: [12, 24, 220, 244],
+          compositeGraphBlendDestinationRange: [4, 18, 232, 250],
+          ranges: [{ sourceRange: [8, 20, 210, 240], destRange: [2, 14, 230, 248] }],
+        },
+        children: [{ name: 'Pixels', left: 0, top: 0, right: 4, bottom: 4, imageData }],
+      }],
+    }
+
+    const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'styled-folder.psd')
+    expect(imported.document.groups[0]).toMatchObject({
+      name: 'Styled folder',
+      passThrough: true,
+      psdLayerId: 902,
+      effects: { dropShadow: { enabled: true, color: '#141e28', opacity: 45, distance: 3, blur: 5 } },
+      blendIf: { source: [12, 24, 220, 244], destination: [4, 18, 232, 250], channels: [{ source: [8, 20, 210, 240], destination: [2, 14, 230, 248] }] },
+    })
+
+    const exported = await exportPsdDocument(imported.document, imported.assets)
+    const folder = readPsd(await exported.arrayBuffer(), { useImageData: true, skipThumbnail: true }).children?.[0]
+    expect(folder).toMatchObject({
+      id: 902,
+      name: 'Styled folder',
+      blendMode: 'pass through',
+      effects: { dropShadow: [{ enabled: true, opacity: 0.45, distance: { value: 3 }, size: { value: 5 } }] },
+      blendingRanges: {
+        compositeGrayBlendSource: [12, 24, 220, 244],
+        compositeGraphBlendDestinationRange: [4, 18, 232, 250],
+        ranges: [{ sourceRange: [8, 20, 210, 240], destRange: [2, 14, 230, 248] }],
+      },
+    })
+  })
+
   it('maps Photoshop blend-mode names onto editor blend modes', () => {
     expect(psdBlendMode('color burn')).toBe('color-burn')
     expect(psdBlendMode('hard light')).toBe('hard-light')

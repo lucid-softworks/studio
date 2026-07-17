@@ -150,6 +150,11 @@ export type LayerGroup = {
   collapsed: boolean
   parentId?: string | null
   stackOrder?: number
+  effects?: LayerEffects | null
+  additionalEffects?: LayerEffects[]
+  psdEffectsMetadata?: SerializedPsdValue
+  blendIf?: BlendIfSettings
+  psdLayerId?: number
 }
 
 export type ImageLayer = BaseLayer & {

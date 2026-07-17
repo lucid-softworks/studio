@@ -192,6 +192,7 @@ export function duplicateLayer(layer: EditorLayer): EditorLayer {
   return {
     ...layer,
     id: createId(),
+    psdLayerId: undefined,
     name: `${layer.name} copy`,
     position: { x: layer.position.x + 0.025, y: layer.position.y + 0.025 },
   }

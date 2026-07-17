@@ -1116,6 +1116,11 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
           collapsed: layer.opened === false,
           parentId,
           stackOrder,
+          effects: psdLayerEffects(layer),
+          additionalEffects: psdAdditionalLayerEffects(layer),
+          psdEffectsMetadata: layer.effects ? serializePsdValue(layer.effects) : undefined,
+          blendIf: psdBlendIf(layer),
+          psdLayerId: layer.id,
         })
         await importChildren(layer.children, id, path)
         continue
@@ -1425,7 +1430,7 @@ function exportedVectorMask(layer: EditorLayer, width: number, height: number): 
   }
 }
 
-function exportedBlendingRanges(layer: EditorLayer): Layer['blendingRanges'] {
+function exportedBlendingRanges(layer: Pick<EditorLayer, 'blendIf'>): Layer['blendingRanges'] {
   if (!layer.blendIf) return undefined
   return {
     compositeGrayBlendSource: [...layer.blendIf.source],
@@ -1658,7 +1663,18 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       signal?.throwIfAborted()
       if (item.layer) return exportLayer(item.layer)
       const group = groups.get(item.group!.id)!
-      return { name: group.name, hidden: !group.visible, opacity: group.opacity / 100, blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode], protected: group.locked ? { position: true, composite: true } : undefined, opened: !group.collapsed, children: await exportChildren(group.id) }
+      return {
+        name: group.name,
+        hidden: !group.visible,
+        opacity: group.opacity / 100,
+        blendMode: group.passThrough ? 'pass through' : studioPsdBlendModes[group.blendMode],
+        protected: group.locked ? { position: true, composite: true } : undefined,
+        opened: !group.collapsed,
+        effects: exportedEffects(group.effects, group.psdEffectsMetadata, group.additionalEffects),
+        blendingRanges: exportedBlendingRanges(group),
+        id: group.psdLayerId,
+        children: await exportChildren(group.id),
+      }
     })
   }
 
