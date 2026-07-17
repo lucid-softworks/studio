@@ -48,6 +48,17 @@ test('Space temporarily pans and modified Space temporarily zooms', async ({ pag
   await expect(brush).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('remembers the active tool across editor loads', async ({ page }) => {
+  const brush = page.getByRole('button', { name: 'Brush tool', exact: true })
+  await brush.click()
+  await expect(brush).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('studio.active-tool:v1'))).toBe('brush')
+
+  await page.reload()
+  await expect(page.getByLabel('Composition canvas')).toHaveAttribute('data-render-revision', /\d+/)
+  await expect(brush).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('Zoom supports canvas clicks, Alt-clicks, scrubby dragging, menu commands, and shortcuts', async ({ page }) => {
   const zoomValue = page.getByTitle('Drag horizontally for scrubby zoom · click to reset')
   const readZoom = async () => Number((await zoomValue.textContent())?.replace('%', ''))

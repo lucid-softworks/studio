@@ -51,6 +51,7 @@ import { ExportWorkspace, type AssetExportSettings } from './components/ExportWo
 import { PrintDialog } from './components/PrintDialog'
 import { desktopBridge, nativeFile, type DesktopNativeFile } from './editor/desktop'
 import type { EditorPerformanceMetrics } from './editor/performance-metrics'
+import { isEditorTool } from './editor/tools'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -128,7 +129,14 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [isProjectSaving, setIsProjectSaving] = useState(false)
   const [editingMaskLayerId, setEditingMaskLayerId] = useState<string | null>(null)
-  const [tool, setTool] = useState<EditorTool>('move')
+  const [tool, setTool] = useState<EditorTool>(() => {
+    try {
+      const savedTool = localStorage.getItem('studio.active-tool:v1')
+      return isEditorTool(savedTool) ? savedTool : 'move'
+    } catch {
+      return 'move'
+    }
+  })
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => { try { return normalizeShortcutMap(JSON.parse(localStorage.getItem('studio.shortcuts:v1') ?? localStorage.getItem('studio.shortcuts') ?? '{}')) } catch { return normalizeShortcutMap({}) } })
   const [editingShortcuts, setEditingShortcuts] = useState(false)
   const [editingScripts, setEditingScripts] = useState(false)
@@ -362,6 +370,9 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
   useEffect(() => {
     try { localStorage.setItem('studio.plugins:v1', JSON.stringify(plugins)) } catch { /* Plugin manifests are optional. */ }
   }, [plugins])
+  useEffect(() => {
+    try { localStorage.setItem('studio.active-tool:v1', tool) } catch { /* Tool preferences are optional. */ }
+  }, [tool])
 
   useEffect(() => {
     try {
