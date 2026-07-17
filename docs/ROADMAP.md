@@ -85,7 +85,6 @@ A feature is complete only when it has:
 - [ ] Match Photopea brush spacing, smoothing, build-up, scatter, pressure, tilt, and stamp interpolation on reference strokes.
 - [ ] Improve mixer-brush wetness, load, mix, flow, canvas sampling, and clean/load behavior.
 - [ ] Improve healing and patch matching across texture, luminosity, edges, transformed layers, and current-and-below sampling.
-- [ ] Add complete dodge/burn range controls and sponge saturate/desaturate behavior.
 - [ ] Add clone-source overlays, multiple sources, flip, offset, rotation, scale, and source presets.
 - [ ] Add Adobe-compatible PAT import/export and verify bitmap pattern transforms.
 

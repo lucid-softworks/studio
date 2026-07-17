@@ -35,6 +35,7 @@ import { MeasurementLogDialog } from './MeasurementLogDialog'
 import { ColorSamplerDialog } from './ColorSamplerDialog'
 import { CountLogDialog } from './CountLogDialog'
 import { NotesDialog } from './NotesDialog'
+import type { ToneRange } from '../editor/retouch'
 
 const defaultCounts: DocumentCounts = { groups: [{ id: 'count-group-1', name: 'Count group 1', color: '#facc15' }], markers: [], activeGroupId: 'count-group-1' }
 
@@ -86,6 +87,10 @@ type ToolPreset = {
   opacity: number
   flow: number
   strength: number
+  toneRange: ToneRange
+  protectTones: boolean
+  spongeMode: 'saturate' | 'desaturate'
+  vibrance: boolean
   dynamics: BrushDynamics
 }
 
@@ -97,7 +102,7 @@ function loadToolPresets(): ToolPreset[] {
       if (!entry || typeof entry !== 'object') return []
       const preset = entry as Partial<ToolPreset>
       if (typeof preset.id !== 'string' || typeof preset.name !== 'string' || typeof preset.tool !== 'string') return []
-      return [{ id: preset.id, name: preset.name.slice(0, 48), tool: preset.tool as EditorTool, brushId: preset.brushId ?? 'round', size: Math.max(2, Math.min(240, preset.size ?? 48)), hardness: Math.max(0, Math.min(100, preset.hardness ?? 80)), opacity: Math.max(1, Math.min(100, preset.opacity ?? 100)), flow: Math.max(1, Math.min(100, preset.flow ?? 100)), strength: Math.max(1, Math.min(100, preset.strength ?? 45)), dynamics: { ...defaultBrushDynamics, ...preset.dynamics } }]
+      return [{ id: preset.id, name: preset.name.slice(0, 48), tool: preset.tool as EditorTool, brushId: preset.brushId ?? 'round', size: Math.max(2, Math.min(240, preset.size ?? 48)), hardness: Math.max(0, Math.min(100, preset.hardness ?? 80)), opacity: Math.max(1, Math.min(100, preset.opacity ?? 100)), flow: Math.max(1, Math.min(100, preset.flow ?? 100)), strength: Math.max(1, Math.min(100, preset.strength ?? 45)), toneRange: preset.toneRange ?? 'midtones', protectTones: preset.protectTones ?? true, spongeMode: preset.spongeMode ?? 'saturate', vibrance: preset.vibrance ?? true, dynamics: { ...defaultBrushDynamics, ...preset.dynamics } }]
     }).slice(0, 64)
   } catch { return [] }
 }
@@ -216,6 +221,10 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const [brushDynamics, setBrushDynamics] = useState<BrushDynamics>(defaultBrushDynamics)
   const [pressureCalibration, setPressureCalibration] = useState({ minimum: 0, maximum: 1, gamma: 1 })
   const [toolStrength, setToolStrength] = useState(45)
+  const [toneRange, setToneRange] = useState<ToneRange>('midtones')
+  const [protectTones, setProtectTones] = useState(true)
+  const [spongeMode, setSpongeMode] = useState<'saturate' | 'desaturate'>('saturate')
+  const [spongeVibrance, setSpongeVibrance] = useState(true)
   const [toolPresets, setToolPresets] = useState<ToolPreset[]>(loadToolPresets)
   const [cloneAligned, setCloneAligned] = useState(true)
   const [cloneSampleMode, setCloneSampleMode] = useState<'current' | 'current-and-below'>('current-and-below')
@@ -249,11 +258,11 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const selectedLocked = selected ? layerIsLocked(document, selected) : false
   const editingMaskLayer = document.layers.find((layer) => layer.id === editingMaskLayerId && layer.id === document.selectedLayerId && layer.maskAssetId)
   const selectionTool = tool === 'marquee' || tool === 'ellipse-select' || tool === 'single-row-select' || tool === 'single-column-select' || tool === 'lasso' || tool === 'polygonal-lasso' || tool === 'magnetic-lasso' || tool === 'magic-wand' || tool === 'object-select'
-  const paintTool = tool === 'brush' || tool === 'pencil' || tool === 'eraser' || tool === 'dodge' || tool === 'burn'
+  const paintTool = tool === 'brush' || tool === 'pencil' || tool === 'eraser'
   const selectedBrush = brushes.find((candidate) => candidate.id === brushId) ?? brushes[0]
   const brush = { ...selectedBrush, spacing: brushSpacing }
   const retouchTool = tool === 'healing' || tool === 'clone-stamp'
-  const pixelRetouchTool = tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'history-brush' || tool === 'pattern-stamp' || tool === 'sponge' || tool === 'blur' || tool === 'sharpen' || tool === 'smudge' ? tool : null
+  const pixelRetouchTool = tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'history-brush' || tool === 'pattern-stamp' || tool === 'dodge' || tool === 'burn' || tool === 'sponge' || tool === 'blur' || tool === 'sharpen' || tool === 'smudge' ? tool : null
   const measurementScale = document.measurementScale ?? { pixelsPerUnit: 1, unit: 'px' }
   const measurementDetails = measurement ? measurementMetrics(measurement, measurementScale) : null
   const measurementAngle = measurementDetails?.angle ?? 0
@@ -482,13 +491,17 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
     setBrushOpacity(preset.opacity)
     setBrushFlow(preset.flow)
     setToolStrength(preset.strength)
+    setToneRange(preset.toneRange)
+    setProtectTones(preset.protectTones)
+    setSpongeMode(preset.spongeMode)
+    setSpongeVibrance(preset.vibrance)
     setBrushDynamics(preset.dynamics)
   }
 
   const saveToolPreset = () => {
     const name = window.prompt('Tool preset name', `${toolNames[tool]} preset`)?.trim().slice(0, 48)
     if (!name) return
-    const preset: ToolPreset = { id: crypto.randomUUID(), name, tool, brushId: brush.id, size: brushSize, hardness: brushHardness, opacity: brushOpacity, flow: brushFlow, strength: toolStrength, dynamics: brushDynamics }
+    const preset: ToolPreset = { id: crypto.randomUUID(), name, tool, brushId: brush.id, size: brushSize, hardness: brushHardness, opacity: brushOpacity, flow: brushFlow, strength: toolStrength, toneRange, protectTones, spongeMode, vibrance: spongeVibrance, dynamics: brushDynamics }
     setToolPresets((current) => [...current, preset].slice(-64))
   }
 
@@ -577,7 +590,10 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
               <input aria-label="Brush size" type="range" min="2" max="240" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} className="studio-range w-20" />
               <span className="w-7 font-mono text-[9px] text-zinc-600">{brushSize}</span>
               {(tool === 'brush' || tool === 'pencil' || tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'pattern-stamp') && <input aria-label="Brush color" type="color" value={foregroundColor} onChange={(event) => onForegroundColorChange(event.target.value)} className="size-6 cursor-pointer rounded border-0 bg-transparent p-0" />}
-              {(retouchTool || pixelRetouchTool || tool === 'dodge' || tool === 'burn') && <><span className="text-[9px] text-zinc-600">Strength</span><input aria-label="Tool strength" type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
+              {(retouchTool || pixelRetouchTool) && <><span className="text-[9px] text-zinc-600">{tool === 'dodge' || tool === 'burn' ? 'Exposure' : 'Strength'}</span><input aria-label={tool === 'dodge' || tool === 'burn' ? 'Tool exposure' : 'Tool strength'} type="range" min="5" max="100" value={toolStrength} onChange={(event) => setToolStrength(Number(event.target.value))} className="studio-range w-16" /><span className="w-7 font-mono text-[9px] text-zinc-600">{toolStrength}%</span></>}
+              {(tool === 'dodge' || tool === 'burn') && <><select aria-label="Tone range" value={toneRange} onChange={(event) => setToneRange(event.target.value as ToneRange)} className="rounded-md border border-white/[0.08] bg-black/25 px-1.5 py-1 text-[9px] text-zinc-400"><option value="shadows">Shadows</option><option value="midtones">Midtones</option><option value="highlights">Highlights</option></select><label className="flex items-center gap-1 text-[9px] text-zinc-600"><input aria-label="Protect tones" type="checkbox" checked={protectTones} onChange={(event) => setProtectTones(event.target.checked)} />Protect tones</label></>}
+              {tool === 'sponge' && <><select aria-label="Sponge mode" value={spongeMode} onChange={(event) => setSpongeMode(event.target.value as typeof spongeMode)} className="rounded-md border border-white/[0.08] bg-black/25 px-1.5 py-1 text-[9px] text-zinc-400"><option value="saturate">Saturate</option><option value="desaturate">Desaturate</option></select><label className="flex items-center gap-1 text-[9px] text-zinc-600"><input aria-label="Sponge vibrance" type="checkbox" checked={spongeVibrance} onChange={(event) => setSpongeVibrance(event.target.checked)} />Vibrance</label></>}
+              {(tool === 'dodge' || tool === 'burn' || tool === 'sponge') && <><span className="text-[9px] text-zinc-600">Flow</span><input aria-label="Tone tool flow" type="range" min="1" max="100" value={brushFlow} onChange={(event) => setBrushFlow(Number(event.target.value))} className="studio-range w-14" /><span className="w-7 font-mono text-[9px] text-zinc-600">{brushFlow}%</span></>}
               {retouchTool && <div className="hidden items-center gap-1 xl:flex"><select aria-label="Clone sample mode" value={cloneSampleMode} onChange={(event) => setCloneSampleMode(event.target.value as typeof cloneSampleMode)} className="rounded-md border border-white/[0.08] bg-black/25 px-1.5 py-1 text-[9px] text-zinc-400"><option value="current">Current</option><option value="current-and-below">Current &amp; below</option></select><label className="flex items-center gap-1 text-[9px] text-zinc-600"><input type="checkbox" checked={cloneAligned} onChange={(event) => setCloneAligned(event.target.checked)} />Aligned</label><label className="flex items-center gap-1 text-[9px] text-zinc-600">∠<input aria-label="Clone source rotation" type="number" min="-180" max="180" value={cloneRotation} onChange={(event) => setCloneRotation(Math.max(-180, Math.min(180, Number(event.target.value))))} className="w-12 rounded border border-white/[0.08] bg-black/25 px-1 py-1 font-mono" /></label><label className="flex items-center gap-1 text-[9px] text-zinc-600">%<input aria-label="Clone source scale" type="number" min="10" max="400" value={cloneScale} onChange={(event) => setCloneScale(Math.max(10, Math.min(400, Number(event.target.value))))} className="w-12 rounded border border-white/[0.08] bg-black/25 px-1 py-1 font-mono" /></label></div>}
             </div>
           )}
@@ -669,10 +685,10 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
             <PerspectiveCropOverlay canvasRef={canvasRef} enabled={tool === 'perspective-crop'} value={perspectiveCrop} onChange={setPerspectiveCrop} />
             <QuickMaskOverlay canvasRef={canvasRef} enabled={quickMask && (tool === 'brush' || tool === 'eraser')} tool={tool === 'eraser' ? 'eraser' : 'brush'} size={brushSize} selection={selection} onChange={setSelection} />
-            {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={tool === 'dodge' || tool === 'burn' ? toolStrength : brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} dynamics={brushDynamics} pressureCalibration={pressureCalibration} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {paintTool && !quickMask && <RasterPaintOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} brush={brush} size={brushSize} color={foregroundColor} hardness={brushHardness} opacity={brushOpacity} flow={brushFlow} pressureSize={pressureSize} pressureOpacity={pressureOpacity} dynamics={brushDynamics} pressureCalibration={pressureCalibration} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {(tool === 'fill' || tool === 'gradient') && <RasterFillOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} color={foregroundColor} secondaryColor={backgroundColor} gradientStops={gradientStops.map((stop, index) => ({ ...stop, color: index === 0 ? foregroundColor : index === gradientStops.length - 1 ? backgroundColor : stop.color }))} tolerance={tolerance} selection={selection} maskAssetId={editingMaskLayer?.maskAssetId ?? undefined} maskLocked={editingMaskLayer?.locked} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             {retouchTool && <CloneStampOverlay canvasRef={canvasRef} document={document} assets={assets} tool={tool} size={brushSize} strength={toolStrength} aligned={cloneAligned} sampleMode={cloneSampleMode} sourceRotation={cloneRotation} sourceScale={cloneScale} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
-            {pixelRetouchTool && <PixelRetouchOverlay canvasRef={canvasRef} document={document} assets={assets} tool={pixelRetouchTool} size={brushSize} strength={toolStrength} color={foregroundColor} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
+            {pixelRetouchTool && <PixelRetouchOverlay canvasRef={canvasRef} document={document} assets={assets} tool={pixelRetouchTool} size={brushSize} strength={toolStrength} flow={brushFlow} color={foregroundColor} toneRange={toneRange} protectTones={protectTones} spongeMode={spongeMode} vibrance={spongeVibrance} selection={selection} locked={selectedLocked} onChange={onRasterChange} onCommit={onRasterCommit} />}
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />

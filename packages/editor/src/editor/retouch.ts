@@ -2,7 +2,8 @@ import { hexToRgba } from './raster'
 import type { PatternSettings } from './types'
 import { bitmapPatternColor } from './patterns'
 
-export type RetouchMode = 'color-replacement' | 'mixer-brush' | 'history-brush' | 'pattern-stamp' | 'sponge' | 'blur' | 'sharpen' | 'smudge'
+export type RetouchMode = 'color-replacement' | 'mixer-brush' | 'history-brush' | 'pattern-stamp' | 'dodge' | 'burn' | 'sponge' | 'blur' | 'sharpen' | 'smudge'
+export type ToneRange = 'shadows' | 'midtones' | 'highlights'
 
 export type RetouchStampOptions = {
   mode: RetouchMode
@@ -13,6 +14,10 @@ export type RetouchStampOptions = {
   mixerColor?: [number, number, number]
   delta?: { x: number; y: number }
   origin?: { x: number; y: number }
+  toneRange?: ToneRange
+  protectTones?: boolean
+  spongeMode?: 'saturate' | 'desaturate'
+  vibrance?: boolean
 }
 
 const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
@@ -61,7 +66,7 @@ export function applyRetouchStamp(image: ImageData, source: ImageData, centerX: 
   for (let y = top; y <= bottom; y += 1) for (let x = left; x <= right; x += 1) {
     const distance = Math.hypot(x - centerX, y - centerY)
     if (distance > radius) continue
-    const feather = Math.min(1, Math.max(0, (1 - distance / radius) * 2)) * strength
+    let feather = Math.min(1, Math.max(0, (1 - distance / radius) * 2)) * strength
     const offset = (y * width + x) * 4
     const current = pixel(image.data, width, height, x, y)
     let next: readonly number[] = current
@@ -74,9 +79,25 @@ export function applyRetouchStamp(image: ImageData, source: ImageData, centerX: 
       next = [mixed[0], mixed[1], mixed[2], current[3]]
     } else if (options.mode === 'history-brush') next = pixel(source.data, width, height, x, y)
     else if (options.mode === 'pattern-stamp') next = [...patternColor(options.pattern, x + (options.origin?.x ?? 0), y + (options.origin?.y ?? 0), replacement.slice(0, 3) as [number, number, number]), current[3]]
+    else if (options.mode === 'dodge' || options.mode === 'burn') {
+      const luminance = current[0] * 0.2126 + current[1] * 0.7152 + current[2] * 0.0722
+      const normalized = luminance / 255
+      const rangeWeight = options.toneRange === 'shadows' ? 1 - normalized : options.toneRange === 'highlights' ? normalized : 1 - Math.abs(normalized * 2 - 1)
+      const amount = (0.15 + rangeWeight * 0.7)
+      if (options.protectTones) {
+        const targetLuminance = options.mode === 'dodge' ? luminance + (252 - luminance) * amount : Math.max(3, luminance * (1 - amount))
+        const requestedRatio = targetLuminance / Math.max(1, luminance)
+        const ratio = options.mode === 'dodge' ? Math.min(requestedRatio, 252 / Math.max(current[0], current[1], current[2], 1)) : requestedRatio
+        next = [current[0] * ratio, current[1] * ratio, current[2] * ratio, current[3]]
+      } else if (options.mode === 'dodge') next = [current[0] + (255 - current[0]) * amount, current[1] + (255 - current[1]) * amount, current[2] + (255 - current[2]) * amount, current[3]]
+      else next = [current[0] * (1 - amount), current[1] * (1 - amount), current[2] * (1 - amount), current[3]]
+    }
     else if (options.mode === 'sponge') {
       const luminance = current[0] * 0.2126 + current[1] * 0.7152 + current[2] * 0.0722
-      next = [luminance + (current[0] - luminance) * 1.8, luminance + (current[1] - luminance) * 1.8, luminance + (current[2] - luminance) * 1.8, current[3]]
+      const chroma = Math.max(current[0], current[1], current[2]) - Math.min(current[0], current[1], current[2])
+      if (options.vibrance && options.spongeMode !== 'desaturate') feather *= 1 - chroma / 255 * 0.75
+      const saturation = options.spongeMode === 'desaturate' ? 0 : 1.8
+      next = [luminance + (current[0] - luminance) * saturation, luminance + (current[1] - luminance) * saturation, luminance + (current[2] - luminance) * saturation, current[3]]
     } else if (options.mode === 'blur') next = blurred(source.data, width, height, x, y)
     else if (options.mode === 'sharpen') {
       const average = blurred(source.data, width, height, x, y)

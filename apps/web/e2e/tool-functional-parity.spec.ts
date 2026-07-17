@@ -119,6 +119,24 @@ test('every direct paint tool changes raster pixels through a live canvas intera
   }
 })
 
+test('tone tools expose range, protection, sponge mode, vibrance, exposure, and flow controls', async ({ page }) => {
+  await openBlankEditor(page)
+  await page.getByRole('button', { name: 'Dodge tool', exact: true }).click()
+  await expect(page.getByLabel('Tone range')).toHaveValue('midtones')
+  await expect(page.getByLabel('Protect tones')).toBeChecked()
+  await expect(page.getByLabel('Tool exposure')).toHaveValue('45')
+  await expect(page.getByLabel('Tone tool flow')).toHaveValue('100')
+  await page.getByLabel('Tone range').selectOption('highlights')
+
+  await page.getByRole('button', { name: 'Burn tool', exact: true }).click()
+  await expect(page.getByLabel('Tone range')).toHaveValue('highlights')
+  await page.getByRole('button', { name: 'Sponge tool', exact: true }).click()
+  await expect(page.getByLabel('Sponge mode')).toHaveValue('saturate')
+  await expect(page.getByLabel('Sponge vibrance')).toBeChecked()
+  await page.getByLabel('Sponge mode').selectOption('desaturate')
+  await expect(page.getByLabel('Sponge mode')).toHaveValue('desaturate')
+})
+
 test('action, crop, measure, hand, and zoom tools produce their canvas results', async ({ page }) => {
   await page.goto('/app?benchmark=2k')
   const canvas = page.getByLabel('Composition canvas')

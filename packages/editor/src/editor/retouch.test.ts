@@ -46,6 +46,36 @@ describe('local retouch engine', () => {
     expect(sampleAverageColor(source, 2, 2, 1)[0]).toBeGreaterThan(0)
   })
 
+  it('targets tonal ranges while dodge and burn preserve protected color ratios', () => {
+    const darkShadow = solid(48, 24, 12)
+    const darkHighlight = solid(48, 24, 12)
+    applyRetouchStamp(darkShadow, solid(0, 0, 0), 2, 2, 2, { mode: 'dodge', color: '#000000', strength: 100, pattern, toneRange: 'shadows', protectTones: true })
+    applyRetouchStamp(darkHighlight, solid(0, 0, 0), 2, 2, 2, { mode: 'dodge', color: '#000000', strength: 100, pattern, toneRange: 'highlights', protectTones: true })
+    expect(darkShadow.data[48]).toBeGreaterThan(darkHighlight.data[48])
+    expect(darkShadow.data[48] / darkShadow.data[49]).toBeCloseTo(2, 1)
+
+    const lightHighlight = solid(220, 180, 120)
+    const lightShadow = solid(220, 180, 120)
+    applyRetouchStamp(lightHighlight, solid(0, 0, 0), 2, 2, 2, { mode: 'burn', color: '#000000', strength: 100, pattern, toneRange: 'highlights', protectTones: true })
+    applyRetouchStamp(lightShadow, solid(0, 0, 0), 2, 2, 2, { mode: 'burn', color: '#000000', strength: 100, pattern, toneRange: 'shadows', protectTones: true })
+    expect(lightHighlight.data[48]).toBeLessThan(lightShadow.data[48])
+  })
+
+  it('supports saturate, desaturate, and vibrance-aware sponge behavior', () => {
+    const saturated = solid(180, 100, 100)
+    const desaturated = solid(180, 100, 100)
+    applyRetouchStamp(saturated, solid(0, 0, 0), 2, 2, 2, { mode: 'sponge', color: '#000000', strength: 100, pattern, spongeMode: 'saturate' })
+    applyRetouchStamp(desaturated, solid(0, 0, 0), 2, 2, 2, { mode: 'sponge', color: '#000000', strength: 100, pattern, spongeMode: 'desaturate' })
+    expect(saturated.data[48] - saturated.data[49]).toBeGreaterThan(80)
+    expect(desaturated.data[48] - desaturated.data[49]).toBe(0)
+
+    const vivid = solid(240, 20, 20)
+    const normal = solid(240, 20, 20)
+    applyRetouchStamp(vivid, solid(0, 0, 0), 2, 2, 2, { mode: 'sponge', color: '#000000', strength: 100, pattern, spongeMode: 'saturate', vibrance: true })
+    applyRetouchStamp(normal, solid(0, 0, 0), 2, 2, 2, { mode: 'sponge', color: '#000000', strength: 100, pattern, spongeMode: 'saturate', vibrance: false })
+    expect(vivid.data[49]).toBeGreaterThan(normal.data[49])
+  })
+
   it.each(['blur', 'pattern-stamp'] as const)('matches full-surface %s output when processing a padded dirty region', (mode) => {
     const original = new ImageData(12, 12)
     for (let y = 0; y < original.height; y += 1) for (let x = 0; x < original.width; x += 1) {

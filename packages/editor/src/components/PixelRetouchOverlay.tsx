@@ -2,7 +2,7 @@ import { Fragment, useRef, type PointerEvent as ReactPointerEvent, type RefObjec
 import { type RasterEdit, type RasterRegion } from '../editor/raster'
 import { captureRasterTiles, createRasterTileSnapshot, rasterSnapshotRegion, type RasterTileSnapshot } from '../editor/raster-tiles'
 import { canvasToSource, constrainRasterRegion, resolveRasterTarget, type RasterTarget } from '../editor/raster-target'
-import { applyRetouchStamp, sampleAverageColor, type RetouchMode } from '../editor/retouch'
+import { applyRetouchStamp, sampleAverageColor, type RetouchMode, type ToneRange } from '../editor/retouch'
 import { geometryTransformIsIdentity } from '../editor/transform'
 import type { SelectionState } from '../editor/selection'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -16,7 +16,12 @@ type Props = {
   tool: RetouchMode
   size: number
   strength: number
+  flow: number
   color: string
+  toneRange: ToneRange
+  protectTones: boolean
+  spongeMode: 'saturate' | 'desaturate'
+  vibrance: boolean
   selection: SelectionState | null
   locked?: boolean
   onChange: (assetId: string, region?: RasterRegion) => void
@@ -40,7 +45,7 @@ type Stroke = {
   previewing: boolean
 }
 
-export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, strength, color, selection, locked, onChange, onCommit }: Props) {
+export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, strength, flow, color, toneRange, protectTones, spongeMode, vibrance, selection, locked, onChange, onCommit }: Props) {
   const strokeRef = useRef<Stroke | null>(null)
   const historyRef = useRef<{ assetId: string; snapshot: RasterTileSnapshot } | null>(null)
   const canvas = canvasRef.current
@@ -75,12 +80,16 @@ export function PixelRetouchOverlay({ canvasRef, document, assets, tool, size, s
       const region = applyRetouchStamp(after, source, x - left, y - top, stroke.radius, {
         mode: tool,
         color,
-        strength,
+        strength: strength * flow / 100,
         pattern: document.pattern,
         targetColor: stroke.targetColor,
         mixerColor: stroke.mixerColor,
         delta: { x: x - previous.x, y: y - previous.y },
         origin: { x: left, y: top },
+        toneRange,
+        protectTones,
+        spongeMode,
+        vibrance,
       })
       context.putImageData(after, left, top, region.x, region.y, region.width, region.height)
       stroke.minX = Math.min(stroke.minX, left + region.x)
