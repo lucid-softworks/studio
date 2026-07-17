@@ -89,7 +89,6 @@ A feature is complete only when it has:
 
 ### Selections and masks
 
-- [ ] Improve magnetic-lasso edge following, anchor editing, frequency, contrast, and width controls.
 - [ ] Improve object selection and non-AI foreground extraction for difficult edges, holes, transparency, hair, and repeated colors.
 - [ ] Complete Select and Mask brush, edge refinement, view modes, output modes, and decontamination behavior.
 - [ ] Add channel-based calculations and Apply Image-style selection/mask workflows.

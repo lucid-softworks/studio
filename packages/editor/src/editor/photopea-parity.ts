@@ -20,7 +20,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   'single-column-select': validated('Exact one-pixel geometry and replace, add, subtract, and intersect behavior are covered independently of document depth.', 'packages/editor/src/editor/selection.test.ts', 'apps/web/e2e/navigation-parity.spec.ts'),
   lasso: partial('Needs option-bar, smoothing, modifier, and selection-edge parity.'),
   'polygonal-lasso': partial('Needs anchor editing, close/cancel, keyboard, and modifier parity.'),
-  'magnetic-lasso': partial('Needs width, contrast, frequency, anchor editing, and stronger edge following.'),
+  'magnetic-lasso': partial('Width, contrast, frequency, automatic edge anchors, anchor dragging/deletion, keyboard completion, and cancellation are implemented; complex low-contrast reference masks and stylus modifiers remain to validate.'),
   'magic-wand': partial('Needs contiguous/global controls, sample modes, anti-alias parity, and reference-mask fixtures.'),
   'object-select': partial('Needs stronger non-AI foreground extraction, region modes, and difficult-edge reference fixtures.', 'visually-inaccurate'),
   crop: partial('Needs presets, ratio/resolution controls, straighten integration, overlays, and delete-pixels behavior.'),
