@@ -1,4 +1,4 @@
-import { initializeCanvas, readPsd, writePsdSegments, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
+import { initializeCanvas, readPsd, writePsdSegments, type Annotation, type Color, type Filter, type ImageResources, type Layer, type LayerMaskData, type LinkedFile, type PlacedLayer, type Psd } from 'ag-psd'
 import { defaultLayerEffects, normalizeLayerEffects } from './effects'
 import { defaultLayerFilters, normalizeLayerFilters } from './filters'
 import { bakeIccColorLookup } from './icc'
@@ -1026,6 +1026,7 @@ export function psdImportWarnings(psd: Psd, previewedColorLookups = new Set<Laye
 
   if (psd.bitsPerChannel && psd.bitsPerChannel !== 8) add('depth', `${psd.bitsPerChannel}-bit source samples were preserved; the canvas preview uses an 8-bit display conversion`)
   if (psd.colorMode !== undefined && psd.colorMode !== 3) add('color-mode', 'The source color mode was converted to RGB')
+  if (psd.annotations?.some((annotation) => annotation.type === 'sound')) add('sound-annotations', 'Sound annotations were preserved for export but are not editable')
   visit(psd.children ?? [])
 
   return [...warnings.values()].map(({ message, paths }) => {
@@ -1313,6 +1314,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       psdMetadata: {
         imageResources: preservedImageResources(psd.imageResources),
         linkedFiles: psd.linkedFiles?.map((file) => serializePsdValue(file)),
+        annotations: psd.annotations?.flatMap((annotation) => annotation.type === 'sound' ? [serializePsdValue(annotation)] : []),
       },
       fileMetadata: {
         sourceFormat: name.toLocaleLowerCase().endsWith('.psb') ? 'psb' : 'psd',
@@ -1320,6 +1322,21 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
         xmp: psd.imageResources?.xmpMetadata,
         importedAt: new Date().toISOString(),
       },
+      notes: (psd.annotations ?? []).flatMap((annotation, index) => annotation.type === 'text' && typeof annotation.data === 'string' ? [{
+        id: createId(),
+        title: annotation.name || `Note ${index + 1}`,
+        content: annotation.data,
+        author: annotation.author || '',
+        color: colorHex(annotation.color),
+        x: annotation.iconLocation.left,
+        y: annotation.iconLocation.top,
+        popupX: annotation.popupLocation.left,
+        popupY: annotation.popupLocation.top,
+        popupWidth: Math.max(120, annotation.popupLocation.right - annotation.popupLocation.left),
+        popupHeight: Math.max(80, annotation.popupLocation.bottom - annotation.popupLocation.top),
+        open: annotation.open,
+        date: annotation.date || '',
+      }] : []),
     },
   }
 }
@@ -1734,8 +1751,23 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
     xmpMetadata: documentState.fileMetadata?.xmp ?? preservedResources.xmpMetadata,
   } : undefined
   const linkedFiles = documentState.psdMetadata?.linkedFiles?.map((file) => revivePsdValue(file) as LinkedFile)
+  const preservedAnnotations = documentState.psdMetadata?.annotations?.map((annotation) => revivePsdValue(annotation) as Annotation) ?? []
+  const annotations: Annotation[] = [
+    ...preservedAnnotations,
+    ...(documentState.notes ?? []).map((note) => ({
+      type: 'text' as const,
+      open: note.open,
+      iconLocation: { left: Math.round(note.x), top: Math.round(note.y), right: Math.round(note.x + 32), bottom: Math.round(note.y + 32) },
+      popupLocation: { left: Math.round(note.popupX), top: Math.round(note.popupY), right: Math.round(note.popupX + note.popupWidth), bottom: Math.round(note.popupY + note.popupHeight) },
+      color: psdColor(note.color),
+      author: note.author,
+      name: note.title,
+      date: note.date,
+      data: note.content,
+    })),
+  ]
   signal?.throwIfAborted()
-  const psd: Psd = { width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles }
+  const psd: Psd = { width, height, colorMode: 3, bitsPerChannel: 8, imageData, children, imageResources, linkedFiles, annotations: annotations.length ? annotations : undefined }
   const segments = await writePsdInWorker(psd, psb, transferableBuffers(children), signal)
   signal?.throwIfAborted()
   const channelSources = (documentState.channels ?? []).flatMap((channel) => {

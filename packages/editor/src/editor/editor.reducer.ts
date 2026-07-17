@@ -102,6 +102,8 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, colorSamplers: action.samplers }
     case 'set-counts':
       return { ...state, counts: action.counts }
+    case 'set-notes':
+      return { ...state, notes: action.notes }
     case 'replace-document':
       return action.document
     case 'add-layer': {

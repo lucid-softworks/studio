@@ -21,6 +21,7 @@ const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
   'set-measurement-scale': 'Calibrate measurements',
   'set-color-samplers': 'Edit color samplers',
   'set-counts': 'Edit count records',
+  'set-notes': 'Edit annotations',
   'replace-document': 'Replace document',
   'add-layer': 'Add layer',
   'replace-layer': 'Rasterize layer',

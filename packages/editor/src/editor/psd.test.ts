@@ -679,6 +679,34 @@ describe('PSD layer ordering', () => {
     })
   })
 
+  it('imports editable text annotations and preserves unsupported sound annotations', async () => {
+    const imageData = new ImageData(4, 4)
+    imageData.data.fill(255)
+    const source: Psd = {
+      width: 4,
+      height: 4,
+      imageData,
+      children: [{ name: 'Pixels', left: 0, top: 0, right: 4, bottom: 4, imageData }],
+      annotations: [
+        { type: 'text', open: true, iconLocation: { left: 1, top: 1, right: 3, bottom: 3 }, popupLocation: { left: 20, top: 30, right: 300, bottom: 210 }, color: { r: 250, g: 204, b: 21 }, author: 'Studio', name: 'Cleanup', date: '2026-07-17T12:00:00.000Z', data: 'Remove the crease.' },
+        { type: 'sound', open: false, iconLocation: { left: 2, top: 2, right: 3, bottom: 3 }, popupLocation: { left: 0, top: 0, right: 120, bottom: 80 }, color: { r: 255, g: 255, b: 255 }, author: '', name: 'Audio', date: '', data: Uint8Array.from([1, 2, 3, 4]) },
+      ],
+    }
+
+    const imported = await importPsdBuffer(writePsd(source, { noBackground: true }), 'annotations.psd')
+    expect(imported.document.notes).toEqual([expect.objectContaining({ title: 'Cleanup', content: 'Remove the crease.', author: 'Studio', color: '#facc15', x: 1, y: 1, open: true })])
+    expect(imported.document.psdMetadata?.annotations).toEqual([expect.objectContaining({ type: 'sound', data: { __studioBytes: [1, 2, 3, 4] } })])
+    expect(imported.warnings).toContain('Sound annotations were preserved for export but are not editable')
+
+    const exported = await exportPsdDocument(imported.document, imported.assets)
+    const decoded = readPsd(await exported.arrayBuffer(), { useImageData: true, skipThumbnail: true })
+    expect(decoded.annotations?.find((annotation) => annotation.type === 'text')).toMatchObject({ name: 'Cleanup', author: 'Studio', data: 'Remove the crease.', open: true })
+    const sound = decoded.annotations?.find((annotation) => annotation.type === 'sound')
+    expect(sound?.data).toBeInstanceOf(Uint8Array)
+    if (!(sound?.data instanceof Uint8Array)) throw new Error('Expected the sound annotation payload to remain binary.')
+    expect([...sound.data]).toEqual([1, 2, 3, 4])
+  })
+
   it('maps externally linked placed layers to linked smart-object sources', () => {
     const linkedId = '20953ddb-9391-11ec-b4f1-c15674f50bc5'
     expect(psdSmartObjectSource(

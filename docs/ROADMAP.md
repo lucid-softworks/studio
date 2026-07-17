@@ -79,7 +79,6 @@ A feature is complete only when it has:
 
 ### Measurement and annotation
 
-- [ ] Add notes and annotations that persist in Studio projects and compatible external documents.
 
 ### Vectorization
 

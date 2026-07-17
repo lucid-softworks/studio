@@ -34,6 +34,7 @@ import { measurementMetrics } from '../editor/measurements'
 import { MeasurementLogDialog } from './MeasurementLogDialog'
 import { ColorSamplerDialog } from './ColorSamplerDialog'
 import { CountLogDialog } from './CountLogDialog'
+import { NotesDialog } from './NotesDialog'
 
 const defaultCounts: DocumentCounts = { groups: [{ id: 'count-group-1', name: 'Count group 1', color: '#facc15' }], markers: [], activeGroupId: 'count-group-1' }
 
@@ -117,6 +118,7 @@ const toolNames: Record<EditorTool, string> = {
   eyedropper: 'Eyedropper',
   measure: 'Measure',
   count: 'Count',
+  note: 'Note',
   healing: 'Healing Brush',
   'clone-stamp': 'Clone Stamp',
   brush: 'Brush',
@@ -168,6 +170,7 @@ function hintForTool(tool: EditorTool, context: { hasCrop: boolean; hasSelection
     case 'eyedropper': return 'Click the canvas to sample a foreground colour'
     case 'measure': return 'Drag between two points to measure their heading · Shift snaps to 45° · straighten the selected layer from the options bar'
     case 'count': return 'Click the canvas to add a numbered marker to the active count group'
+    case 'note': return 'Click the canvas to place a persistent text annotation'
     case 'fill': return 'Click a contiguous area on the selected raster layer to fill it'
     case 'gradient': return 'Drag across the selected raster layer to paint a linear gradient'
     case 'healing':
@@ -227,6 +230,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const [measurementLogOpen, setMeasurementLogOpen] = useState(false)
   const [colorSamplerDialogOpen, setColorSamplerDialogOpen] = useState(false)
   const [countLogOpen, setCountLogOpen] = useState(false)
+  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [viewsLinked, setViewsLinked] = useState(true)
@@ -515,6 +519,12 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
     dispatch({ type: 'set-counts', counts: { ...counts, markers: [...counts.markers, { id: createId(), groupId: group.id, x: position.x, y: position.y, label: `${group.name} ${groupNumber}` }].slice(-10_000) } })
   }
 
+  const addNote = (position: Position) => {
+    const notes = document.notes ?? []
+    dispatch({ type: 'set-notes', notes: [...notes, { id: createId(), title: `Note ${notes.length + 1}`, content: '', author: '', color: '#facc15', x: position.x, y: position.y, popupX: position.x + 24, popupY: position.y + 24, popupWidth: 280, popupHeight: 180, open: true, date: new Date().toISOString() }].slice(-1000) })
+    setNotesDialogOpen(true)
+  }
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (tool !== 'hand' || event.button !== 0) return
     panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }
@@ -581,6 +591,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
           )}
           {tool === 'eyedropper' && <button type="button" onClick={() => setColorSamplerDialogOpen(true)} className="rounded-md border border-cyan-300/15 bg-cyan-300/[0.04] px-2 py-1.5 text-[9px] text-cyan-100/70">Samplers ({document.colorSamplers?.length ?? 0}) · Shift-click to add</button>}
           {tool === 'count' && <div className="flex items-center gap-2"><select aria-label="Active count group" value={counts.activeGroupId} onChange={(event) => dispatch({ type: 'set-counts', counts: { ...counts, activeGroupId: event.target.value } }, { groupKey: 'count-records' })} className="rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none">{counts.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select><span className="font-mono text-[9px] text-zinc-600">{counts.markers.filter((marker) => marker.groupId === counts.activeGroupId).length}</span><button type="button" onClick={() => setCountLogOpen(true)} className="rounded-md border border-yellow-300/15 bg-yellow-300/[0.04] px-2 py-1.5 text-[9px] text-yellow-100/70">Records ({counts.markers.length})</button></div>}
+          {tool === 'note' && <button type="button" onClick={() => setNotesDialogOpen(true)} className="rounded-md border border-yellow-300/15 bg-yellow-300/[0.04] px-2 py-1.5 text-[9px] text-yellow-100/70">Notes ({document.notes?.length ?? 0}) · click canvas to add</button>}
           {(tool === 'magic-wand' || tool === 'fill') && <label className="hidden items-center gap-2 text-[9px] text-zinc-600 xl:flex"><span>Tolerance</span><input aria-label="Tolerance" type="range" min="0" max="128" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} className="studio-range w-16" /><span className="w-5 font-mono">{tolerance}</span></label>}
           {selectionTool && (
             <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 lg:flex">
@@ -665,7 +676,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
-            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} samplers={document.colorSamplers} counts={counts} onColorSample={sampleColor} onAddCount={addCount} onAddText={(position, paragraphBox) => onAddText(position, foregroundColor, paragraphBox)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
+            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} samplers={document.colorSamplers} counts={counts} notes={document.notes} onColorSample={sampleColor} onAddCount={addCount} onAddNote={addNote} onAddText={(position, paragraphBox) => onAddText(position, foregroundColor, paragraphBox)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
             </div>
           </div>
           {splitView && <div className="relative flex min-w-0 items-center justify-center overflow-hidden rounded-md border border-white/[0.08] bg-black/20 p-3">
@@ -695,6 +706,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
       {measurementLogOpen && <MeasurementLogDialog measurements={document.measurements ?? []} scale={measurementScale} onMeasurementsChange={(measurements) => dispatch({ type: 'set-measurements', measurements }, { groupKey: 'measurement-log' })} onScaleChange={(scale) => dispatch({ type: 'set-measurement-scale', scale }, { groupKey: 'measurement-scale' })} onClose={() => { endHistoryGroup(); setMeasurementLogOpen(false) }} />}
       {colorSamplerDialogOpen && <ColorSamplerDialog samplers={document.colorSamplers ?? []} onChange={(samplers) => dispatch({ type: 'set-color-samplers', samplers }, { groupKey: 'color-samplers' })} onClose={() => { endHistoryGroup(); setColorSamplerDialogOpen(false) }} />}
       {countLogOpen && <CountLogDialog counts={counts} onChange={(nextCounts) => dispatch({ type: 'set-counts', counts: nextCounts }, { groupKey: 'count-records' })} onClose={() => { endHistoryGroup(); setCountLogOpen(false) }} />}
+      {notesDialogOpen && <NotesDialog notes={document.notes ?? []} onChange={(notes) => dispatch({ type: 'set-notes', notes }, { groupKey: 'notes' })} onClose={() => { endHistoryGroup(); setNotesDialogOpen(false) }} />}
     </section>
   )
 }

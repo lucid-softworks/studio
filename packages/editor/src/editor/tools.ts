@@ -14,6 +14,7 @@ export const editorToolIds = [
   'eyedropper',
   'measure',
   'count',
+  'note',
   'healing',
   'clone-stamp',
   'brush',

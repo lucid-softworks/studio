@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { countMarkerNumber } from '../editor/counts'
-import type { DocumentColorSampler, DocumentCounts, Position, ShapeKind } from '../editor/types'
+import type { DocumentColorSampler, DocumentCounts, DocumentNote, Position, ShapeKind } from '../editor/types'
 import type { EditorTool } from './ToolRail'
 
 type CanvasActionOverlayProps = {
@@ -8,22 +8,25 @@ type CanvasActionOverlayProps = {
   tool: EditorTool
   samplers?: readonly DocumentColorSampler[]
   counts?: DocumentCounts
+  notes?: readonly DocumentNote[]
   onColorSample: (color: string, position: Position, persistent: boolean) => void
   onAddCount: (position: Position) => void
+  onAddNote: (position: Position) => void
   onAddText: (position: Position, paragraphBox?: { width: number; height: number }) => void
   onAddShape: (shape: ShapeKind, position: Position) => void
   onZoom: (direction: 'in' | 'out') => void
 }
 
-const actionTools = new Set<EditorTool>(['eyedropper', 'count', 'text', 'rectangle', 'ellipse', 'zoom'])
+const actionTools = new Set<EditorTool>(['eyedropper', 'count', 'note', 'text', 'rectangle', 'ellipse', 'zoom'])
 const emptyColorSamplers: readonly DocumentColorSampler[] = []
 const emptyCounts: DocumentCounts = { groups: [], markers: [], activeGroupId: '' }
+const emptyNotes: readonly DocumentNote[] = []
 
 function toHex(value: number) {
   return value.toString(16).padStart(2, '0')
 }
 
-export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, counts = emptyCounts, onColorSample, onAddCount, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
+export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, counts = emptyCounts, notes = emptyNotes, onColorSample, onAddCount, onAddNote, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
   const textStartRef = useRef<Position | null>(null)
   const enabled = actionTools.has(tool)
   const cursor = tool === 'text' ? 'text' : tool === 'zoom' ? 'zoom-in' : 'crosshair'
@@ -58,6 +61,11 @@ export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamp
 
     if (tool === 'count') {
       onAddCount(position)
+      return
+    }
+
+    if (tool === 'note') {
+      onAddNote(position)
       return
     }
 
@@ -104,6 +112,7 @@ export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamp
         const color = group?.color ?? '#facc15'
         return <g key={marker.id} transform={`translate(${marker.x} ${marker.y})`}><circle r="13" fill="rgba(9,9,11,.88)" stroke={color} strokeWidth="3" /><text y="4" textAnchor="middle" fill={color} fontSize="10" fontWeight="800">{countMarkerNumber(counts.markers, marker)}</text>{marker.label && <text x="18" y="4" fill={color} fontSize="10" fontWeight="600" paintOrder="stroke" stroke="rgba(9,9,11,.9)" strokeWidth="3">{marker.label}</text>}</g>
       })}</g>
+      <g aria-hidden="true" pointerEvents="none">{notes.map((note, index) => <g key={note.id} transform={`translate(${note.x} ${note.y})`}><path d="M-12-14H9l5 5v23h-26z" fill={note.color} stroke="rgba(9,9,11,.9)" strokeWidth="2" /><path d="M9-14v5h5" fill="none" stroke="rgba(9,9,11,.65)" strokeWidth="1.5" /><text y="6" textAnchor="middle" fill="#18181b" fontSize="10" fontWeight="800">{index + 1}</text>{note.open && <g transform="translate(20 -14)"><rect width={Math.min(note.popupWidth, 360)} height={Math.min(note.popupHeight, 160)} rx="8" fill="rgba(24,24,27,.96)" stroke={note.color} strokeWidth="2" /><text x="10" y="18" fill={note.color} fontSize="10" fontWeight="700">{note.title}</text><text x="10" y="35" fill="#a1a1aa" fontSize="9">{note.content.slice(0, 48)}</text></g>}</g>)}</g>
     </svg>
   )
 }

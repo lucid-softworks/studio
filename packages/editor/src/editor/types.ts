@@ -78,6 +78,7 @@ export type DocumentColorSettings = { workingProfile?: IccProfileReference; proo
 export type PsdDocumentMetadata = {
   imageResources?: SerializedPsdValue
   linkedFiles?: SerializedPsdValue[]
+  annotations?: SerializedPsdValue[]
 }
 
 export type DocumentFileMetadata = {
@@ -114,6 +115,7 @@ export type DocumentColorSampler = { id: string; x: number; y: number; color: st
 export type DocumentCountGroup = { id: string; name: string; color: string }
 export type DocumentCountMarker = { id: string; groupId: string; x: number; y: number; label: string }
 export type DocumentCounts = { groups: DocumentCountGroup[]; markers: DocumentCountMarker[]; activeGroupId: string }
+export type DocumentNote = { id: string; title: string; content: string; author: string; color: string; x: number; y: number; popupX: number; popupY: number; popupWidth: number; popupHeight: number; open: boolean; date: string }
 
 export type BaseLayer = {
   id: string
@@ -420,6 +422,7 @@ export type EditorDocument = {
   measurementScale?: DocumentMeasurementScale
   colorSamplers?: DocumentColorSampler[]
   counts?: DocumentCounts
+  notes?: DocumentNote[]
 }
 
 export type LayerPatch = Partial<{
@@ -525,6 +528,7 @@ export type DocumentAction =
   | { type: 'set-measurement-scale'; scale: DocumentMeasurementScale }
   | { type: 'set-color-samplers'; samplers: DocumentColorSampler[] }
   | { type: 'set-counts'; counts: DocumentCounts }
+  | { type: 'set-notes'; notes: DocumentNote[] }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

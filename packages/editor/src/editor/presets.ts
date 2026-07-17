@@ -51,6 +51,7 @@ export const initialDocument: EditorDocument = {
   measurementScale: { pixelsPerUnit: 1, unit: 'px' },
   colorSamplers: [],
   counts: { groups: [{ id: 'count-group-1', name: 'Count group 1', color: '#facc15' }], markers: [], activeGroupId: 'count-group-1' },
+  notes: [],
 }
 
 export function createId() {
