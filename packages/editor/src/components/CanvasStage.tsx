@@ -29,7 +29,7 @@ import { QuickMaskOverlay } from './QuickMaskOverlay'
 import { PixelRetouchOverlay } from './PixelRetouchOverlay'
 import type { GradientStop } from '../editor/gradients'
 import { commandForEvent, type ShortcutMap } from '../editor/shortcuts'
-import { documentRegionToSourceRegion } from '../editor/raster-target'
+import { canvasToSource, documentRegionToSourceRegion, resolveRasterTarget } from '../editor/raster-target'
 import { measurementMetrics } from '../editor/measurements'
 import { MeasurementLogDialog } from './MeasurementLogDialog'
 import { ColorSamplerDialog } from './ColorSamplerDialog'
@@ -246,6 +246,8 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const [measurement, setMeasurement] = useState<Measurement | null>(null)
   const [measurementLogOpen, setMeasurementLogOpen] = useState(false)
   const [colorSamplerDialogOpen, setColorSamplerDialogOpen] = useState(false)
+  const [eyedropperSampleSize, setEyedropperSampleSize] = useState(1)
+  const [eyedropperSampleMode, setEyedropperSampleMode] = useState<'composite' | 'current'>('composite')
   const [countLogOpen, setCountLogOpen] = useState(false)
   const [notesDialogOpen, setNotesDialogOpen] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
@@ -535,7 +537,39 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
     setMeasurement(null)
   }
 
-  const sampleColor = (color: string, position: Position, persistent: boolean) => {
+  const sampleColor = (position: Position, persistent: boolean) => {
+    const composition = canvasRef.current
+    if (!composition) return
+    let sampleCanvas: HTMLCanvasElement = composition
+    let samplePosition = position
+    let sampleSize = eyedropperSampleSize
+    if (eyedropperSampleMode === 'current') {
+      const target = resolveRasterTarget(composition, document, assets)
+      if (!target) return
+      sampleCanvas = target.surface
+      samplePosition = canvasToSource(position, target)
+      sampleSize = Math.max(1, Math.round(eyedropperSampleSize * target.surface.width / Math.max(1, target.bounds.width)))
+    }
+    const context = sampleCanvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return
+    if (samplePosition.x < 0 || samplePosition.y < 0 || samplePosition.x >= sampleCanvas.width || samplePosition.y >= sampleCanvas.height) return
+    const radius = Math.floor(sampleSize / 2)
+    const left = Math.max(0, Math.floor(samplePosition.x) - radius)
+    const top = Math.max(0, Math.floor(samplePosition.y) - radius)
+    const width = Math.max(1, Math.min(sampleCanvas.width - left, sampleSize))
+    const height = Math.max(1, Math.min(sampleCanvas.height - top, sampleSize))
+    const pixels = context.getImageData(left, top, width, height).data
+    const totals = [0, 0, 0]
+    let alphaTotal = 0
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      const alpha = pixels[offset + 3] / 255
+      totals[0] += pixels[offset] * alpha
+      totals[1] += pixels[offset + 1] * alpha
+      totals[2] += pixels[offset + 2] * alpha
+      alphaTotal += alpha
+    }
+    if (!alphaTotal) return
+    const color = `#${totals.map((total) => Math.round(total / alphaTotal).toString(16).padStart(2, '0')).join('')}`
     onForegroundColorChange(color)
     if (!persistent) return
     const samplers = document.colorSamplers ?? []
@@ -623,6 +657,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
             </label>
           )}
           {tool === 'eyedropper' && <button type="button" onClick={() => setColorSamplerDialogOpen(true)} className="rounded-md border border-cyan-300/15 bg-cyan-300/[0.04] px-2 py-1.5 text-[9px] text-cyan-100/70">Samplers ({document.colorSamplers?.length ?? 0}) · Shift-click to add</button>}
+          {tool === 'eyedropper' && <div className="hidden items-center gap-2 text-[9px] text-zinc-600 lg:flex"><select aria-label="Eyedropper sample size" value={eyedropperSampleSize} onChange={(event) => setEyedropperSampleSize(Number(event.target.value))} className="rounded-md border border-white/[0.08] bg-black/25 px-1.5 py-1 text-zinc-400">{[1, 3, 5, 11, 31, 51, 101].map((size) => <option key={size} value={size}>{size === 1 ? 'Point sample' : `${size} × ${size} average`}</option>)}</select><select aria-label="Eyedropper sample mode" value={eyedropperSampleMode} onChange={(event) => setEyedropperSampleMode(event.target.value as typeof eyedropperSampleMode)} className="rounded-md border border-white/[0.08] bg-black/25 px-1.5 py-1 text-zinc-400"><option value="composite">All layers</option><option value="current">Current layer</option></select></div>}
           {tool === 'count' && <div className="flex items-center gap-2"><select aria-label="Active count group" value={counts.activeGroupId} onChange={(event) => dispatch({ type: 'set-counts', counts: { ...counts, activeGroupId: event.target.value } }, { groupKey: 'count-records' })} className="rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[9px] text-zinc-400 outline-none">{counts.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select><span className="font-mono text-[9px] text-zinc-600">{counts.markers.filter((marker) => marker.groupId === counts.activeGroupId).length}</span><button type="button" onClick={() => setCountLogOpen(true)} className="rounded-md border border-yellow-300/15 bg-yellow-300/[0.04] px-2 py-1.5 text-[9px] text-yellow-100/70">Records ({counts.markers.length})</button></div>}
           {tool === 'note' && <button type="button" onClick={() => setNotesDialogOpen(true)} className="rounded-md border border-yellow-300/15 bg-yellow-300/[0.04] px-2 py-1.5 text-[9px] text-yellow-100/70">Notes ({document.notes?.length ?? 0}) · click canvas to add</button>}
           {(tool === 'magic-wand' || tool === 'fill') && <label className="hidden items-center gap-2 text-[9px] text-zinc-600 xl:flex"><span>Tolerance</span><input aria-label="Tolerance" type="range" min="0" max="128" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} className="studio-range w-16" /><span className="w-5 font-mono">{tolerance}</span></label>}

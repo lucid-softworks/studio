@@ -25,7 +25,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   'object-select': partial('Needs stronger non-AI foreground extraction, region modes, and difficult-edge reference fixtures.', 'visually-inaccurate'),
   crop: partial('Needs presets, ratio/resolution controls, straighten integration, overlays, and delete-pixels behavior.'),
   'perspective-crop': partial('Needs grid, numeric controls, source-preserving behavior, and broader interaction fixtures.'),
-  eyedropper: partial('Persistent composited-color samplers with RGB, HSL, and CMYK readouts are covered; point-average sizes and current-layer-only sampling remain.'),
+  eyedropper: partial('Point and 3×3 through 101×101 averages, all-layer and transformed current-raster-layer sampling, plus persistent RGB, HSL, and CMYK samplers are covered; explicit layer targeting and non-raster current-layer sampling remain.'),
   measure: validated('Calibrated multi-line records persist in the document, remain visible on canvas, drive Straighten, and export through the measurement log as CSV.', 'packages/editor/src/editor/measurements.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   count: validated('Persistent numbered markers support named color-coded groups, editable labels, canvas overlays, project round-trips, undo, and CSV export.', 'packages/editor/src/editor/counts.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   note: validated('Persistent notes expose editable title, content, author, color, and popup state and round-trip as Photoshop text annotations in PSD/PSB.', 'packages/editor/src/editor/psd.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),

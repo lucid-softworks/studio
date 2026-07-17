@@ -9,7 +9,7 @@ type CanvasActionOverlayProps = {
   samplers?: readonly DocumentColorSampler[]
   counts?: DocumentCounts
   notes?: readonly DocumentNote[]
-  onColorSample: (color: string, position: Position, persistent: boolean) => void
+  onColorSample: (position: Position, persistent: boolean) => void
   onAddCount: (position: Position) => void
   onAddNote: (position: Position) => void
   onAddText: (position: Position, paragraphBox?: { width: number; height: number }) => void
@@ -21,10 +21,6 @@ const actionTools = new Set<EditorTool>(['eyedropper', 'count', 'note', 'text', 
 const emptyColorSamplers: readonly DocumentColorSampler[] = []
 const emptyCounts: DocumentCounts = { groups: [], markers: [], activeGroupId: '' }
 const emptyNotes: readonly DocumentNote[] = []
-
-function toHex(value: number) {
-  return value.toString(16).padStart(2, '0')
-}
 
 export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, counts = emptyCounts, notes = emptyNotes, onColorSample, onAddCount, onAddNote, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
   const textStartRef = useRef<Position | null>(null)
@@ -49,13 +45,7 @@ export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamp
     event.preventDefault()
 
     if (tool === 'eyedropper') {
-      const pixel = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(
-        Math.max(0, Math.min(canvas.width - 1, Math.floor(position.x))),
-        Math.max(0, Math.min(canvas.height - 1, Math.floor(position.y))),
-        1,
-        1,
-      ).data
-      if (pixel && pixel[3] > 0) onColorSample(`#${toHex(pixel[0])}${toHex(pixel[1])}${toHex(pixel[2])}`, position, event.shiftKey)
+      onColorSample(position, event.shiftKey)
       return
     }
 

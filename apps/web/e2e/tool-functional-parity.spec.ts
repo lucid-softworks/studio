@@ -175,6 +175,25 @@ test('tone tools expose range, protection, sponge mode, vibrance, exposure, and 
   await expect(page.getByLabel('Sponge mode')).toHaveValue('desaturate')
 })
 
+test('eyedropper averages configurable areas from the current raster layer', async ({ page }) => {
+  await openBlankEditor(page)
+  await page.getByRole('button', { name: 'New layer', exact: true }).click()
+  await page.getByRole('button', { name: 'Paint Bucket tool', exact: true }).click()
+  const fill = page.getByLabel('Paint bucket surface')
+  await fill.click({ position: { x: 320, y: 220 } })
+  await expect(fill).toHaveAttribute('aria-busy', 'false')
+  const paintedColor = await page.getByLabel('Foreground color').first().inputValue()
+  await page.getByLabel('Foreground color').first().fill('#00ff00')
+
+  await page.getByRole('button', { name: 'Eyedropper tool', exact: true }).click()
+  await page.getByLabel('Eyedropper sample size').selectOption('11')
+  await page.getByLabel('Eyedropper sample mode').selectOption('current')
+  await expect(page.getByLabel('Eyedropper sample size')).toHaveValue('11')
+  await expect(page.getByLabel('Eyedropper sample mode')).toHaveValue('current')
+  await page.getByLabel('eyedropper tool surface').click({ position: { x: 320, y: 220 } })
+  await expect(page.getByLabel('Foreground color').first()).toHaveValue(paintedColor)
+})
+
 test('clone stamp keeps five transformed sources and previews the active source', async ({ page }) => {
   await openBlankEditor(page)
   await page.getByRole('button', { name: 'New layer', exact: true }).click()
