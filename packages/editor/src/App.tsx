@@ -50,9 +50,11 @@ import { AnimationTimeline } from './components/AnimationTimeline'
 import { ExportWorkspace, type AssetExportSettings } from './components/ExportWorkspace'
 import { PrintDialog } from './components/PrintDialog'
 import { FormatCapabilityDialog } from './components/FormatCapabilityDialog'
+import { VectorizeDialog } from './components/VectorizeDialog'
 import { desktopBridge, nativeFile, type DesktopNativeFile } from './editor/desktop'
 import type { EditorPerformanceMetrics } from './editor/performance-metrics'
 import { isEditorTool } from './editor/tools'
+import type { VectorizeOptions, VectorizedShape } from './editor/vectorize'
 
 type ExportFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'psd' | 'psb' | 'tiff' | 'pdf' | 'gif' | 'apng' | 'avif'
 type Alignment = 'left' | 'center-x' | 'right' | 'top' | 'center-y' | 'bottom'
@@ -148,6 +150,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
   const [exportWorkspaceOpen, setExportWorkspaceOpen] = useState(false)
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
   const [formatCapabilityDialogOpen, setFormatCapabilityDialogOpen] = useState(false)
+  const [vectorizeDialogOpen, setVectorizeDialogOpen] = useState(false)
   const [animationPreview, setAnimationPreview] = useState({ frameIndex: 0, time: 0 })
   const [recoverySavedAt, setRecoverySavedAt] = useState<string>()
   const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins:v1') ?? localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
@@ -811,6 +814,49 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
     layer.position = position
     layer.fill = fill
     dispatch({ type: 'add-layer', layer })
+  }
+
+  const vectorizeSelectedBitmap = async (options: VectorizeOptions) => {
+    const selected = selectedLayers.length === 1 && selectedLayers[0].type === 'raster' ? selectedLayers[0] : null
+    const asset = selected ? assets[selected.assetId] : null
+    const source = asset?.surface ?? asset?.element
+    if (!selected || !source) throw new Error('Select one unlocked bitmap layer to vectorize.')
+
+    const sourceWidth = source instanceof HTMLCanvasElement ? source.width : source.naturalWidth
+    const sourceHeight = source instanceof HTMLCanvasElement ? source.height : source.naturalHeight
+    if (!sourceWidth || !sourceHeight) throw new Error('The selected bitmap has no readable pixels.')
+    const sampleScale = Math.min(1, 512 / Math.max(sourceWidth, sourceHeight))
+    const width = Math.max(1, Math.round(sourceWidth * sampleScale))
+    const height = Math.max(1, Math.round(sourceHeight * sampleScale))
+    const sample = globalThis.document.createElement('canvas')
+    sample.width = width
+    sample.height = height
+    const context = sample.getContext('2d', { willReadFrequently: true })
+    if (!context) throw new Error('The browser could not prepare the bitmap tracer.')
+    context.drawImage(source, 0, 0, width, height)
+    const image = context.getImageData(0, 0, width, height)
+    const worker = new Worker(new URL('./editor/workers/vectorize.worker.ts', import.meta.url), { type: 'module' })
+    const result = await runWorkerJob<{ shapes: VectorizedShape[] }>('Bitmap vectorization', worker, { data: image.data.buffer, width, height, options }, [image.data.buffer])
+    if (!result.shapes.length) throw new Error('No pixels matched the current tracing settings.')
+
+    result.shapes.forEach((trace, index) => {
+      const layer = createShapeLayer('path', document.layers.filter((candidate) => candidate.type === 'shape' && candidate.shape === 'path').length + index + 1)
+      layer.name = result.shapes.length === 1 ? `${selected.name} trace` : `${selected.name} trace ${index + 1}`
+      layer.width = selected.width * selected.scale / document.canvasSize.width * 100
+      layer.height = selected.height * selected.scale / document.canvasSize.height * 100
+      layer.position = { ...selected.position }
+      layer.rotation = selected.rotation
+      layer.flipX = selected.flipX
+      layer.flipY = selected.flipY
+      layer.groupId = selected.groupId
+      layer.fill = trace.color
+      layer.fillStyle = { type: 'color', color: trace.color }
+      layer.vectorPaths = trace.paths
+      dispatch({ type: 'add-layer', layer }, { groupKey: 'vectorize-bitmap' })
+    })
+    endHistoryGroup()
+    setVectorizeDialogOpen(false)
+    setNotice(`Created ${result.shapes.length} editable shape ${result.shapes.length === 1 ? 'layer' : 'layers'} from ${selected.name}.`, 'success')
   }
 
   const addLayerGroup = () => {
@@ -2230,6 +2276,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
             onContentAwareFill={() => void contentAwareFillSelection()}
             onRotateCanvas={(direction) => transformCanvas(direction === 'cw' ? 'rotate-cw' : 'rotate-ccw')}
             onFlipCanvas={(axis) => transformCanvas(axis === 'x' ? 'flip-x' : 'flip-y')}
+            onVectorizeBitmap={() => setVectorizeDialogOpen(true)}
             onNewLayer={addEmptyLayer}
             onNewGroup={addLayerGroup}
             onDuplicateLayer={duplicateSelection}
@@ -2275,6 +2322,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
               canRedo: history.future.length > 0 || rasterRedoRef.current.length > 0,
               canTransformAgain: Boolean(lastGeometryTransform && selectedLayers.some((layer) => layer.type !== 'adjustment')),
               canContentAwareFill: Boolean(selection?.bounds && selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && !layerIsLocked(document, selectedLayers[0])),
+              canVectorize: selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && !layerIsLocked(document, selectedLayers[0]) && Boolean(assets[selectedLayers[0].assetId]),
               hasLayerSelection: Boolean(selectedGroup || selectedLayers.length),
               canRasterize: selectedLayers.length === 1 && !['raster', 'adjustment'].includes(selectedLayers[0].type),
               canConvertToSmartObject: selectedLayers.length === 1 && !['adjustment', 'smart-object'].includes(selectedLayers[0].type),
@@ -2354,6 +2402,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
       {exportWorkspaceOpen && <ExportWorkspace slices={document.slices ?? []} metadata={document.fileMetadata ?? {}} selection={selection?.bounds ?? null} layerCount={document.layers.length} artboardCount={document.artboards?.length ?? 0} onSlicesChange={(slices) => dispatch({ type: 'set-slices', slices })} onMetadataChange={(metadata) => dispatch({ type: 'set-file-metadata', metadata })} onExport={(settings) => void exportGeneratedAssets(settings)} onClose={() => setExportWorkspaceOpen(false)} />}
       {printDialogOpen && <PrintDialog canvasSize={document.canvasSize} metadata={document.fileMetadata ?? {}} value={document.printSettings ?? (() => { const dpi = document.fileMetadata?.resolutionDpi ?? 300; return { widthInches: document.canvasSize.width / dpi, heightInches: document.canvasSize.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true } })()} onChange={(settings) => dispatch({ type: 'set-print-settings', settings })} onExport={() => void createPrintPdf(false)} onPrint={() => void createPrintPdf(true)} onClose={() => setPrintDialogOpen(false)} />}
       {formatCapabilityDialogOpen && <FormatCapabilityDialog onClose={() => setFormatCapabilityDialogOpen(false)} />}
+      {vectorizeDialogOpen && selectedLayers.length === 1 && selectedLayers[0].type === 'raster' && <VectorizeDialog layerName={selectedLayers[0].name} onTrace={vectorizeSelectedBitmap} onClose={() => setVectorizeDialogOpen(false)} />}
     </div>
   )
 }

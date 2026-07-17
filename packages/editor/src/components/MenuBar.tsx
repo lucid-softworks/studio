@@ -15,6 +15,7 @@ type MenuStatus = {
   canRedo: boolean
   canTransformAgain: boolean
   canContentAwareFill: boolean
+  canVectorize: boolean
   hasLayerSelection: boolean
   canRasterize: boolean
   canConvertToSmartObject: boolean
@@ -59,6 +60,7 @@ type MenuBarProps = {
   onContentAwareFill: () => void
   onRotateCanvas: (direction: 'cw' | 'ccw') => void
   onFlipCanvas: (axis: 'x' | 'y') => void
+  onVectorizeBitmap: () => void
   onNewLayer: () => void
   onNewGroup: () => void
   onDuplicateLayer: () => void
@@ -217,6 +219,8 @@ export function MenuBar(input: MenuBarProps) {
         <Separator />
         <MenuItem commandId="image.flip-x" onSelect={() => select(() => props.onFlipCanvas('x'))}>Flip canvas horizontal</MenuItem>
         <MenuItem commandId="image.flip-y" onSelect={() => select(() => props.onFlipCanvas('y'))}>Flip canvas vertical</MenuItem>
+        <Separator />
+        <MenuItem commandId="image.vectorize" disabled={!props.canVectorize} onSelect={() => select(props.onVectorizeBitmap)}>Vectorize bitmap…</MenuItem>
       </>, 'w-64')}
 
       {menu('layer', 'Layer', <>

@@ -77,14 +77,6 @@ A feature is complete only when it has:
 - [ ] Add local focus stacking and automatic layer alignment/blending.
 - [ ] Add a real RAW development pipeline with sensor demosaicing, camera white balance, lens metadata, and non-destructive settings.
 
-### Measurement and annotation
-
-
-### Vectorization
-
-- [ ] Add local bitmap vectorization with color, monochrome, threshold, smoothing, corner, and noise controls.
-- [ ] Produce editable compound paths and shape layers from vectorization results.
-
 ## P5 — depth of existing editing systems
 
 ### Painting and retouching
