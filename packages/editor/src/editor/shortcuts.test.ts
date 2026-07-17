@@ -11,4 +11,8 @@ describe('editable shortcuts', () => {
     expect(commandForEvent({ key: 'k', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }, shortcuts, 'Tools')).toBe('tool.brush')
     expect(shortcuts['file.save']).toBe(defaultShortcuts['file.save'])
   })
+
+  it('does not trigger unassigned commands from modifier-only events', () => {
+    expect(commandForEvent({ key: 'Shift', metaKey: false, ctrlKey: false, altKey: false, shiftKey: true }, { ...defaultShortcuts, 'tool.move': '' })).toBeNull()
+  })
 })

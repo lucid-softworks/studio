@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const expectedToolIds = [
   'move', 'marquee', 'ellipse-select', 'single-row-select', 'single-column-select', 'lasso', 'polygonal-lasso', 'magnetic-lasso', 'magic-wand', 'object-select',
-  'crop', 'perspective-crop', 'eyedropper', 'measure', 'healing', 'clone-stamp', 'brush', 'pencil', 'color-replacement', 'mixer-brush', 'history-brush',
+  'crop', 'perspective-crop', 'eyedropper', 'measure', 'count', 'healing', 'clone-stamp', 'brush', 'pencil', 'color-replacement', 'mixer-brush', 'history-brush',
   'eraser', 'fill', 'gradient', 'dodge', 'burn', 'pattern-stamp', 'sponge', 'blur', 'sharpen', 'smudge', 'text', 'pen', 'direct-select', 'path-select',
   'warp', 'puppet-warp', 'rectangle', 'ellipse', 'hand', 'zoom',
 ] as const
@@ -183,6 +183,23 @@ test('action, crop, measure, hand, and zoom tools produce their canvas results',
   expect((await measurementDownload).suggestedFilename()).toBe('studio-measurements.csv')
   await page.keyboard.press('Escape')
   await expect(measurementLog).toBeHidden()
+
+  await page.getByRole('button', { name: 'Count tool', exact: true }).click()
+  const countSurface = page.getByLabel('count tool surface')
+  await countSurface.click({ position: { x: 310, y: 230 } })
+  await countSurface.click({ position: { x: 420, y: 280 } })
+  await page.getByRole('button', { name: 'Records (2)', exact: true }).click()
+  const countLog = page.getByRole('dialog', { name: 'Count records' })
+  await expect(countLog).toBeVisible()
+  await countLog.getByLabel('Count group 1 name').fill('People')
+  await countLog.getByLabel('Count marker 1 label').fill('Left guest')
+  await countLog.getByRole('button', { name: 'New group', exact: true }).click()
+  await expect(countLog.getByLabel('Count group 2 name')).toBeVisible()
+  const countDownload = page.waitForEvent('download')
+  await countLog.getByRole('button', { name: 'Export CSV', exact: true }).click()
+  expect((await countDownload).suggestedFilename()).toBe('studio-counts.csv')
+  await page.keyboard.press('Escape')
+  await expect(countLog).toBeHidden()
 
   const zoomText = page.getByTitle('Drag horizontally for scrubby zoom · click to reset')
   await page.getByRole('button', { name: 'Zoom tool', exact: true }).click()

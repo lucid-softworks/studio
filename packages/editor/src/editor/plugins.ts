@@ -13,7 +13,7 @@ export type StudioPlugin = {
   hooks: { importers: PluginImporterHook[]; exporters: PluginExporterHook[]; filters: PluginFilterHook[]; panels: PluginPanelHook[]; tools: PluginToolHook[] }
 }
 
-const editorTools = new Set<EditorTool>(['move', 'marquee', 'ellipse-select', 'lasso', 'polygonal-lasso', 'magic-wand', 'object-select', 'crop', 'perspective-crop', 'eyedropper', 'measure', 'healing', 'clone-stamp', 'brush', 'pencil', 'color-replacement', 'mixer-brush', 'history-brush', 'eraser', 'fill', 'gradient', 'dodge', 'burn', 'pattern-stamp', 'sponge', 'blur', 'sharpen', 'smudge', 'text', 'pen', 'direct-select', 'path-select', 'warp', 'puppet-warp', 'rectangle', 'ellipse', 'hand', 'zoom'])
+const editorTools = new Set<EditorTool>(['move', 'marquee', 'ellipse-select', 'lasso', 'polygonal-lasso', 'magic-wand', 'object-select', 'crop', 'perspective-crop', 'eyedropper', 'measure', 'count', 'healing', 'clone-stamp', 'brush', 'pencil', 'color-replacement', 'mixer-brush', 'history-brush', 'eraser', 'fill', 'gradient', 'dodge', 'burn', 'pattern-stamp', 'sponge', 'blur', 'sharpen', 'smudge', 'text', 'pen', 'direct-select', 'path-select', 'warp', 'puppet-warp', 'rectangle', 'ellipse', 'hand', 'zoom'])
 const safeId = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/i.test(value) ? value : null
 const safeLabel = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim().slice(0, 48) : null
 

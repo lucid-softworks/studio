@@ -13,6 +13,7 @@ export const editorToolIds = [
   'perspective-crop',
   'eyedropper',
   'measure',
+  'count',
   'healing',
   'clone-stamp',
   'brush',

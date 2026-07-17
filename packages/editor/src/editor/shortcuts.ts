@@ -51,5 +51,6 @@ export function normalizeShortcutMap(value: unknown): ShortcutMap {
 
 export function commandForEvent(event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>, shortcuts: ShortcutMap, category?: ShortcutCommand['category']) {
   const binding = shortcutFromEvent(event)
+  if (!binding) return null
   return shortcutCommands.find((command) => (!category || command.category === category) && shortcuts[command.id] === binding)?.id ?? null
 }

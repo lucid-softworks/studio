@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { shortcutCommands } from './shortcuts'
+import { editorToolIds } from './tools'
 import {
   completeParityInventory,
   missingPhotopeaCapabilities,
@@ -16,7 +17,7 @@ import {
 
 describe('Photopea parity registry', () => {
   it('classifies every current tool and every tool shortcut target', () => {
-    expect(Object.keys(studioToolParity)).toHaveLength(41)
+    expect(Object.keys(studioToolParity)).toHaveLength(editorToolIds.length)
     const shortcutTools = shortcutCommands.filter((command) => command.id.startsWith('tool.')).map((command) => command.id.slice(5))
     expect(shortcutTools.every((tool) => tool in studioToolParity)).toBe(true)
   })

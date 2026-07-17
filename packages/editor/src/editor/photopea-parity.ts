@@ -27,6 +27,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   'perspective-crop': partial('Needs grid, numeric controls, source-preserving behavior, and broader interaction fixtures.'),
   eyedropper: partial('Persistent composited-color samplers with RGB, HSL, and CMYK readouts are covered; point-average sizes and current-layer-only sampling remain.'),
   measure: validated('Calibrated multi-line records persist in the document, remain visible on canvas, drive Straighten, and export through the measurement log as CSV.', 'packages/editor/src/editor/measurements.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
+  count: validated('Persistent numbered markers support named color-coded groups, editable labels, canvas overlays, project round-trips, undo, and CSV export.', 'packages/editor/src/editor/counts.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   healing: partial('Needs spot/patch modes, diffusion and sampling controls, and stronger texture/luminosity matching.', 'visually-inaccurate'),
   'clone-stamp': partial('Needs multiple sources, source overlay, flip/offset controls, and source presets.'),
   brush: partial('Needs broader ABR dynamics, reference-stroke parity, mode parity, and large-brush performance fixtures.', 'visually-inaccurate'),
@@ -101,7 +102,7 @@ export const studioPanelParity: Record<UtilityPanelId, ParityAssessment> = {
   patterns: partial('Needs PAT compatibility, groups, transforms, and complete preset management.', 'round-trip-incompatible'),
   libraries: partial('Local resources exist; style, shape, preset grouping, search, and compatibility formats remain.'),
   plugins: partial('Needs interactive tool/filter ownership, serialization, permissions, conformance, and diagnostics.'),
-  info: partial('Needs persistent samplers, multiple color spaces, calibrated measurements, and status readouts.'),
+  info: validated('Persistent RGB, HSL, and CMYK samplers and calibrated measurement records have unit and browser interaction coverage.', 'packages/editor/src/editor/color-samplers.test.ts', 'packages/editor/src/editor/measurements.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
 }
 
 export const missingPhotopeaCapabilities: ReadonlyArray<{ id: string; area: string; assessment: ParityAssessment }> = [
@@ -112,10 +113,7 @@ export const missingPhotopeaCapabilities: ReadonlyArray<{ id: string; area: stri
   { id: 'liquify', area: 'filter', assessment: missing('No Liquify workspace or freeze/thaw masks.') },
   { id: 'lens-correction', area: 'filter', assessment: missing('No advanced lens correction or adaptive wide-angle workflow.') },
   { id: 'bitmap-vectorization', area: 'vector', assessment: missing('No local bitmap tracing into editable compound paths.') },
-  { id: 'measurement-log', area: 'panel', assessment: missing('No calibrated persistent measurement log or CSV export.') },
   { id: 'notes', area: 'tool', assessment: missing('No persistent notes or annotation tool.') },
-  { id: 'count', area: 'tool', assessment: missing('No count tool, groups, labels, or record export.') },
-  { id: 'color-sampler', area: 'tool', assessment: missing('No persistent multi-sampler tool and readout workflow.') },
   { id: 'panorama', area: 'automation', assessment: missing('No local panorama alignment, projection, and seam blending.') },
   { id: 'hdr-merge', area: 'automation', assessment: missing('No local exposure fusion or HDR merge workflow.') },
   { id: 'focus-stack', area: 'automation', assessment: missing('No automatic layer alignment and focus blending.') },

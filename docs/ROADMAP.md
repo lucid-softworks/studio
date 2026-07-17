@@ -79,7 +79,6 @@ A feature is complete only when it has:
 
 ### Measurement and annotation
 
-- [ ] Add count groups, count markers, labels, and exportable count records.
 - [ ] Add notes and annotations that persist in Studio projects and compatible external documents.
 
 ### Vectorization

@@ -24,6 +24,10 @@ function MeasureToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5L16.5 4 20 7.5 7.5 20 4 16.5z" /><path strokeLinecap="round" d="M8 14l2 2m.5-5.5l2 2M13 8l2 2" /></svg>
 }
 
+function CountToolIcon({ className }: IconProps) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="8" cy="8" r="3" /><circle cx="16" cy="16" r="3" /><path strokeLinecap="round" d="M8 6.5v3M6.5 8h3M16 14.5v3M14.5 16h3" /></svg>
+}
+
 function LassoToolIcon({ className }: IconProps) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M20 10.5c0 3.6-3.8 6.5-8.5 6.5S3 14.1 3 10.5 6.8 4 11.5 4 20 6.9 20 10.5z" /><path strokeLinecap="round" d="M11.5 17c1.1 1.8.4 3.3-2.2 3.3-2 0-3.3-.8-3.8-1.8" /></svg>
 }
@@ -99,6 +103,7 @@ const tools: Array<{ id: EditorTool; label: string; shortcut: string; icon: Reac
   { id: 'perspective-crop', label: 'Perspective Crop', shortcut: 'Shift C', icon: <CropToolIcon className="size-[19px]" /> },
   { id: 'eyedropper', label: 'Eyedropper', shortcut: 'I', icon: <EyedropperToolIcon className="size-[19px]" />, divider: true },
   { id: 'measure', label: 'Measure / Straighten', shortcut: 'Shift I', icon: <MeasureToolIcon className="size-[19px]" /> },
+  { id: 'count', label: 'Count', shortcut: '', icon: <CountToolIcon className="size-[19px]" /> },
   { id: 'healing', label: 'Healing Brush', shortcut: 'J', icon: <HealingToolIcon className="size-[19px]" /> },
   { id: 'clone-stamp', label: 'Clone Stamp', shortcut: 'S', icon: <CloneToolIcon className="size-[19px]" /> },
   { id: 'brush', label: 'Brush', shortcut: 'B', icon: <BrushToolIcon className="size-[19px]" /> },

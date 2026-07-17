@@ -50,6 +50,7 @@ export const initialDocument: EditorDocument = {
   measurements: [],
   measurementScale: { pixelsPerUnit: 1, unit: 'px' },
   colorSamplers: [],
+  counts: { groups: [{ id: 'count-group-1', name: 'Count group 1', color: '#facc15' }], markers: [], activeGroupId: 'count-group-1' },
 }
 
 export function createId() {

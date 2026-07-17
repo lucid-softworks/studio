@@ -85,6 +85,26 @@ describe('Studio project migrations', () => {
     expect(migrated.layers[0].groupId).toBeNull()
   })
 
+  it('normalizes persistent count groups and markers', () => {
+    const migrated = migrateDocument({
+      ...structuredClone(initialDocument),
+      counts: {
+        groups: [{ id: 'people', name: 'People', color: '#facc15' }],
+        markers: [
+          { id: 'one', groupId: 'people', x: -20, y: 2000, label: 'Guest' },
+          { id: 'orphan', groupId: 'missing', x: 10, y: 10, label: 'Drop me' },
+        ],
+        activeGroupId: 'missing',
+      },
+    }, STUDIO_PROJECT_VERSION)
+
+    expect(migrated.counts).toEqual({
+      groups: [{ id: 'people', name: 'People', color: '#facc15' }],
+      markers: [{ id: 'one', groupId: 'people', x: 0, y: 1000, label: 'Guest' }],
+      activeGroupId: 'people',
+    })
+  })
+
   it('opens legacy project envelopes instead of rejecting them', async () => {
     const file = new File([JSON.stringify({
       app: 'studio',

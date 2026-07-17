@@ -1,25 +1,29 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import type { DocumentColorSampler, Position, ShapeKind } from '../editor/types'
+import { countMarkerNumber } from '../editor/counts'
+import type { DocumentColorSampler, DocumentCounts, Position, ShapeKind } from '../editor/types'
 import type { EditorTool } from './ToolRail'
 
 type CanvasActionOverlayProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   tool: EditorTool
   samplers?: readonly DocumentColorSampler[]
+  counts?: DocumentCounts
   onColorSample: (color: string, position: Position, persistent: boolean) => void
+  onAddCount: (position: Position) => void
   onAddText: (position: Position, paragraphBox?: { width: number; height: number }) => void
   onAddShape: (shape: ShapeKind, position: Position) => void
   onZoom: (direction: 'in' | 'out') => void
 }
 
-const actionTools = new Set<EditorTool>(['eyedropper', 'text', 'rectangle', 'ellipse', 'zoom'])
+const actionTools = new Set<EditorTool>(['eyedropper', 'count', 'text', 'rectangle', 'ellipse', 'zoom'])
 const emptyColorSamplers: readonly DocumentColorSampler[] = []
+const emptyCounts: DocumentCounts = { groups: [], markers: [], activeGroupId: '' }
 
 function toHex(value: number) {
   return value.toString(16).padStart(2, '0')
 }
 
-export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, onColorSample, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
+export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, counts = emptyCounts, onColorSample, onAddCount, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
   const textStartRef = useRef<Position | null>(null)
   const enabled = actionTools.has(tool)
   const cursor = tool === 'text' ? 'text' : tool === 'zoom' ? 'zoom-in' : 'crosshair'
@@ -49,6 +53,11 @@ export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamp
         1,
       ).data
       if (pixel && pixel[3] > 0) onColorSample(`#${toHex(pixel[0])}${toHex(pixel[1])}${toHex(pixel[2])}`, position, event.shiftKey)
+      return
+    }
+
+    if (tool === 'count') {
+      onAddCount(position)
       return
     }
 
@@ -90,6 +99,11 @@ export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamp
       onPointerCancel={() => { textStartRef.current = null }}
     >
       <g aria-hidden="true" pointerEvents="none">{samplers.map((sampler, index) => <g key={sampler.id} transform={`translate(${sampler.x} ${sampler.y})`}><circle r="11" fill="rgba(9,9,11,.86)" stroke="#67e8f9" strokeWidth="2" /><path d="M-16 0H16M0-16V16" stroke="#67e8f9" strokeWidth="1" /><text y="4" textAnchor="middle" fill="#ecfeff" fontSize="10" fontWeight="700">{index + 1}</text></g>)}</g>
+      <g aria-hidden="true" pointerEvents="none">{counts.markers.map((marker) => {
+        const group = counts.groups.find((candidate) => candidate.id === marker.groupId)
+        const color = group?.color ?? '#facc15'
+        return <g key={marker.id} transform={`translate(${marker.x} ${marker.y})`}><circle r="13" fill="rgba(9,9,11,.88)" stroke={color} strokeWidth="3" /><text y="4" textAnchor="middle" fill={color} fontSize="10" fontWeight="800">{countMarkerNumber(counts.markers, marker)}</text>{marker.label && <text x="18" y="4" fill={color} fontSize="10" fontWeight="600" paintOrder="stroke" stroke="rgba(9,9,11,.9)" strokeWidth="3">{marker.label}</text>}</g>
+      })}</g>
     </svg>
   )
 }

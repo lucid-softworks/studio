@@ -111,6 +111,9 @@ export type DocumentPrintSettings = { widthInches: number; heightInches: number;
 export type DocumentMeasurement = { id: string; name: string; startX: number; startY: number; endX: number; endY: number }
 export type DocumentMeasurementScale = { pixelsPerUnit: number; unit: string }
 export type DocumentColorSampler = { id: string; x: number; y: number; color: string }
+export type DocumentCountGroup = { id: string; name: string; color: string }
+export type DocumentCountMarker = { id: string; groupId: string; x: number; y: number; label: string }
+export type DocumentCounts = { groups: DocumentCountGroup[]; markers: DocumentCountMarker[]; activeGroupId: string }
 
 export type BaseLayer = {
   id: string
@@ -416,6 +419,7 @@ export type EditorDocument = {
   measurements?: DocumentMeasurement[]
   measurementScale?: DocumentMeasurementScale
   colorSamplers?: DocumentColorSampler[]
+  counts?: DocumentCounts
 }
 
 export type LayerPatch = Partial<{
@@ -520,6 +524,7 @@ export type DocumentAction =
   | { type: 'set-measurements'; measurements: DocumentMeasurement[] }
   | { type: 'set-measurement-scale'; scale: DocumentMeasurementScale }
   | { type: 'set-color-samplers'; samplers: DocumentColorSampler[] }
+  | { type: 'set-counts'; counts: DocumentCounts }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }
