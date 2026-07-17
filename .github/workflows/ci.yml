@@ -83,7 +83,7 @@ jobs:
           pattern: studio-browser-results-*
           merge-multiple: true
           path: .performance-baseline
-      - run: pnpm test:e2e -- --shard=${{ matrix.shard }}/4
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/4
       - name: Compare browser performance with main
         if: always()
         run: node scripts/compare-performance.mjs test-results/performance .performance-baseline >> "$GITHUB_STEP_SUMMARY"
