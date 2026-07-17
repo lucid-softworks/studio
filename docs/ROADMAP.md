@@ -81,7 +81,6 @@ A feature is complete only when it has:
 
 - [ ] Add persistent color samplers with per-sampler color-space readouts.
 - [ ] Add count groups, count markers, labels, and exportable count records.
-- [ ] Add calibrated measurements, measurement scale, measurement log, and CSV export.
 - [ ] Add notes and annotations that persist in Studio projects and compatible external documents.
 
 ### Vectorization

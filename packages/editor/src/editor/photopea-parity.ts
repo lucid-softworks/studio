@@ -26,7 +26,7 @@ export const studioToolParity: Record<EditorTool, ParityAssessment> = {
   crop: partial('Needs presets, ratio/resolution controls, straighten integration, overlays, and delete-pixels behavior.'),
   'perspective-crop': partial('Needs grid, numeric controls, source-preserving behavior, and broader interaction fixtures.'),
   eyedropper: partial('Needs point-average sizes, current/all-layer sampling, sampler creation, and color-space readouts.'),
-  measure: partial('Needs calibration, persistent records, measurement log, multiple lines, and export.'),
+  measure: validated('Calibrated multi-line records persist in the document, remain visible on canvas, drive Straighten, and export through the measurement log as CSV.', 'packages/editor/src/editor/measurements.test.ts', 'apps/web/e2e/tool-functional-parity.spec.ts'),
   healing: partial('Needs spot/patch modes, diffusion and sampling controls, and stronger texture/luminosity matching.', 'visually-inaccurate'),
   'clone-stamp': partial('Needs multiple sources, source overlay, flip/offset controls, and source presets.'),
   brush: partial('Needs broader ABR dynamics, reference-stroke parity, mode parity, and large-brush performance fixtures.', 'visually-inaccurate'),

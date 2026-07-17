@@ -6,10 +6,12 @@ type Props = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   enabled: boolean
   value: Measurement | null
+  records?: readonly Measurement[]
   onChange: (measurement: Measurement | null) => void
 }
 
 type Drag = { pointerId: number; startX: number; startY: number }
+const emptyMeasurements: readonly Measurement[] = []
 
 function canvasPoint(event: ReactPointerEvent<HTMLCanvasElement>) {
   const rect = event.currentTarget.getBoundingClientRect()
@@ -24,7 +26,7 @@ function constrainedEndPoint(event: ReactPointerEvent<HTMLCanvasElement>, drag: 
   return { x: drag.startX + Math.cos(angle) * distance, y: drag.startY + Math.sin(angle) * distance }
 }
 
-export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
+export function MeasureOverlay({ canvasRef, enabled, value, records = emptyMeasurements, onChange }: Props) {
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<Drag | null>(null)
   const canvas = canvasRef.current
@@ -37,27 +39,30 @@ export function MeasureOverlay({ canvasRef, enabled, value, onChange }: Props) {
     const context = overlay.getContext('2d')
     if (!context) return
     context.clearRect(0, 0, overlay.width, overlay.height)
-    if (!value) return
     const radius = Math.max(4, overlay.width / 220)
-    context.save()
-    context.lineWidth = Math.max(2, overlay.width / 700)
-    context.strokeStyle = '#c4b5fd'
-    context.shadowColor = 'rgba(0,0,0,.8)'
-    context.shadowBlur = Math.max(2, overlay.width / 500)
-    context.beginPath()
-    context.moveTo(value.startX, value.startY)
-    context.lineTo(value.endX, value.endY)
-    context.stroke()
-    for (const [x, y] of [[value.startX, value.startY], [value.endX, value.endY]]) {
-      context.fillStyle = '#18181b'
+    const drawMeasurement = (measurement: Measurement, active: boolean) => {
+      context.save()
+      context.lineWidth = Math.max(active ? 2 : 1.5, overlay.width / 700)
+      context.strokeStyle = active ? '#c4b5fd' : 'rgba(103,232,249,.72)'
+      context.shadowColor = 'rgba(0,0,0,.8)'
+      context.shadowBlur = Math.max(2, overlay.width / 500)
       context.beginPath()
-      context.arc(x, y, radius, 0, Math.PI * 2)
-      context.fill()
-      context.strokeStyle = '#ddd6fe'
+      context.moveTo(measurement.startX, measurement.startY)
+      context.lineTo(measurement.endX, measurement.endY)
       context.stroke()
+      for (const [x, y] of [[measurement.startX, measurement.startY], [measurement.endX, measurement.endY]]) {
+        context.fillStyle = '#18181b'
+        context.beginPath()
+        context.arc(x, y, active ? radius : radius * 0.72, 0, Math.PI * 2)
+        context.fill()
+        context.strokeStyle = active ? '#ddd6fe' : '#67e8f9'
+        context.stroke()
+      }
+      context.restore()
     }
-    context.restore()
-  }, [canvas, value])
+    records.forEach((measurement) => drawMeasurement(measurement, false))
+    if (value) drawMeasurement(value, true)
+  }, [canvas, records, value])
 
   return (
     <canvas

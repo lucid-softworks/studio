@@ -47,6 +47,8 @@ export const initialDocument: EditorDocument = {
   colorMode: 'rgb',
   indexedColors: 256,
   colorSettings: { intent: 'relative', blackPointCompensation: true, proofEnabled: false, gamutWarning: false },
+  measurements: [],
+  measurementScale: { pixelsPerUnit: 1, unit: 'px' },
 }
 
 export function createId() {

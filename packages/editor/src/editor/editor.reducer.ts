@@ -94,6 +94,10 @@ export function documentReducer(state: EditorDocument, action: DocumentAction): 
       return { ...state, fileMetadata: action.metadata }
     case 'set-print-settings':
       return { ...state, printSettings: action.settings }
+    case 'set-measurements':
+      return { ...state, measurements: action.measurements }
+    case 'set-measurement-scale':
+      return { ...state, measurementScale: action.scale }
     case 'replace-document':
       return action.document
     case 'add-layer': {

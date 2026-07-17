@@ -17,6 +17,8 @@ const actionLabels: Record<DocumentHistoryCommand['actionType'], string> = {
   'set-slices': 'Edit export slices',
   'set-file-metadata': 'Edit file metadata',
   'set-print-settings': 'Change print setup',
+  'set-measurements': 'Edit measurement log',
+  'set-measurement-scale': 'Calibrate measurements',
   'replace-document': 'Replace document',
   'add-layer': 'Add layer',
   'replace-layer': 'Rasterize layer',

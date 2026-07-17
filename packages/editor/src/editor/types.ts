@@ -108,6 +108,8 @@ export type DocumentAnimation = {
 }
 export type DocumentSlice = { id: string; name: string; x: number; y: number; width: number; height: number }
 export type DocumentPrintSettings = { widthInches: number; heightInches: number; dpi: number; bleedInches: number; cropMarks: boolean; center: boolean }
+export type DocumentMeasurement = { id: string; name: string; startX: number; startY: number; endX: number; endY: number }
+export type DocumentMeasurementScale = { pixelsPerUnit: number; unit: string }
 
 export type BaseLayer = {
   id: string
@@ -410,6 +412,8 @@ export type EditorDocument = {
   animation?: DocumentAnimation
   slices?: DocumentSlice[]
   printSettings?: DocumentPrintSettings
+  measurements?: DocumentMeasurement[]
+  measurementScale?: DocumentMeasurementScale
 }
 
 export type LayerPatch = Partial<{
@@ -511,6 +515,8 @@ export type DocumentAction =
   | { type: 'set-slices'; slices: DocumentSlice[] }
   | { type: 'set-file-metadata'; metadata: DocumentFileMetadata }
   | { type: 'set-print-settings'; settings: DocumentPrintSettings }
+  | { type: 'set-measurements'; measurements: DocumentMeasurement[] }
+  | { type: 'set-measurement-scale'; scale: DocumentMeasurementScale }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

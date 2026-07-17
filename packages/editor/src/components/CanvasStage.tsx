@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, type Dispatch, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction } from 'react'
-import { getDocumentSize } from '../editor/presets'
+import { createId, getDocumentSize } from '../editor/presets'
 import { getLayerBounds } from '../editor/renderer'
 import { layerIsLocked } from '../editor/stack'
 import type { AssetMap } from '../editor/runtime-assets'
@@ -30,6 +30,8 @@ import { PixelRetouchOverlay } from './PixelRetouchOverlay'
 import type { GradientStop } from '../editor/gradients'
 import { commandForEvent, type ShortcutMap } from '../editor/shortcuts'
 import { documentRegionToSourceRegion } from '../editor/raster-target'
+import { measurementMetrics } from '../editor/measurements'
+import { MeasurementLogDialog } from './MeasurementLogDialog'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -216,6 +218,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const [cropSelection, setCropSelection] = useState<SelectionState | null>(null)
   const [perspectiveCrop, setPerspectiveCrop] = useState<[Position, Position, Position, Position]>(() => [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 700 }, { x: 100, y: 700 }])
   const [measurement, setMeasurement] = useState<Measurement | null>(null)
+  const [measurementLogOpen, setMeasurementLogOpen] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [viewsLinked, setViewsLinked] = useState(true)
@@ -239,8 +242,10 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const brush = { ...selectedBrush, spacing: brushSpacing }
   const retouchTool = tool === 'healing' || tool === 'clone-stamp'
   const pixelRetouchTool = tool === 'color-replacement' || tool === 'mixer-brush' || tool === 'history-brush' || tool === 'pattern-stamp' || tool === 'sponge' || tool === 'blur' || tool === 'sharpen' || tool === 'smudge' ? tool : null
-  const measurementAngle = measurement ? Math.atan2(measurement.endY - measurement.startY, measurement.endX - measurement.startX) * 180 / Math.PI : 0
-  const measurementLength = measurement ? Math.hypot(measurement.endX - measurement.startX, measurement.endY - measurement.startY) : 0
+  const measurementScale = document.measurementScale ?? { pixelsPerUnit: 1, unit: 'px' }
+  const measurementDetails = measurement ? measurementMetrics(measurement, measurementScale) : null
+  const measurementAngle = measurementDetails?.angle ?? 0
+  const measurementLength = measurementDetails?.pixels ?? 0
 
   useEffect(() => setBrushSpacing(selectedBrush.spacing), [selectedBrush.id, selectedBrush.spacing])
   useEffect(() => setBrushDynamics({ ...defaultBrushDynamics, ...selectedBrush.dynamics }), [selectedBrush.id, selectedBrush.dynamics])
@@ -480,6 +485,13 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
     setMeasurement(null)
   }
 
+  const saveMeasurement = () => {
+    if (!measurement) return
+    const measurements = document.measurements ?? []
+    dispatch({ type: 'set-measurements', measurements: [...measurements, { id: createId(), name: `Measurement ${measurements.length + 1}`, ...measurement }] })
+    setMeasurement(null)
+  }
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (tool !== 'hand' || event.button !== 0) return
     panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }
@@ -557,8 +569,11 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
           {tool === 'measure' && (
             <div className="flex items-center gap-2">
               <span className="hidden font-mono text-[9px] text-zinc-500 xl:inline">L {measurementLength.toFixed(1)} px</span>
+              <span className="hidden font-mono text-[9px] text-cyan-300/70 2xl:inline">{(measurementDetails?.value ?? 0).toFixed(3)} {measurementScale.unit}</span>
               <span className="font-mono text-[9px] text-zinc-400">A {measurementAngle.toFixed(2)}°</span>
               <button type="button" disabled={!measurement || !selected || selected.type === 'adjustment' || selectedLocked} onClick={straightenSelected} className="rounded-md bg-violet-500 px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-30">Straighten layer</button>
+              <button type="button" disabled={!measurement} onClick={saveMeasurement} className="rounded-md border border-cyan-300/15 bg-cyan-300/[0.04] px-2 py-1.5 text-[9px] text-cyan-100/70 disabled:opacity-30">Save measurement</button>
+              <button type="button" onClick={() => setMeasurementLogOpen(true)} className="rounded-md border border-white/[0.07] px-2 py-1.5 text-[9px] text-zinc-500 hover:text-zinc-200">Log ({document.measurements?.length ?? 0})</button>
               {measurement && <button type="button" onClick={() => setMeasurement(null)} className="rounded-md px-2 py-1.5 text-[9px] text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-200">Clear</button>}
             </div>
           )}
@@ -614,7 +629,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
             <LassoSelectionOverlay canvasRef={canvasRef} enabled={tool === 'lasso' || tool === 'magnetic-lasso'} magnetic={tool === 'magnetic-lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
             <PolygonalLassoOverlay canvasRef={canvasRef} enabled={tool === 'polygonal-lasso'} mode={selectionMode} selection={selection} onChange={setSelection} />
             <MagicWandOverlay canvasRef={canvasRef} enabled={tool === 'magic-wand' || tool === 'object-select'} object={tool === 'object-select'} mode={selectionMode} tolerance={tolerance} selection={selection} onChange={setSelection} />
-            <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} onChange={setMeasurement} />
+            <MeasureOverlay canvasRef={canvasRef} enabled={tool === 'measure'} value={measurement} records={document.measurements} onChange={setMeasurement} />
             <SelectionOverlay canvasRef={canvasRef} enabled={tool === 'crop'} kind="rectangle" mode="replace" selection={cropSelection} onChange={setCropSelection} />
             <PerspectiveCropOverlay canvasRef={canvasRef} enabled={tool === 'perspective-crop'} value={perspectiveCrop} onChange={setPerspectiveCrop} />
             <QuickMaskOverlay canvasRef={canvasRef} enabled={quickMask && (tool === 'brush' || tool === 'eraser')} tool={tool === 'eraser' ? 'eraser' : 'brush'} size={brushSize} selection={selection} onChange={setSelection} />
@@ -652,6 +667,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
       <div className="flex h-11 shrink-0 items-center justify-center border-t border-white/[0.06] px-4 text-[10px] text-zinc-700">
         {quickMask ? `Quick Mask · ${tool === 'eraser' ? 'erase to remove' : 'paint to add'} selection · press Q to exit` : toolHint}
       </div>
+      {measurementLogOpen && <MeasurementLogDialog measurements={document.measurements ?? []} scale={measurementScale} onMeasurementsChange={(measurements) => dispatch({ type: 'set-measurements', measurements }, { groupKey: 'measurement-log' })} onScaleChange={(scale) => dispatch({ type: 'set-measurement-scale', scale }, { groupKey: 'measurement-scale' })} onClose={() => { endHistoryGroup(); setMeasurementLogOpen(false) }} />}
     </section>
   )
 }
