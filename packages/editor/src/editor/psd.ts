@@ -508,8 +508,27 @@ export function psdBlendIf(layer: Layer): BlendIfSettings | undefined {
   }
 }
 
-function hasUnsupportedAdvancedBlending(layer: Layer) {
-  return Boolean(layer.knockout)
+type StudioAdvancedBlending = Pick<
+  EditorLayer | LayerGroup,
+  'fillOpacity' | 'knockout' | 'transparencyShapesLayer' | 'blendInteriorEffectsAsGroup' | 'channelBlendingRestrictions'
+>
+
+function applyPsdAdvancedBlending(target: StudioAdvancedBlending, source: Layer) {
+  target.fillOpacity = source.fillOpacity === undefined ? undefined : Math.round(source.fillOpacity * 100)
+  target.knockout = source.knockout
+  target.transparencyShapesLayer = source.transparencyShapesLayer
+  target.blendInteriorEffectsAsGroup = source.blendInteriorElements
+  target.channelBlendingRestrictions = source.channelBlendingRestrictions ? [...source.channelBlendingRestrictions] : undefined
+}
+
+function exportedAdvancedBlending(layer: StudioAdvancedBlending): Pick<Layer, 'fillOpacity' | 'knockout' | 'transparencyShapesLayer' | 'blendInteriorElements' | 'channelBlendingRestrictions'> {
+  return {
+    fillOpacity: layer.fillOpacity === undefined ? undefined : Math.max(0, Math.min(100, layer.fillOpacity)) / 100,
+    knockout: layer.knockout,
+    transparencyShapesLayer: layer.transparencyShapesLayer,
+    blendInteriorElements: layer.blendInteriorEffectsAsGroup,
+    channelBlendingRestrictions: layer.channelBlendingRestrictions ? [...layer.channelBlendingRestrictions] : undefined,
+  }
 }
 
 function canPreviewColorLookup(adjustment: Extract<NonNullable<Layer['adjustment']>, { type: 'color lookup' }>) {
@@ -566,6 +585,7 @@ function applyPsdLayerMetadata(target: EditorLayer, source: Layer, documentWidth
   target.psdPlacedLayer = source.placedLayer ? serializePsdValue(source.placedLayer) : undefined
   target.additionalEffects = psdAdditionalLayerEffects(source)
   target.psdEffectsMetadata = source.effects ? serializePsdValue(source.effects) : undefined
+  applyPsdAdvancedBlending(target, source)
 }
 
 function effectEnabled(effect: { enabled?: boolean; present?: boolean } | undefined) {
@@ -991,7 +1011,11 @@ export function psdImportWarnings(psd: Psd, previewedColorLookups = new Set<Laye
       if (layer.adjustment && !canImportPsdAdjustment(layer)) add('adjustment', `Unsupported “${layer.adjustment.type}” adjustment was not preserved`, path)
       if (layer.adjustment?.type === 'color lookup' && !previewedColorLookups.has(layer) && !canPreviewColorLookup(layer.adjustment)) add('color-lookup-preview', 'Color Lookup data was preserved, but this LUT encoding cannot yet be previewed', path)
       if (layer.adjustment && (layer.mask || layer.realMask || layer.vectorMask)) add('adjustment-mask', 'Adjustment-layer masks were not preserved', path)
-      if (hasUnsupportedAdvancedBlending(layer)) add('advanced-blending', 'Knockout blending was not preserved', path)
+      if (layer.fillOpacity !== undefined && layer.fillOpacity < 0.999) add('fill-opacity-preview', 'Fill opacity was preserved for export but is not previewed separately from layer opacity', path)
+      if (layer.knockout) add('knockout-preview', 'Knockout blending was preserved for export but is not previewed', path)
+      if (layer.transparencyShapesLayer === false) add('transparency-shapes-preview', 'Transparency Shapes Layer was preserved for export but is not previewed', path)
+      if (layer.blendInteriorElements) add('interior-effects-preview', 'Interior effect grouping was preserved for export but is not previewed', path)
+      if (layer.channelBlendingRestrictions?.length) add('channel-restrictions-preview', 'Channel blending restrictions were preserved for export but are not previewed', path)
       if (layer.blendMode && layer.blendMode !== 'pass through' && !psdBlendModes[layer.blendMode]) {
         add(`blend:${layer.blendMode}`, `Unsupported “${layer.blendMode}” blending was changed to normal`, path)
       }
@@ -1105,7 +1129,7 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
       const path = parentPath ? `${parentPath} / ${name}` : name
       if (layer.children) {
         const id = createId()
-        groups.push({
+        const group: LayerGroup = {
           id,
           name,
           visible: !layer.hidden,
@@ -1121,7 +1145,9 @@ export async function importPsdBuffer(buffer: ArrayBuffer, name = 'Untitled.psd'
           psdEffectsMetadata: layer.effects ? serializePsdValue(layer.effects) : undefined,
           blendIf: psdBlendIf(layer),
           psdLayerId: layer.id,
-        })
+        }
+        applyPsdAdvancedBlending(group, layer)
+        groups.push(group)
         await importChildren(layer.children, id, path)
         continue
       }
@@ -1613,6 +1639,7 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       }
     })() : layer.psdPlacedLayer ? revivePsdValue(layer.psdPlacedLayer) as PlacedLayer : undefined
     const base: Layer = {
+      ...exportedAdvancedBlending(layer),
       name: layer.name, hidden: !layer.visible, opacity: layer.opacity / 100,
       blendMode: studioPsdBlendModes[layer.blendMode ?? 'normal'], clipping: Boolean(layer.clipToBelow),
       protected: layer.locked ? { position: true, composite: true } : undefined,
@@ -1664,6 +1691,7 @@ export async function exportPsdDocument(documentState: EditorDocument, assets: A
       if (item.layer) return exportLayer(item.layer)
       const group = groups.get(item.group!.id)!
       return {
+        ...exportedAdvancedBlending(group),
         name: group.name,
         hidden: !group.visible,
         opacity: group.opacity / 100,

@@ -20,7 +20,7 @@ The typed source is [`psd-compatibility.ts`](../packages/editor/src/editor/psd-c
 | `adjustments` | Adjustment layers | Partial | Partial | Supported typed descriptors remain editable; unsupported families are reported. |
 | `effects` | Layer effects and multiple instances | Partial | Partial | Primary families, repeated instances, contours, gradient strokes, and pattern strokes round-trip. |
 | `masks` | Raster and vector masks | Partial | Partial | Supported pixels, paths, density, feather, linking, and inversion round-trip. |
-| `advanced-blending` | Blend If, fill opacity, knockout | Partial | Partial | Blend If ranges round-trip; knockout is reported as unsupported. |
+| `advanced-blending` | Blend If, fill opacity, knockout, channel restrictions | Partial | Partial | Blend If and all modeled Photoshop advanced-blending fields round-trip; settings without compositor support are reported as preserved but not previewed. |
 | `smart-objects` | Embedded and linked smart objects | Partial | Partial | Transforms, descriptors, embedded PSB documents, and relinking metadata are retained. |
 | `smart-filters` | Smart filters | Partial | Partial | Supported settings and original descriptors are retained; masks and full dialog behavior remain incomplete. |
 | `channels` | Alpha channels | Editable | Editable | Named channel metadata and pixels can be imported, edited, and exported. |

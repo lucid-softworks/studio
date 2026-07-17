@@ -158,6 +158,28 @@ index c57f67980f8fa483c1e827ac15b9d01eb01dfe94..c017621f7203d669a0dc5b0fdaa1347d
      if (size > writer.buffer.byteLength) {
          resizeBuffer(writer, size);
      }
+diff --git a/dist/additionalInfo.js b/dist/additionalInfo.js
+--- a/dist/additionalInfo.js
++++ b/dist/additionalInfo.js
+@@ -3462,6 +3462,6 @@ addHandler('brst', hasKey('channelBlendingRestrictions'), (reader, target, left)
+ addHandler('brst', hasKey('channelBlendingRestrictions'), (reader, target, left) => {
+     target.channelBlendingRestrictions = [];
+-    while (left() > 4) {
++    while (left() >= 4) {
+         target.channelBlendingRestrictions.push((0, psdReader_1.readInt32)(reader));
+     }
+ }, (writer, target) => {
+diff --git a/dist-es/additionalInfo.js b/dist-es/additionalInfo.js
+--- a/dist-es/additionalInfo.js
++++ b/dist-es/additionalInfo.js
+@@ -3462,6 +3462,6 @@ addHandler('brst', hasKey('channelBlendingRestrictions'), (reader, target, left)
+ addHandler('brst', hasKey('channelBlendingRestrictions'), (reader, target, left) => {
+     target.channelBlendingRestrictions = [];
+-    while (left() > 4) {
++    while (left() >= 4) {
+         target.channelBlendingRestrictions.push((0, psdReader_1.readInt32)(reader));
+     }
+ }, (writer, target) => {
 diff --git a/dist-es/index.d.ts b/dist-es/index.d.ts
 index b397a0d4d0a04de26b9e1eda4558acf094b7af9b..94b5cbdff4adfc203210af776beaaa11d2bf8e63 100644
 --- a/dist-es/index.d.ts

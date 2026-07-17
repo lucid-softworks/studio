@@ -85,6 +85,11 @@ describe('PSD layer ordering', () => {
         id: 902,
         name: 'Styled folder',
         blendMode: 'pass through',
+        fillOpacity: 0.64,
+        knockout: true,
+        transparencyShapesLayer: false,
+        blendInteriorElements: true,
+        channelBlendingRestrictions: [0, 2],
         effects: {
           dropShadow: [{ enabled: true, color: { r: 20, g: 30, b: 40 }, opacity: 0.45, distance: { units: 'Pixels', value: 3 }, size: { units: 'Pixels', value: 5 } }],
         },
@@ -102,6 +107,11 @@ describe('PSD layer ordering', () => {
       name: 'Styled folder',
       passThrough: true,
       psdLayerId: 902,
+      fillOpacity: 64,
+      knockout: true,
+      transparencyShapesLayer: false,
+      blendInteriorEffectsAsGroup: true,
+      channelBlendingRestrictions: [0, 2],
       effects: { dropShadow: { enabled: true, color: '#141e28', opacity: 45, distance: 3, blur: 5 } },
       blendIf: { source: [12, 24, 220, 244], destination: [4, 18, 232, 250], channels: [{ source: [8, 20, 210, 240], destination: [2, 14, 230, 248] }] },
     })
@@ -112,6 +122,11 @@ describe('PSD layer ordering', () => {
       id: 902,
       name: 'Styled folder',
       blendMode: 'pass through',
+      fillOpacity: expect.closeTo(0.64, 2),
+      knockout: true,
+      transparencyShapesLayer: false,
+      blendInteriorElements: true,
+      channelBlendingRestrictions: [0, 2],
       effects: { dropShadow: [{ enabled: true, opacity: 0.45, distance: { value: 3 }, size: { value: 5 } }] },
       blendingRanges: {
         compositeGrayBlendSource: [12, 24, 220, 244],
@@ -119,6 +134,13 @@ describe('PSD layer ordering', () => {
         ranges: [{ sourceRange: [8, 20, 210, 240], destRange: [2, 14, 230, 248] }],
       },
     })
+    expect(imported.warnings).toEqual(expect.arrayContaining([
+      'Fill opacity was preserved for export but is not previewed separately from layer opacity: Styled folder',
+      'Knockout blending was preserved for export but is not previewed: Styled folder',
+      'Transparency Shapes Layer was preserved for export but is not previewed: Styled folder',
+      'Interior effect grouping was preserved for export but is not previewed: Styled folder',
+      'Channel blending restrictions were preserved for export but are not previewed: Styled folder',
+    ]))
   })
 
   it('maps Photoshop blend-mode names onto editor blend modes', () => {

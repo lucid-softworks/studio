@@ -128,6 +128,11 @@ export type BaseLayer = {
   maskSettings?: LayerMaskSettings
   vectorMask?: VectorMask
   blendIf?: BlendIfSettings
+  fillOpacity?: number
+  knockout?: boolean
+  transparencyShapesLayer?: boolean
+  blendInteriorEffectsAsGroup?: boolean
+  channelBlendingRestrictions?: number[]
   psdLayerId?: number
   psdPlacedLayer?: SerializedPsdValue
   clipToBelow?: boolean
@@ -154,6 +159,11 @@ export type LayerGroup = {
   additionalEffects?: LayerEffects[]
   psdEffectsMetadata?: SerializedPsdValue
   blendIf?: BlendIfSettings
+  fillOpacity?: number
+  knockout?: boolean
+  transparencyShapesLayer?: boolean
+  blendInteriorEffectsAsGroup?: boolean
+  channelBlendingRestrictions?: number[]
   psdLayerId?: number
 }
 
