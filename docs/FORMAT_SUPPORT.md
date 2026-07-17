@@ -5,7 +5,7 @@ Studio performs all decoding and encoding on the user’s device. Codec bundles 
 | Format | Import | Export and round-trip behavior |
 | --- | --- | --- |
 | Studio | Full document, assets, precision, animation, slices, print settings, and metadata | Canonical lossless editable project format |
-| PSD / PSB | Layers, groups, masks, text, effects, smart objects, channels, guides, resources, and compatible 8/16/32-bit pixels | Layered PSD and large-document PSB; unsupported Photoshop descriptors are preserved where possible and flattening is reported on import |
+| PSD / PSB | Layers, groups, masks, text, effects, smart objects, channels, guides, resources, and compatible 8/16/32-bit pixels | Layered PSD and large-document PSB; exact editable, preserved, converted, rasterized, and unsupported behavior is listed in the [tested compatibility table](./PSD_COMPATIBILITY.md) |
 | TIFF | Multi-page and common compressed TIFF variants | Standard uncompressed multi-page RGBA TIFF: page 1 is the composite and following pages are named layers; Photoshop-private TIFF layer blocks are not emitted |
 | RAW | Local TIFF-based camera preview decode for DNG, CR2, NEF, ARW, ORF, and RW2 when a displayable IFD exists | No RAW export or sensor demosaicing; Studio explicitly reports when it opened an embedded preview |
 | OpenEXR / Radiance HDR | Linear float RGBA is retained in Studio’s 32-bit backing store; an ACES preview is shown | Use Studio/PSD/PSB to retain editing precision; direct EXR/HDR export is not currently exposed |

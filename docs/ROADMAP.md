@@ -36,7 +36,6 @@ A feature is complete only when it has:
 - [ ] Validate embedded and linked smart objects, shared sources, nested documents, transforms, replacement, and relinking.
 - [ ] Preserve unsupported descriptors losslessly when possible and warn precisely before any destructive edit or export.
 - [ ] Add differential fuzzing for PSD/PSB parsing and writing with deterministic crash fixtures.
-- [ ] Publish a tested compatibility table rather than a single broad “PSD supported” claim.
 
 ## P3 — precision, color, and typography
 

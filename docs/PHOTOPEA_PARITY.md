@@ -1,6 +1,6 @@
 # Photopea parity matrix
 
-Last audited: 2026-07-16
+Last audited: 2026-07-17
 
 This is the living comparison between Photopea's core offline editor and Studio. The typed assessments for Studio tools, adjustments, filters, panels, and known missing workflows live in [`photopea-parity.ts`](../packages/editor/src/editor/photopea-parity.ts) and are checked by automated tests. This document covers the wider menu, layer, format, preset, shortcut, and workflow surface.
 
@@ -158,7 +158,7 @@ The current native filter graph contains `Gaussian Blur`, `Smart Sharpen`, `Add 
 | Format family | Import | Export | Status / limitation |
 | --- | --- | --- | --- |
 | Studio project | Editable | Editable | Validation needed: migrations, corruption, streaming and recovery stress tests. |
-| PSD / PSB | Layered, best in RGB 8-bit | Layered | Partial: real-world descriptor, color-mode, high-depth and round-trip corpus remains. |
+| PSD / PSB | Layered, best in RGB 8-bit | Layered | Partial: see the fixture-backed [PSD/PSB compatibility table](./PSD_COMPATIBILITY.md); real-world corpus, color-mode, high-depth, and arbitrary descriptor coverage remain. |
 | PNG / JPEG / WebP | Raster | Raster | Validation needed: metadata, ICC, orientation, large files and option parity. |
 | AVIF | Raster | Raster | Partial: precision, metadata, alpha/color and encoder option parity. |
 | GIF / APNG | Raster/animation paths | Animated from layers | Partial: timing, disposal, palette, transparency and frame metadata parity. |
