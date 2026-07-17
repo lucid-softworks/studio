@@ -139,6 +139,7 @@ const implemented = (detail: string) => validate(`${detail} Functional and visua
 export const studioMenuCommandParity = [
   item('file.new', 'File > New document', 'File > New', implemented('Creates a local blank document.')),
   item('file.open', 'File > Open', 'File > Open', implemented('Opens supported local documents.')),
+  item('file.format-compatibility', 'File > Format compatibility', 'File > Open / Export format behavior', validated('The in-app table labels editable, preserved, converted, rasterized, partial, and unsupported import/export paths.', 'packages/editor/src/editor/format-capabilities.test.ts', 'apps/web/e2e/menu-parity.spec.ts')),
   item('file.place-image', 'File > Place image as layer', 'File > Open & Place', implemented('Places a decoded local image as a layer.')),
   item('file.place-linked', 'File > Place linked smart object', 'File > Open & Place', partial('Linked placement works, but browser file-handle refresh and cross-document parity remain.')),
   item('file.load-font', 'File > Load font', 'File > Open > font', partial('Local font loading works; Adobe font preset and shaping parity remain.')),

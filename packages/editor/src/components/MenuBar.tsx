@@ -29,6 +29,7 @@ type MenuStatus = {
 type MenuBarProps = {
   onNew: () => void
   onOpen: () => void
+  onOpenFormatCompatibility: () => void
   onSave: () => void
   shortcuts: ShortcutMap
   onEditShortcuts: () => void
@@ -168,6 +169,7 @@ export function MenuBar(input: MenuBarProps) {
       {menu('file', 'File', <>
         <MenuItem commandId="file.new" shortcut={shortcutLabel(props.shortcuts['file.new'])} onSelect={() => select(props.onNew)}>New document</MenuItem>
         <MenuItem commandId="file.open" shortcut={shortcutLabel(props.shortcuts['file.open'])} onSelect={() => select(props.onOpen)}>Open…</MenuItem>
+        <MenuItem commandId="file.format-compatibility" onSelect={() => select(props.onOpenFormatCompatibility)}>Format compatibility…</MenuItem>
         <Separator />
         <MenuItem commandId="file.place-image" onSelect={() => select(props.onAddImage)}>Place image as layer…</MenuItem>
         <MenuItem commandId="file.place-linked" onSelect={() => select(props.onPlaceLinkedSmartObject)}>Place linked smart object…</MenuItem>

@@ -19,3 +19,17 @@ test('every built-in menu command is connected to the living parity inventory', 
   expect([...observed].filter((id) => !id.startsWith('plugin.')).every((id) => inventory.has(id))).toBe(true)
   expect(studioMenuCommandParity.filter((entry) => entry.id !== 'file.desktop-scratch').every((entry) => observed.has(entry.id))).toBe(true)
 })
+
+test('format compatibility explains import and export retention before file operations', async ({ page }) => {
+  await page.goto('/app')
+  await page.getByRole('button', { name: 'File', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Format compatibility…', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Format compatibility' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Filter formats').fill('PSD')
+  await expect(dialog.getByRole('rowheader', { name: /Photoshop document/ })).toBeVisible()
+  await expect(dialog.getByText('Partial', { exact: true })).toHaveCount(2)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})

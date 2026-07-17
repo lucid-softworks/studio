@@ -148,7 +148,6 @@ A feature is complete only when it has:
 - [ ] Complete RAW-family detection and decoding beyond embedded preview extraction.
 - [ ] Add Adobe-compatible ACO/ASE swatches, GRD gradients, PAT patterns, CSH shapes, ASL styles, and ATN actions.
 - [ ] Verify metadata preservation and intentional stripping for every supported input/output format.
-- [ ] Add a format capability dialog that explains whether content will remain editable, be preserved opaquely, or be rasterized.
 
 ## P7 — automation and extensibility
 

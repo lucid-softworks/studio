@@ -49,6 +49,7 @@ import { animationDocumentAt } from './editor/animation'
 import { AnimationTimeline } from './components/AnimationTimeline'
 import { ExportWorkspace, type AssetExportSettings } from './components/ExportWorkspace'
 import { PrintDialog } from './components/PrintDialog'
+import { FormatCapabilityDialog } from './components/FormatCapabilityDialog'
 import { desktopBridge, nativeFile, type DesktopNativeFile } from './editor/desktop'
 import type { EditorPerformanceMetrics } from './editor/performance-metrics'
 import { isEditorTool } from './editor/tools'
@@ -146,6 +147,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [exportWorkspaceOpen, setExportWorkspaceOpen] = useState(false)
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
+  const [formatCapabilityDialogOpen, setFormatCapabilityDialogOpen] = useState(false)
   const [animationPreview, setAnimationPreview] = useState({ frameIndex: 0, time: 0 })
   const [recoverySavedAt, setRecoverySavedAt] = useState<string>()
   const [plugins, setPlugins] = useState<StudioPlugin[]>(() => { try { return normalizePlugins(JSON.parse(localStorage.getItem('studio.plugins:v1') ?? localStorage.getItem('studio.plugins') ?? '[]')) } catch { return [] } })
@@ -2199,6 +2201,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
           <MenuBar
             onNew={newDocument}
             onOpen={() => void requestOpen()}
+            onOpenFormatCompatibility={() => setFormatCapabilityDialogOpen(true)}
             onSave={() => void saveProject()}
             onAddImage={() => imageInputRef.current?.click()}
             onPlaceLinkedSmartObject={() => linkedSmartObjectInputRef.current?.click()}
@@ -2350,6 +2353,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
       {timelineOpen && <AnimationTimeline document={document} preview={animationPreview} onPreview={setAnimationPreview} onChange={(animation) => dispatch({ type: 'set-animation', animation })} onClose={() => setTimelineOpen(false)} />}
       {exportWorkspaceOpen && <ExportWorkspace slices={document.slices ?? []} metadata={document.fileMetadata ?? {}} selection={selection?.bounds ?? null} layerCount={document.layers.length} artboardCount={document.artboards?.length ?? 0} onSlicesChange={(slices) => dispatch({ type: 'set-slices', slices })} onMetadataChange={(metadata) => dispatch({ type: 'set-file-metadata', metadata })} onExport={(settings) => void exportGeneratedAssets(settings)} onClose={() => setExportWorkspaceOpen(false)} />}
       {printDialogOpen && <PrintDialog canvasSize={document.canvasSize} metadata={document.fileMetadata ?? {}} value={document.printSettings ?? (() => { const dpi = document.fileMetadata?.resolutionDpi ?? 300; return { widthInches: document.canvasSize.width / dpi, heightInches: document.canvasSize.height / dpi, dpi, bleedInches: 0.125, cropMarks: true, center: true } })()} onChange={(settings) => dispatch({ type: 'set-print-settings', settings })} onExport={() => void createPrintPdf(false)} onPrint={() => void createPrintPdf(true)} onClose={() => setPrintDialogOpen(false)} />}
+      {formatCapabilityDialogOpen && <FormatCapabilityDialog onClose={() => setFormatCapabilityDialogOpen(false)} />}
     </div>
   )
 }
