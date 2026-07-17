@@ -110,6 +110,7 @@ export type DocumentSlice = { id: string; name: string; x: number; y: number; wi
 export type DocumentPrintSettings = { widthInches: number; heightInches: number; dpi: number; bleedInches: number; cropMarks: boolean; center: boolean }
 export type DocumentMeasurement = { id: string; name: string; startX: number; startY: number; endX: number; endY: number }
 export type DocumentMeasurementScale = { pixelsPerUnit: number; unit: string }
+export type DocumentColorSampler = { id: string; x: number; y: number; color: string }
 
 export type BaseLayer = {
   id: string
@@ -414,6 +415,7 @@ export type EditorDocument = {
   printSettings?: DocumentPrintSettings
   measurements?: DocumentMeasurement[]
   measurementScale?: DocumentMeasurementScale
+  colorSamplers?: DocumentColorSampler[]
 }
 
 export type LayerPatch = Partial<{
@@ -517,6 +519,7 @@ export type DocumentAction =
   | { type: 'set-print-settings'; settings: DocumentPrintSettings }
   | { type: 'set-measurements'; measurements: DocumentMeasurement[] }
   | { type: 'set-measurement-scale'; scale: DocumentMeasurementScale }
+  | { type: 'set-color-samplers'; samplers: DocumentColorSampler[] }
   | { type: 'replace-document'; document: EditorDocument }
   | { type: 'add-layer'; layer: EditorLayer }
   | { type: 'replace-layer'; id: string; layer: EditorLayer }

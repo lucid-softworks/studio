@@ -32,6 +32,7 @@ import { commandForEvent, type ShortcutMap } from '../editor/shortcuts'
 import { documentRegionToSourceRegion } from '../editor/raster-target'
 import { measurementMetrics } from '../editor/measurements'
 import { MeasurementLogDialog } from './MeasurementLogDialog'
+import { ColorSamplerDialog } from './ColorSamplerDialog'
 
 type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
@@ -219,6 +220,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
   const [perspectiveCrop, setPerspectiveCrop] = useState<[Position, Position, Position, Position]>(() => [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 700 }, { x: 100, y: 700 }])
   const [measurement, setMeasurement] = useState<Measurement | null>(null)
   const [measurementLogOpen, setMeasurementLogOpen] = useState(false)
+  const [colorSamplerDialogOpen, setColorSamplerDialogOpen] = useState(false)
   const [isPanning, setIsPanning] = useState(false)
   const [splitView, setSplitView] = useState(false)
   const [viewsLinked, setViewsLinked] = useState(true)
@@ -492,6 +494,13 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
     setMeasurement(null)
   }
 
+  const sampleColor = (color: string, position: Position, persistent: boolean) => {
+    onForegroundColorChange(color)
+    if (!persistent) return
+    const samplers = document.colorSamplers ?? []
+    dispatch({ type: 'set-color-samplers', samplers: [...samplers, { id: createId(), x: position.x, y: position.y, color }].slice(-16) })
+  }
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (tool !== 'hand' || event.button !== 0) return
     panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: event.currentTarget.scrollLeft, top: event.currentTarget.scrollTop }
@@ -556,6 +565,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
               <span className="hidden font-mono uppercase xl:inline">{foregroundColor}</span>
             </label>
           )}
+          {tool === 'eyedropper' && <button type="button" onClick={() => setColorSamplerDialogOpen(true)} className="rounded-md border border-cyan-300/15 bg-cyan-300/[0.04] px-2 py-1.5 text-[9px] text-cyan-100/70">Samplers ({document.colorSamplers?.length ?? 0}) · Shift-click to add</button>}
           {(tool === 'magic-wand' || tool === 'fill') && <label className="hidden items-center gap-2 text-[9px] text-zinc-600 xl:flex"><span>Tolerance</span><input aria-label="Tolerance" type="range" min="0" max="128" value={tolerance} onChange={(event) => setTolerance(Number(event.target.value))} className="studio-range w-16" /><span className="w-5 font-mono">{tolerance}</span></label>}
           {selectionTool && (
             <div className="hidden items-center rounded-md border border-white/[0.06] bg-black/20 p-0.5 lg:flex">
@@ -640,7 +650,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
             <PathEditorOverlay canvasRef={canvasRef} document={document} dispatch={dispatch} tool={tool === 'direct-select' || tool === 'path-select' ? tool : 'pen'} enabled={tool === 'pen' || tool === 'direct-select' || tool === 'path-select'} />
             <WarpOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} mode={tool === 'puppet-warp' ? 'puppet' : 'warp'} enabled={tool === 'warp' || tool === 'puppet-warp'} />
             <TransformOverlay canvasRef={canvasRef} document={document} assets={assets} dispatch={dispatch} endHistoryGroup={endHistoryGroup} enabled={tool === 'move'} />
-            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} onColorSample={onForegroundColorChange} onAddText={(position, paragraphBox) => onAddText(position, foregroundColor, paragraphBox)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
+            <CanvasActionOverlay canvasRef={canvasRef} tool={tool} samplers={document.colorSamplers} onColorSample={sampleColor} onAddText={(position, paragraphBox) => onAddText(position, foregroundColor, paragraphBox)} onAddShape={(shape, position) => onAddShape(shape, position, foregroundColor)} onZoom={changeZoom} />
             </div>
           </div>
           {splitView && <div className="relative flex min-w-0 items-center justify-center overflow-hidden rounded-md border border-white/[0.08] bg-black/20 p-3">
@@ -668,6 +678,7 @@ function useCanvasStageController({ canvasRef, document, assets, dispatch, endHi
         {quickMask ? `Quick Mask · ${tool === 'eraser' ? 'erase to remove' : 'paint to add'} selection · press Q to exit` : toolHint}
       </div>
       {measurementLogOpen && <MeasurementLogDialog measurements={document.measurements ?? []} scale={measurementScale} onMeasurementsChange={(measurements) => dispatch({ type: 'set-measurements', measurements }, { groupKey: 'measurement-log' })} onScaleChange={(scale) => dispatch({ type: 'set-measurement-scale', scale }, { groupKey: 'measurement-scale' })} onClose={() => { endHistoryGroup(); setMeasurementLogOpen(false) }} />}
+      {colorSamplerDialogOpen && <ColorSamplerDialog samplers={document.colorSamplers ?? []} onChange={(samplers) => dispatch({ type: 'set-color-samplers', samplers }, { groupKey: 'color-samplers' })} onClose={() => { endHistoryGroup(); setColorSamplerDialogOpen(false) }} />}
     </section>
   )
 }

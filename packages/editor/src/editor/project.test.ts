@@ -218,7 +218,7 @@ describe('Studio project migrations', () => {
     await expect(writeProjectStream(writable, initialDocument, {}, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
     expect(writable.aborted).toBe(true)
     expect(writable.closed).toBe(false)
-    expect(writable.chunks.join('')).not.toContain(']}')
+    expect(writable.chunks.join('')).not.toMatch(/\]\}\s*$/)
   })
 
   it('does not hydrate an already-cancelled project import', async () => {

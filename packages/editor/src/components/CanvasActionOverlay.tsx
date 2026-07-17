@@ -1,23 +1,25 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import type { Position, ShapeKind } from '../editor/types'
+import type { DocumentColorSampler, Position, ShapeKind } from '../editor/types'
 import type { EditorTool } from './ToolRail'
 
 type CanvasActionOverlayProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   tool: EditorTool
-  onColorSample: (color: string) => void
+  samplers?: readonly DocumentColorSampler[]
+  onColorSample: (color: string, position: Position, persistent: boolean) => void
   onAddText: (position: Position, paragraphBox?: { width: number; height: number }) => void
   onAddShape: (shape: ShapeKind, position: Position) => void
   onZoom: (direction: 'in' | 'out') => void
 }
 
 const actionTools = new Set<EditorTool>(['eyedropper', 'text', 'rectangle', 'ellipse', 'zoom'])
+const emptyColorSamplers: readonly DocumentColorSampler[] = []
 
 function toHex(value: number) {
   return value.toString(16).padStart(2, '0')
 }
 
-export function CanvasActionOverlay({ canvasRef, tool, onColorSample, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
+export function CanvasActionOverlay({ canvasRef, tool, samplers = emptyColorSamplers, onColorSample, onAddText, onAddShape, onZoom }: CanvasActionOverlayProps) {
   const textStartRef = useRef<Position | null>(null)
   const enabled = actionTools.has(tool)
   const cursor = tool === 'text' ? 'text' : tool === 'zoom' ? 'zoom-in' : 'crosshair'
@@ -46,7 +48,7 @@ export function CanvasActionOverlay({ canvasRef, tool, onColorSample, onAddText,
         1,
         1,
       ).data
-      if (pixel && pixel[3] > 0) onColorSample(`#${toHex(pixel[0])}${toHex(pixel[1])}${toHex(pixel[2])}`)
+      if (pixel && pixel[3] > 0) onColorSample(`#${toHex(pixel[0])}${toHex(pixel[1])}${toHex(pixel[2])}`, position, event.shiftKey)
       return
     }
 
@@ -86,6 +88,8 @@ export function CanvasActionOverlay({ canvasRef, tool, onColorSample, onAddText,
       onPointerDown={pointerDown}
       onPointerUp={pointerUp}
       onPointerCancel={() => { textStartRef.current = null }}
-    />
+    >
+      <g aria-hidden="true" pointerEvents="none">{samplers.map((sampler, index) => <g key={sampler.id} transform={`translate(${sampler.x} ${sampler.y})`}><circle r="11" fill="rgba(9,9,11,.86)" stroke="#67e8f9" strokeWidth="2" /><path d="M-16 0H16M0-16V16" stroke="#67e8f9" strokeWidth="1" /><text y="4" textAnchor="middle" fill="#ecfeff" fontSize="10" fontWeight="700">{index + 1}</text></g>)}</g>
+    </svg>
   )
 }
