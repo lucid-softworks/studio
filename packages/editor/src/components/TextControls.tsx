@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { CustomFontResource } from '../editor/resources'
 import type { DocumentPath, LayerPatch, TextLayer } from '../editor/types'
+import { numericInputValue } from './input-values'
 
 const fieldClass = 'w-full rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5 text-[10px] text-zinc-300 outline-none focus:border-violet-400/40'
 const openTypeFeatures = [
@@ -9,7 +10,7 @@ const openTypeFeatures = [
 ] as const
 
 function NumberField({ label, value, min, max, step = 1, onChange, onBlur }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void; onBlur?: () => void }) {
-  return <label className="text-[8px] text-zinc-600">{label}<input aria-label={label} type="number" min={min} max={max} step={step} value={Math.round(value * 100) / 100} onChange={(event) => onChange(Number(event.target.value))} onBlur={onBlur} className={`${fieldClass} mt-1 font-mono`} /></label>
+  return <label className="text-[8px] text-zinc-600">{label}<input aria-label={label} type="number" min={min} max={max} step={step} value={Math.round(value * 100) / 100} onChange={(event) => onChange(numericInputValue(event.currentTarget, value))} onBlur={onBlur} className={`${fieldClass} mt-1 font-mono`} /></label>
 }
 
 export function TextControls({ layer, paths, fonts, update, endHistoryGroup, onLoadFont }: {

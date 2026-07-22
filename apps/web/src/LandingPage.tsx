@@ -25,7 +25,7 @@ const features = [
 
 export function LandingPage({ onOpenEditor }: Props) {
   return (
-    <div className="landing-shell min-h-screen overflow-hidden bg-[#09090b] text-zinc-100">
+    <div className="landing-shell min-h-dvh overflow-hidden bg-[#09090b] text-zinc-100">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[720px] bg-[radial-gradient(circle_at_50%_-10%,rgba(124,58,237,0.2),transparent_58%)]" />
       <header className="relative z-20 mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-3 rounded-xl focus-visible:outline-2 focus-visible:outline-violet-400">
@@ -48,7 +48,7 @@ export function LandingPage({ onOpenEditor }: Props) {
             <span className="size-1.5 rounded-full bg-violet-300 shadow-[0_0_10px_#c4b5fd]" /> Private, powerful, browser-native
           </div>
           <h1 className="mx-auto max-w-5xl text-balance text-5xl leading-[0.98] font-semibold tracking-[-0.055em] text-white sm:text-7xl lg:text-[92px]">
-            Create without<br /><span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-cyan-200 bg-clip-text text-transparent">compromise.</span>
+            Create without<br /><span className="bg-linear-to-r from-violet-300 via-fuchsia-300 to-cyan-200 bg-clip-text text-transparent">compromise.</span>
           </h1>
           <p className="mx-auto mt-8 max-w-2xl text-pretty text-base leading-7 text-zinc-500 sm:text-lg">
             A serious client-side image editor for layered compositions, raster work, and creative files—without handing your work to a server.

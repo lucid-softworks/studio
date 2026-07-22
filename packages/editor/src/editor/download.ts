@@ -7,6 +7,7 @@ export function downloadBlob(blob: Blob, filename: string) {
     return
   }
   const url = URL.createObjectURL(blob)
+  setTimeout(() => URL.revokeObjectURL(url), 1500)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
@@ -16,6 +17,5 @@ export function downloadBlob(blob: Blob, filename: string) {
     link.click()
   } finally {
     link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500)
   }
 }

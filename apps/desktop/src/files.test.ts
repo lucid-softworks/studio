@@ -19,6 +19,7 @@ describe('desktop files', () => {
   it('normalizes recent files, MIME types, and scratch keys', () => {
     expect(nextRecent(['/a', '/b'], '/b')).toEqual(['/b', '/a'])
     expect(mimeForPath('image.PSD')).toBe('image/vnd.adobe.photoshop')
+    expect(mimeForPath('large-document.PSB')).toBe('image/vnd.adobe.photoshop')
     expect(safeScratchKey('../../private project')).toBe('______private_project')
   })
 })

@@ -386,7 +386,7 @@ function useTransformOverlayController({ canvasRef, document, assets, dispatch, 
   return (
     <Fragment>
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-      <canvas ref={previewCanvasRef} className="absolute hidden will-change-transform" />
+      <canvas ref={previewCanvasRef} className="absolute hidden" />
     </div>
     <svg
       ref={svgRef}

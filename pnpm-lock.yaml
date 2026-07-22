@@ -61,6 +61,9 @@ importers:
       '@studio/editor':
         specifier: workspace:*
         version: link:../../packages/editor
+      ag-psd:
+        specifier: ^31.0.2
+        version: 31.0.2(patch_hash=b3c938c726ada4dcb14a67fbb5530d69f251e72a8046072e982430b7a9ecfb19)
       react:
         specifier: ^19.2.7
         version: 19.2.7

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { numericInputValue } from './input-values'
 
 type SectionProps = {
   title: string
@@ -31,7 +32,7 @@ type RangeControlProps = {
 
 export function RangeControl({ label, value, min, max, step = 1, suffix = '', onChange, onChangeEnd }: RangeControlProps) {
   return (
-    <label className="block py-2.5">
+    <div className="block py-2.5">
       <span className="mb-2.5 flex items-center justify-between text-[13px]">
         <span className="font-medium text-zinc-300">{label}</span>
         <output className="min-w-11 rounded-md bg-white/[0.06] px-2 py-1 text-center font-mono text-[11px] text-zinc-400">
@@ -46,11 +47,11 @@ export function RangeControl({ label, value, min, max, step = 1, suffix = '', on
         max={max}
         step={step}
         value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => onChange(numericInputValue(event.currentTarget, value))}
         onPointerUp={onChangeEnd}
         onKeyUp={onChangeEnd}
         onBlur={onChangeEnd}
       />
-    </label>
+    </div>
   )
 }

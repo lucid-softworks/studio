@@ -411,6 +411,7 @@ export async function parseProjectFile(file: File, signal?: AbortSignal): Promis
     signal?.throwIfAborted()
     const response = await fetch(asset.data, { signal })
     const precisionResponse = asset.precision ? await fetch(asset.precision, { signal }) : undefined
+    if (!response.ok || precisionResponse && !precisionResponse.ok) throw new Error(`The stored pixels for ${asset.name} could not be read.`)
     return {
       id: asset.id,
       name: asset.name,

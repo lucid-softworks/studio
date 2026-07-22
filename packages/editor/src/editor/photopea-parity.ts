@@ -216,12 +216,12 @@ export const studioLayerTypeParity = [
   item('layer.video', 'Not implemented', 'Video layer', missing('Video layers and a deterministic local media timeline are not implemented.')),
 ] as const
 
-const importFormats = ['studio', 'psd', 'svg', 'png', 'jpeg', 'webp', 'gif', 'tif', 'tiff', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'exr', 'hdr', 'heic', 'heif', 'avif', 'ico', 'pdf'] as const
+const importFormats = ['studio', 'psd', 'psb', 'svg', 'png', 'jpeg', 'webp', 'gif', 'tif', 'tiff', 'dng', 'cr2', 'nef', 'arw', 'orf', 'rw2', 'exr', 'hdr', 'heic', 'heif', 'avif', 'ico', 'pdf'] as const
 const exportFormats = ['studio', 'png', 'jpeg', 'webp', 'svg', 'psd', 'psb', 'tiff', 'pdf', 'avif', 'gif', 'apng'] as const
 const missingImportFormats = ['ai', 'eps', 'xcf', 'kra', 'sketch', 'xd', 'affinity', 'clip-studio'] as const
 
 export const studioFormatOperationParity = [
-  ...importFormats.map((format) => item(`format.import.${format}`, `${format.toUpperCase()} import`, `Open ${format.toUpperCase()}`, format === 'psd' || format === 'pdf' || ['dng', 'cr2', 'nef', 'arw', 'orf', 'rw2'].includes(format) ? partial(`${format.toUpperCase()} opens locally, but editable structure or full source decoding is incomplete.`) : implemented(`${format.toUpperCase()} opens through a local codec.`))),
+  ...importFormats.map((format) => item(`format.import.${format}`, `${format.toUpperCase()} import`, `Open ${format.toUpperCase()}`, format === 'psd' || format === 'psb' || format === 'pdf' || ['dng', 'cr2', 'nef', 'arw', 'orf', 'rw2'].includes(format) ? partial(`${format.toUpperCase()} opens locally, but editable structure or full source decoding is incomplete.`) : implemented(`${format.toUpperCase()} opens through a local codec.`))),
   ...exportFormats.map((format) => item(`format.export.${format}`, `${format.toUpperCase()} export`, `Export ${format.toUpperCase()}`, format === 'psd' || format === 'psb' || format === 'svg' || format === 'pdf' ? partial(`${format.toUpperCase()} export works, but complete editable structural parity remains.`) : implemented(`${format.toUpperCase()} export is processed locally.`))),
   ...missingImportFormats.map((format) => item(`format.import.${format}`, 'Not implemented', `Open ${format.toUpperCase()}`, missing(`${format.toUpperCase()} import is not implemented.`))),
 ] as const

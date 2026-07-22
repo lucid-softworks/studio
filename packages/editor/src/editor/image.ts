@@ -36,10 +36,9 @@ export async function loadImageFile(file: File, signal?: AbortSignal): Promise<S
 
   try {
     const element = await decodeImage(objectUrl, signal)
-    return { element, name: file.name, blob: file, objectUrl }
-  } catch (error) {
+    return { element, name: file.name, blob: file }
+  } finally {
     URL.revokeObjectURL(objectUrl)
-    throw error
   }
 }
 
@@ -48,10 +47,9 @@ export async function loadImageBlob(blob: Blob, name: string, signal?: AbortSign
   const objectUrl = URL.createObjectURL(blob)
   try {
     const element = await decodeImage(objectUrl, signal)
-    return { element, name, blob, objectUrl }
-  } catch (error) {
+    return { element, name, blob }
+  } finally {
     URL.revokeObjectURL(objectUrl)
-    throw error
   }
 }
 

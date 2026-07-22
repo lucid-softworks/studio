@@ -474,6 +474,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
       rasterRedoRef.current = []
       bumpRasterHistory()
     }
+    if (action.type === 'select-layer' || action.type === 'select-group' || action.type === 'reset-document') setEditingMaskLayerId(null)
     if (action.type === 'reset-document') setSelection(null)
     if (action.type === 'update-layer' && action.patch.geometryTransform) setLastGeometryTransform(structuredClone(action.patch.geometryTransform))
     historyDispatch({ type: 'apply', action, record: options?.record, groupKey: options?.groupKey })
@@ -618,12 +619,6 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
   const selectedLayerIdSet = new Set(document.selectedLayerIds)
   const selectedLayers = document.layers.filter((layer) => selectedLayerIdSet.has(layer.id))
   const selectedGroup = document.groups.find((group) => group.id === document.selectedGroupId)
-
-  useEffect(() => {
-    if (!editingMaskLayerId) return
-    const layer = document.layers.find((candidate) => candidate.id === editingMaskLayerId)
-    if (!layer?.maskAssetId || document.selectedLayerId !== editingMaskLayerId) setEditingMaskLayerId(null)
-  }, [document.layers, document.selectedLayerId, editingMaskLayerId])
 
   const refreshRasterAsset = useCallback((assetId: string, region?: RasterRegion) => {
     setAssets((current) => {
@@ -1283,19 +1278,18 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
     if (save) {
       const preview = window.document.createElement('canvas')
       canvas2dCompositionRenderer.render(preview, { ...editedDocument, selectedLayerId: null, selectedLayerIds: [], selectedGroupId: null }, assets)
-      setAssets((current) => {
-        const source = current[session.assetId]
-        if (!source) return current
-        const surface = source.surface ?? window.document.createElement('canvas')
+      const source = assets[session.assetId]
+      if (source) {
+        const surface = window.document.createElement('canvas')
         surface.width = preview.width
         surface.height = preview.height
         const context = surface.getContext('2d')
         context?.clearRect(0, 0, surface.width, surface.height)
         context?.drawImage(preview, 0, 0)
         const next = { ...source, surface, revision: (source.revision ?? 0) + 1 }
+        setAssets((current) => current[session.assetId] ? { ...current, [session.assetId]: next } : current)
         void surfaceToBlob(surface).then((blob) => setAssets((latest) => latest[session.assetId] ? { ...latest, [session.assetId]: { ...latest[session.assetId], blob } } : latest))
-        return { ...current, [session.assetId]: next }
-      })
+      }
       historyDispatch({ type: 'restore', state: session.parentHistory })
       historyDispatch({ type: 'apply', action: { type: 'update-layer', id: session.layerId, patch: { embeddedDocument: editedDocument, contentHash: smartObjectDocumentHash(editedDocument, assets) } } })
       setNotice(`Saved ${session.name} contents and refreshed its preview.`, 'success')
@@ -1828,12 +1822,27 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
       const blob = response.blob
       if (printImmediately) {
         const url = URL.createObjectURL(blob)
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
         const frame = window.document.createElement('iframe')
         frame.title = 'Studio print document'
         frame.style.position = 'fixed'; frame.style.width = '1px'; frame.style.height = '1px'; frame.style.opacity = '0'; frame.style.pointerEvents = 'none'
-        frame.onload = () => { frame.contentWindow?.focus(); frame.contentWindow?.print(); window.setTimeout(() => { frame.remove(); URL.revokeObjectURL(url) }, 60_000) }
-        frame.src = url
-        window.document.body.append(frame)
+        let loaded = false
+        try {
+          const load = new Promise<void>((resolve, reject) => {
+            frame.onload = () => resolve()
+            frame.onerror = () => reject(new Error('The browser could not load the print document.'))
+          })
+          frame.src = url
+          window.document.body.append(frame)
+          await load
+          loaded = true
+          frame.contentWindow?.focus()
+          frame.contentWindow?.print()
+          window.setTimeout(() => frame.remove(), 60_000)
+        } finally {
+          URL.revokeObjectURL(url)
+          if (!loaded) frame.remove()
+        }
       } else downloadBlob(blob, 'studio-print.pdf')
       setNotice(printImmediately ? 'Opened the browser print workflow with a locally generated PDF.' : 'Exported the print-ready PDF.', 'success')
     } catch (error) {
@@ -1905,9 +1914,9 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
     try {
       let loaded: { document: typeof document; assets: AssetMap }
       let importWarnings: string[] = []
-      if (extension === 'psd' || file.type === 'image/vnd.adobe.photoshop') {
+      if (extension === 'psd' || extension === 'psb' || file.type === 'image/vnd.adobe.photoshop') {
         const { importPsdFile } = await import('./editor/psd')
-        const imported = await runCancelableJob('PSD import', (signal) => importPsdFile(file, signal))
+        const imported = await runCancelableJob(extension === 'psb' ? 'PSB import' : 'PSD import', (signal) => importPsdFile(file, signal))
         loaded = imported
         importWarnings = imported.warnings
       } else if (extension === 'svg' || file.type === 'image/svg+xml') {
@@ -2210,6 +2219,7 @@ function useAppController({ onExit, initialState, performanceMetrics, rendererOv
       { id: 'save', label: 'Save Studio project', category: 'File', shortcut: labelFor('file.save'), disabled: isProjectSaving, run: () => void saveProject() },
       { id: 'export-png', label: 'Export PNG', category: 'Export', keywords: 'save image', run: () => void exportImage('png') },
       { id: 'export-psd', label: 'Export layered PSD', category: 'Export', keywords: 'photoshop', run: () => void exportImage('psd') },
+      { id: 'export-psb', label: 'Export large document PSB', category: 'Export', keywords: 'photoshop large document', run: () => void exportImage('psb') },
       { id: 'undo', label: 'Undo', category: 'Edit', shortcut: labelFor('edit.undo'), disabled: history.past.length === 0 && rasterUndoRef.current.length === 0, run: performUndo },
       { id: 'redo', label: 'Redo', category: 'Edit', shortcut: labelFor('edit.redo'), disabled: history.future.length === 0 && rasterRedoRef.current.length === 0, run: performRedo },
       { id: 'new-layer', label: 'New empty layer', category: 'Layer', shortcut: labelFor('layer.new'), run: addEmptyLayer },

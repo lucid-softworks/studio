@@ -121,15 +121,20 @@ export function brushAlpha(red: number, green: number, blue: number, alpha: numb
   return Math.round(255 - luminance)
 }
 
-function decodeImage(blob: Blob) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const url = URL.createObjectURL(blob)
-    const image = new Image()
-    image.decoding = 'async'
-    image.onload = () => { URL.revokeObjectURL(url); resolve(image) }
-    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('The brush tip image could not be decoded.')) }
-    image.src = url
-  })
+async function decodeImage(blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  try {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.decoding = 'async'
+      image.onload = () => resolve(image)
+      image.onerror = () => reject(new Error('The brush tip image could not be decoded.'))
+      image.src = url
+    })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 async function createBrushTip(blob: Blob) {
@@ -163,6 +168,7 @@ async function portableBrush(file: File) {
   try { parsed = JSON.parse(await file.text()) as PortableBrush } catch { throw new Error('That brush preset is not valid JSON.') }
   if (parsed.app !== 'studio-brush' || parsed.version !== 1 || typeof parsed.tipData !== 'string') throw new Error('That Studio brush preset is not supported.')
   const response = await fetch(parsed.tipData)
+  if (!response.ok) throw new Error('The preset brush tip could not be read.')
   const blob = await response.blob()
   if (!BRUSH_IMAGE_TYPES.has(blob.type)) throw new Error('The preset does not contain a supported brush tip image.')
   return { blob, name: parsed.name || resourceName(file.name), spacing: Math.max(1, Math.min(100, parsed.spacing ?? 18)), dynamics: parsed.dynamics }

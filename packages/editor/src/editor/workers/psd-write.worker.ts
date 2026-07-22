@@ -1,6 +1,8 @@
 /// <reference lib="webworker" />
 import type { Psd } from 'ag-psd'
-import { createSegmentedWriter, getWriterSegments, writePsd } from 'ag-psd/dist/psdWriter'
+import psdWriter from 'ag-psd/dist/psdWriter'
+
+const { createSegmentedWriter, getWriterSegments, writePsd } = psdWriter
 
 self.onmessage = (event: MessageEvent<{ psd: Psd; psb: boolean }>) => {
   try {

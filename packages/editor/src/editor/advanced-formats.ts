@@ -159,16 +159,16 @@ async function decodePdf(file: File, signal?: AbortSignal): Promise<AdvancedRast
 
 async function decodeBrowserImage(file: File, format: 'ico', signal?: AbortSignal): Promise<AdvancedRasterImport> {
   const objectUrl = URL.createObjectURL(file)
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
   try {
     const element = await new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); const cleanup = () => signal?.removeEventListener('abort', cancel); const cancel = () => { image.src = ''; cleanup(); reject(signal?.reason instanceof Error ? signal.reason : new DOMException('Icon decoding was cancelled.', 'AbortError')) }; image.onload = () => { cleanup(); resolve(image) }; image.onerror = () => { cleanup(); reject(new Error('The browser could not decode this icon.')) }; signal?.addEventListener('abort', cancel, { once: true }); image.src = objectUrl })
     const surface = document.createElement('canvas')
     surface.width = element.naturalWidth
     surface.height = element.naturalHeight
     surface.getContext('2d', { willReadFrequently: true })?.drawImage(element, 0, 0)
-    return { pages: [{ name: file.name, width: surface.width, height: surface.height, source: { element, name: file.name, surface, revision: 0, blob: file, objectUrl } }], bitDepth: 8, metadata: { sourceFormat: format, importedAt: new Date().toISOString() }, warnings: [] }
-  } catch (error) {
+    return { pages: [{ name: file.name, width: surface.width, height: surface.height, source: { element, name: file.name, surface, revision: 0, blob: file } }], bitDepth: 8, metadata: { sourceFormat: format, importedAt: new Date().toISOString() }, warnings: [] }
+  } finally {
     URL.revokeObjectURL(objectUrl)
-    throw error
   }
 }
 
